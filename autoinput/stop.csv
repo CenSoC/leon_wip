@@ -1,0 +1,6 @@
+click,200,200
+sleep,1000
+,click,1680,1050
+click,2680,1049
+ascii, 27
+

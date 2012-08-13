@@ -1,0 +1,8 @@
+
+All of the top-level README file applies.
+
+Small utilit{y,ies} to perform Gaussian blur (smearing) as per requirements of the sunscreen project by Amanda Barnard and Jordan Louviere.
+
+Originally the code was written as a quick hack to deal with very large datasets (hence the use of openmp, various ffast-math compilation options, FPU-testing, algorithm- math-wise optimisations and so on).
+
+Currently, however, as it turns out there is a need to only process matricies of 100x100 and so the default building process uses a more basic compillation options.

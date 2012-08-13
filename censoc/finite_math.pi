@@ -1,0 +1,132 @@
+/*
+
+Written and contributed by Leonid Zadorin at the Centre for the Study of Choice
+(CenSoC), the University of Technology Sydney (UTS).
+
+Copyright (c) 2012 The University of Technology Sydney (UTS), Australia
+<www.uts.edu.au>
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+1. Redistributions of source code must retain the above copyright notice,
+this list of conditions and the following disclaimer.
+2. Redistributions in binary form must reproduce the above copyright notice,
+this list of conditions and the following disclaimer in the documentation
+and/or other materials provided with the distribution.
+3. All products which use or are derived from this software must display the
+following acknowledgement:
+  This product includes software developed by the Centre for the Study of
+  Choice (CenSoC) at The University of Technology Sydney (UTS) and its
+  contributors.
+4. Neither the name of The University of Technology Sydney (UTS) nor the names
+of the Centre for the Study of Choice (CenSoC) and contributors may be used to
+endorse or promote products which use or are derived from this software without
+specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE CENTRE FOR THE STUDY OF CHOICE (CENSOC) AT THE
+UNIVERSITY OF TECHNOLOGY SYDNEY (UTS) AND CONTRIBUTORS ``AS IS'' AND ANY 
+EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE 
+DISCLAIMED. IN NO EVENT SHALL THE CENTRE FOR THE STUDY OF CHOICE (CENSOC) OR
+THE UNIVERSITY OF TECHNOLOGY SYDNEY (UTS) OR CONTRIBUTORS BE LIABLE FOR ANY 
+DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES 
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; 
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON 
+ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT 
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS 
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+
+*/
+
+// allows to be compiled in a separate translation unit with different optimisations (e.g. -fno-finite-math-only)
+
+// just a hack -- will move to another place later (for fpu_is_ok call which needs not be compiler in a separate unit afaik, so could be inlined)
+#include <fenv.h>
+
+#include <cmath>
+#include "type_traits.h"
+
+#ifndef CENSOC_FINITE_MATH_PI
+#define CENSOC_FINITE_MATH_PI
+
+namespace censoc {
+
+	extern
+	bool 
+	isfinite(censoc::param<float>::type x) noexcept
+	{
+		return ::std::isfinite(x) ? true : false;
+	}
+
+	extern
+	bool 
+	isfinite(censoc::param<double>::type x) noexcept
+	{
+		return ::std::isfinite(x) ? true : false;
+	}
+
+	extern
+	bool 
+	isfinite(censoc::param<double long>::type x) noexcept
+	{
+		return ::std::isfinite(x) ? true : false;
+	}
+
+	// NOTE -- this is a hack (no need to have it as a separate translation unit!!!)
+	// TODO -- move into more appropriate name/place and adjust the code to more correct fp flags
+	/**
+		@postcon fpu is reset to OK
+		@ret 'true' if fpu was OK before the call to this method, 'false' otherwise
+		*/
+
+	bool extern
+	was_fpu_ok(...) noexcept
+	{
+// todo -- more precise/comprehensive ifdefs and provisions for other environments
+#ifdef __GNUC__
+		__asm__ __volatile__ ("": : :"memory");
+		__sync_synchronize();
+#else
+#error was_fpu_ok needs more -specific memory thingies
+#endif
+		bool rv(true);
+		// int const static flags = FE_DIVBYZERO | FE_DENORMAL | FE_INVALID | FE_OVERFLOW | FE_UNDERFLOW;
+		//int const static flags = FE_DIVBYZERO | FE_INVALID | FE_OVERFLOW | FE_UNDERFLOW;
+		int const static flags = FE_DIVBYZERO | FE_INVALID | FE_OVERFLOW;
+#pragma STDC FENV_ACCESS ON
+		if (::fetestexcept(flags)) {
+			::feclearexcept(flags);
+			rv = false;
+		} 
+#pragma STDC FENV_ACCESS OFF
+		return rv;
+	}
+
+	bool extern
+	was_fpu_ok_x(float * x, int * y) noexcept
+	{
+		(void)x;
+		(void)y;
+// todo -- more precise/comprehensive ifdefs and provisions for other environments
+#ifdef __GNUC__
+		__asm__ __volatile__ ("": : :"memory");
+		__sync_synchronize();
+#else
+#error was_fpu_ok needs more -specific memory thingies
+#endif
+		bool rv(true);
+		// int const static flags = FE_DIVBYZERO | FE_DENORMAL | FE_INVALID | FE_OVERFLOW | FE_UNDERFLOW;
+		int const static flags = FE_DIVBYZERO | FE_INVALID | FE_OVERFLOW | FE_UNDERFLOW;
+#pragma STDC FENV_ACCESS ON
+		if (::fetestexcept(flags)) {
+			::feclearexcept(flags);
+			rv = false;
+		} 
+#pragma STDC FENV_ACCESS OFF
+		return rv;
+	}
+
+
+}
+
+#endif

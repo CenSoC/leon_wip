@@ -1,0 +1,164 @@
+
+Written and contributed by Leonid Zadorin at the Centre for the Study of Choice
+(CenSoC), the University of Technology Sydney (UTS).
+
+Copyright (c) 2012 The University of Technology Sydney (UTS), Australia
+<www.uts.edu.au>
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+1. Redistributions of source code must retain the above copyright notice,
+this list of conditions and the following disclaimer.
+2. Redistributions in binary form must reproduce the above copyright notice,
+this list of conditions and the following disclaimer in the documentation
+and/or other materials provided with the distribution.
+3. All products which use or are derived from this software must display the
+following acknowledgement:
+  This product includes software developed by the Centre for the Study of
+  Choice (CenSoC) at The University of Technology Sydney (UTS) and its
+  contributors.
+4. Neither the name of The University of Technology Sydney (UTS) nor the names
+of the Centre for the Study of Choice (CenSoC) and contributors may be used to
+endorse or promote products which use or are derived from this software without
+specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE CENTRE FOR THE STUDY OF CHOICE (CENSOC) AT THE
+UNIVERSITY OF TECHNOLOGY SYDNEY (UTS) AND CONTRIBUTORS ``AS IS'' AND ANY 
+EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE 
+DISCLAIMED. IN NO EVENT SHALL THE CENTRE FOR THE STUDY OF CHOICE (CENSOC) OR
+THE UNIVERSITY OF TECHNOLOGY SYDNEY (UTS) OR CONTRIBUTORS BE LIABLE FOR ANY 
+DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES 
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; 
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON 
+ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT 
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS 
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+
+-------------------------------------------------------------------------------
+
+note: -- ideally, should make the new gcc first (basic build), then use the new gcc to incrementally build all of the libs/binutils... but not enough time for that, and it's still work in progress...
+
+note: -- native = FreeBSD system.
+
+1) build gmp
+./configure --enable-cxx --prefix=/usr/home/${USER}/gmp/installed
+gmake -j 2
+gmake install
+
+2) build mpfr
+./configure --with-gmp=/usr/home/${USER}/gmp/installed --prefix=/usr/home/${USER}/mpfr/installed
+gmake -j 2
+gmake install
+
+3) build mpc
+./configure --with-gmp=/usr/home/${USER}/gmp/installed --with-mpfr=/usr/home/${USER}/mpfr/installed --prefix=/usr/home/${USER}/mpc/installed
+gmake -j 2
+gmake install
+
+4) build ppl
+./configure --with-gmp-prefix=/usr/home/${USER}/gmp/installed --prefix=/usr/home/${USER}/ppl/installed 
+gmake -j 2
+gmake install
+
+5) build cloog
+./configure --with-gmp=/usr/home/${USER}/gmp/installed --with-ppl=/usr/home/${USER}/ppl/installed --prefix=/usr/home/${USER}/cloog/installed 
+gmake -j 2
+gmake install
+
+6) build binutils
+
+export LIBRARY_PATH=/usr/home/${USER}/cloog/installed/lib:/usr/home/${USER}/ppl/installed/lib:/usr/home/${USER}/gmp/installed/lib:/usr/home/${USER}/mpc/installed/lib:/usr/home/${USER}/mpfr/installed/lib${LIBRARY_PATH:+:}${LIBRARY_PATH}
+export LD_LIBRARY_PATH=/usr/home/${USER}/cloog/installed/lib:/usr/home/${USER}/ppl/installed/lib:/usr/home/${USER}/gmp/installed/lib:/usr/home/${USER}/mpc/installed/lib:/usr/home/${USER}/mpfr/installed/lib${LD_LIBRARY_PATH:+:}${LD_LIBRARY_PATH}
+
+
+note: --enable-plugins on freebsd binutils is not working out-of-the-box (needs -ldl which is from linux-spec, freebsd has this functionality in -lc already)...
+
+cp /usr/lib/libc.a /usr/home/${USER}/binutils/libdl.a
+cp /usr/lib/libc.so /usr/home/${USER}/binutils/libdl.so
+export LIBRARY_PATH=/usr/home/${USER}/binutils/${LIBRARY_PATH:+:}${LIBRARY_PATH}
+export LD_LIBRARY_PATH=/usr/home/${USER}/binutils/${LD_LIBRARY_PATH:+:}${LD_LIBRARY_PATH}
+
+# note: --enable-gold on freebsd default compiler causes internal compiler error (v. 4.2.1) 
+./configure --prefix=/usr/home/${USER}/binutils/installed/ --with-gmp=/usr/home/${USER}/gmp/installed --with-ppl=/usr/home/${USER}/ppl/installed --with-cloog=/usr/home/${USER}/cloog/installed --with-mpfr=/usr/home/${USER}/mpfr/installed --with-mpc=/usr/home/${USER}/mpc/installed --enable-lto --enable-plugins 
+
+gmake -j 2
+gmake install
+
+export PATH=/usr/home/${USER}/binutils/installed/bin${PATH:+:}${PATH}
+
+7) build gcc (various exports due to configure stript not putting the right values in the default process)
+
+aplly the following patching action before configuring
+diff -r ./gcc-4.6.1/gcc/config/i386/freebsd.h ./gcc-4.6.1-hacked/gcc/config/i386/freebsd.h
+diff -r ./gcc-4.6.2/gcc/config/i386/freebsd.h ./gcc-4.6.2-hacked/gcc/config/i386/freebsd.h
+76c76
+<    crti.o%s %{!shared:crtbegin.o%s} %{shared:crtbeginS.o%s}"
+---
+>    crti.o%s %{static:crtbeginT.o%s;shared:crtbeginS.o%s;:crtbegin.o%s}"
+diff -r ./gcc-4.6.1/gcc/config.gcc ./gcc-4.6.1-hacked/gcc/config.gcc
+528c528
+<   extra_parts="crtbegin.o crtend.o crtbeginS.o crtendS.o"
+---
+>   extra_parts="crtbegin.o crtend.o crtbeginS.o crtbeginT.o crtendS.o"
+diff -r ./gcc-4.6.1/libgcc/config.host ./gcc-4.6.1-hacked/libgcc/config.host
+160a161
+>   extra_parts="crtbegin.o crtbeginS.o crtbeginT.o crtend.o crtendS.o"
+
+... or, if all else fails and one needs to do things asap, can try: on freebsd copy /usr/lib/crtbeginT.o to installed/lib/gcc/x86_64.../crtbegin.o (mv original one for safekeeping purposes)
+
+./configure --prefix=/usr/home/${USER}/gcc/installed --disable-threads --enable-languages=c,c++,lto --enable-lto --disable-sjlj-exceptions --disable-libgomp --disable-nls --with-system-zlib --with-libiconv-prefix=/usr/local --with-gmp=/usr/home/${USER}/gmp/installed --with-ppl=/usr/home/${USER}/ppl/installed --with-cloog=/usr/home/${USER}/cloog/installed --with-mpfr=/usr/home/${USER}/mpfr/installed --with-mpc=/usr/home/${USER}/mpc/installed --disable-libgcj --disable-multilib --disable-shared --with-dwarf2 --enable-gold --enable-plugins
+
+gmake -j 2
+gmake install
+
+then start the new compiler environment shell (custom_env_freebsd...)
+
+# binutils...
+# try to rebuild binutils with enabled gold...
+delete binutils sources, re-extract, then
+./configure --prefix=/usr/home/${USER}/binutils/installed/ --with-gmp=/usr/home/${USER}/gmp/installed --with-ppl=/usr/home/${USER}/ppl/installed --with-cloog=/usr/home/${USER}/cloog/installed --with-mpfr=/usr/home/${USER}/mpfr/installed --with-mpc=/usr/home/${USER}/mpc/installed --enable-lto --enable-gold --enable-plugins 
+gmake -j2 
+gmake install
+
+
+8) build openssl
+./Configure --prefix=/usr/home/${USER}/openssl/installed/ no-threads no-shared BSD-x86_64
+gmake depend
+gmake -j 2
+gmake test 
+gmake install
+
+9) build boost
+./bootstrap.sh --prefix=/usr/home/${USER}/boost/installed/ --without-icu
+
+vim boost/config/user.hpp
+define (uncomment) BOOST_DISABLE_THREADS
+define BOOST_ASIO_DISABLE_IOCP (may need to actually add this line)
+define (uncomment) WIN32 nonsense
+
+./bjam toolset=gcc cxxflags="-std=c++0x" variant=release link=static threading=single --without-thread --without-wave --without-mpi --without-python --without-graph --without-graph_parallel --without-program_options --without-signals --without-test --without-serialization --layout=versioned install
+
+now, because the layout was versioned (otherwise link=static would not work), need to do some extra steps:
+
+in installed bost/installed/include/ 
+mv boost_vXYZ/boost .
+rmdir boost_vXYZ
+
+in installed boost/installed/lib
+rename relevant boost libs (and delete built _mt_ variants -- multithreaded ones)
+rename -s/-gcc46-1_48// *.a
+
+
+10) build gdb
+./configure --prefix=/usr/home/${USER}/gdb/installed/
+gmake -j 2
+gmake install
+
+11) build zlib
+./configure --prefix=/usr/home/${USER}/zlib/installed/ --static
+edit Makefile and delete all that relates to:
+SHAREDLIB etc.
+gmake -j 2
+gmake install
+

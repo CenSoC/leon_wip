@@ -1,0 +1,147 @@
+
+Written and contributed by Leonid Zadorin at the Centre for the Study of Choice
+(CenSoC), the University of Technology Sydney (UTS).
+
+Copyright (c) 2012 The University of Technology Sydney (UTS), Australia
+<www.uts.edu.au>
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+1. Redistributions of source code must retain the above copyright notice,
+this list of conditions and the following disclaimer.
+2. Redistributions in binary form must reproduce the above copyright notice,
+this list of conditions and the following disclaimer in the documentation
+and/or other materials provided with the distribution.
+3. All products which use or are derived from this software must display the
+following acknowledgement:
+  This product includes software developed by the Centre for the Study of
+  Choice (CenSoC) at The University of Technology Sydney (UTS) and its
+  contributors.
+4. Neither the name of The University of Technology Sydney (UTS) nor the names
+of the Centre for the Study of Choice (CenSoC) and contributors may be used to
+endorse or promote products which use or are derived from this software without
+specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE CENTRE FOR THE STUDY OF CHOICE (CENSOC) AT THE
+UNIVERSITY OF TECHNOLOGY SYDNEY (UTS) AND CONTRIBUTORS ``AS IS'' AND ANY 
+EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE 
+DISCLAIMED. IN NO EVENT SHALL THE CENTRE FOR THE STUDY OF CHOICE (CENSOC) OR
+THE UNIVERSITY OF TECHNOLOGY SYDNEY (UTS) OR CONTRIBUTORS BE LIABLE FOR ANY 
+DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES 
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; 
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON 
+ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT 
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS 
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+
+-------------------------------------------------------------------------------
+
+
+
+hacks for cross-compiling on FreeBSD to win32
+
+Firstly follow the native_custom_build_of_gcc_et_al.txt (to build libgomp, mpfr, mpc, et al)
+
+Then... 
+
+export LIBRARY_PATH=/usr/home/${USER}/cloog/installed/lib:/usr/home/${USER}/ppl/installed/lib:/usr/home/${USER}/gmp/installed/lib:/usr/home/${USER}/mpc/installed/lib:/usr/home/${USER}/mpfr/installed/lib${LIBRARY_PATH:+:}${LIBRARY_PATH}
+export LD_LIBRARY_PATH=/usr/home/${USER}/cloog/installed/lib:/usr/home/${USER}/ppl/installed/lib:/usr/home/${USER}/gmp/installed/lib:/usr/home/${USER}/mpc/installed/lib:/usr/home/${USER}/mpfr/installed/lib${LD_LIBRARY_PATH:+:}${LD_LIBRARY_PATH}
+
+1) build binutils (1st pass)
+
+start bash
+
+note: --enable-plugins on freebsd binutils is not working out-of-the-box (needs -ldl which is from linux-spec, freebsd has this functionality in -lc already)...
+
+cp /usr/lib/libc.a /usr/home/${USER}/binutils/libdl.a
+cp /usr/lib/libc.so /usr/home/${USER}/binutils/libdl.so
+export LIBRARY_PATH=/usr/home/${USER}/binutils/${LIBRARY_PATH:+:}${LIBRARY_PATH}
+export LD_LIBRARY_PATH=/usr/home/${USER}/binutils/${LD_LIBRARY_PATH:+:}${LD_LIBRARY_PATH}
+
+./configure --prefix=/usr/home/${USER}/mingw32/binutils/installed/ --with-gmp=/usr/home/${USER}/gmp/installed --with-ppl=/usr/home/${USER}/ppl/installed --with-cloog=/usr/home/${USER}/cloog/installed --with-mpfr=/usr/home/${USER}/mpfr/installed --with-mpc=/usr/home/${USER}/mpc/installed --target=i686-w64-mingw32 --enable-lto --enable-gold --enable-plugins
+
+gmake -j 2
+gmake install
+
+export PATH=/usr/home/${USER}/mingw32/binutils/installed/bin${PATH:+:}${PATH}
+
+2) 
+
+install runtime headers (mingw-w64-v2.0)
+cd mingw-w64-v2.0/mingw-w64-headers
+./configure --host=i686-w64-mingw32 --prefix=/usr/home/${USER}/mingw32/gcc/installed
+gmake install
+
+
+cd to the gcc dir
+mkdir objdir
+cd objdir
+
+../gcc-4.6.2/configure --prefix=/usr/home/${USER}/mingw32/gcc/installed --program-prefix="" --disable-threads --enable-languages=c,c++,lto --enable-lto --disable-sjlj-exceptions --disable-libgomp --disable-nls --with-system-zlib --with-libiconv-prefix=/usr/local  --with-gmp=/usr/home/${USER}/gmp/installed --with-ppl=/usr/home/${USER}/ppl/installed --with-cloog=/usr/home/${USER}/cloog/installed --with-mpfr=/usr/home/${USER}/mpfr/installed --with-mpc=/usr/home/${USER}/mpc/installed --disable-libgcj --target=i686-w64-mingw32 --disable-multilib --disable-shared --with-dwarf2 --enable-gold --enable-plugins
+
+gmake -j 2 all-gcc
+gmake install-gcc
+
+
+make runtime crt (mingw-w64-v2.0)
+start a new lose_32 environment shell (but dont close the current one)
+cd mingw-w64-v2.0/mingw-w64-crt
+./configure --disable-multilib --host=i686-w64-mingw32 --prefix=/usr/home/${USER}/mingw32/gcc/installed
+gmake -j 2
+gmake install
+exit custom lose_32 env shell
+
+in the original (previous shell)
+finish building gcc in objdir
+gmake -j 2
+gmake install
+
+paranoid step (mask any chances of sys-installed binutils being seen):
+exit shell and start the default bash (the one with which binuitls were made) and reinstall (over the existing installation) the empty pregram-prefix one...
+delete binutils sources and untar again -- clean start...
+
+export LIBRARY_PATH=/usr/home/${USER}/cloog/installed/lib:/usr/home/${USER}/ppl/installed/lib:/usr/home/${USER}/gmp/installed/lib:/usr/home/${USER}/mpc/installed/lib:/usr/home/${USER}/mpfr/installed/lib${LIBRARY_PATH:+:}${LIBRARY_PATH}
+export LD_LIBRARY_PATH=/usr/home/${USER}/cloog/installed/lib:/usr/home/${USER}/ppl/installed/lib:/usr/home/${USER}/gmp/installed/lib:/usr/home/${USER}/mpc/installed/lib:/usr/home/${USER}/mpfr/installed/lib${LD_LIBRARY_PATH:+:}${LD_LIBRARY_PATH}
+
+export LIBRARY_PATH=/usr/home/${USER}/binutils/${LIBRARY_PATH:+:}${LIBRARY_PATH}
+export LD_LIBRARY_PATH=/usr/home/${USER}/binutils/${LD_LIBRARY_PATH:+:}${LD_LIBRARY_PATH}
+./configure --prefix=/usr/home/${USER}/mingw32/binutils/installed/  --with-gmp=/usr/home/${USER}/gmp/installed --with-ppl=/usr/home/${USER}/ppl/installed --with-cloog=/usr/home/${USER}/cloog/installed --with-mpfr=/usr/home/${USER}/mpfr/installed --with-mpc=/usr/home/${USER}/mpc/installed --target=i686-w64-mingw32 --program-prefix="" --enable-lto --enable-gold --enable-plugins
+
+gmake -j 2
+gmake install
+
+
+3) start shell in mingw32 mode and build openssl
+edit Configure and add -DUNICODE -D_UNICODE to mingw target
+./Configure --prefix=/usr/home/${USER}/mingw32/openssl/installed/ no-threads no-shared mingw
+gmake depend
+gmake -j 2
+gmake install
+
+4) boost building
+
+start a new bash instance (non-custom)
+./bootstrap.sh --prefix=/usr/home/${USER}/mingw32/boost/installed/ --without-icu
+
+vim boost/config/user.hpp
+define (uncomment) BOOST_DISABLE_THREADS
+define BOOST_ASIO_DISABLE_IOCP (may need to actually add this line)
+
+then start shell in relevant mingw32 mode,
+
+./bjam toolset=gcc cxxflags="-std=c++0x" variant=release link=static threading=single --without-thread --without-wave --without-mpi --without-python --without-graph --without-graph_parallel --without-program_options --without-signals --without-test --without-serialization --layout=versioned install
+
+
+5) build zlib
+./configure --prefix=/usr/home/${USER}/mingw32/zlib/installed/ --static
+edit Makefile and delete all that relates to word starting with:
+SHAREDLIB...
+gmake -j 2
+gmake install
+
+"./i686-w64-mingw32/include/math.h" file may need to have double_t et al defined (when compiling in optimized mode, because then SSE mix math is in effect) and copied-over file has an issue with (__FLT_EVAL_METHOD__) being set to -1 via TARGET_FLT_EVAL_METHOD ... so something like this:
+# elif (__FLT_EVAL_METHOD__ == -1)    
+typedef float float_t;
+typedef double double_t;
+

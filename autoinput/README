@@ -1,0 +1,6 @@
+
+All of the top-level README file applies.
+
+A very quick hack to automate mouse and keyboard input on Win (from here on 'lose') OS.
+
+An important thing to remember is that some programs run at the admin level (e.g. some eye-tracker controlling software). If 'autoinput' runs as a normal user, then any input (mouse clicks, etc.) sent to windows of the admin-level program will be dropped/ignored by the system. So do set an appropriate 'run as' level of the utility before expecting it work properly.

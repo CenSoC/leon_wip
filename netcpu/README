@@ -1,0 +1,65 @@
+As per previous (top-level) README -- the contents of this work are indeed "in progress" and so some (or many) of the explanations may be missing. The relevant explanations/configurations content will be added as time progresses.
+
+--------------------------------------------------------------------------------
+
+For better undrestanding of the high-level design/reasons/etc. read the VCGW.pdf document (in the info_etc dir).
+
+The absolute majority of the development is done in FreeBSD environment and using C++ and single-threaded model async-IO and IPC with message-passing to provide parallel behaviour. This is intended to continue. Exceptional situations will be evaluated on a case-by-case basis.
+
+--------------------------------------------------------------------------------
+
+Basic setup is such: 
+
+* the server stays up;
+* processors can connect to server and offer their services at any time, they can go offline at any time also;
+jobs (e.g. dataset to be processed by a given model) are loaded to server via controller (in future such will be a GUI/WEB interface, currently such is a command-line executabel).
+
+In future, there will also be additional messages added to protocol allowing to query the status of the jobs, queue, etc.
+
+--------------------------------------------------------------------------------
+
+the clients_certificates directory contains certificates of the authorised clients (computational participants), the individual certificate files in such a directory must be further postprocessed with relevant openssl utility (e.g. "c_rehash .") in order for the openssl lib to parse and "see" the certificates during runtime.
+
+--------------------------------------------------------------------------------
+
+In addition to controller-server-processor(s) infrastructure, there are additional programms running:
+
+update_server<->update_client
+
+The update_server is responsible for offeringg various client machines the up-to-date binaries/executable, configurations files and other relevant utilities (e.g. nosleep for some OS).
+
+The files which update_server servers are usually stored in a separate repository/directory, e.g. update_server_repo.
+
+--------------------------------------------------------------------------------
+
+The update_server_repo directory/contents structure may look something like this:
+
+update_server_repo
+|-- censoc_netcpu_processor.cfg
+|-- certificate.pem
+|-- freebsd_64_e6550
+|-- freebsd_64_e8400 -> freebsd_64_e6550
+|-- lose_32_e8400 -> lose_32_unknown
+|-- lose_32_q9400 -> lose_32_unknown
+|-- lose_32_unknown
+|   |-- censoc_netcpu_nosleep.exe
+|   |-- censoc_netcpu_processor.exe
+|   `-- censoc_netcpu_update_client.exe
+|-- lose_32_w3505 -> lose_32_unknown
+|-- lose_32_xeon -> lose_32_unknown
+|-- lose_64_e5504
+|   |-- censoc_netcpu_nosleep.exe
+|   |-- censoc_netcpu_processor.exe
+|   `-- censoc_netcpu_update_client.exe
+|-- lose_64_e8400 -> lose_64_e5504
+|-- lose_64_q9400 -> lose_64_e5504
+|-- lose_64_unknown -> lose_64_e5504
+|-- lose_64_w3505 -> lose_64_e5504
+|-- lose_64_xeon -> lose_64_e5504
+`-- new_certificate.pem
+
+
+Symbolic links in the above are just a hack to use binaries from silghtly-different (-older), and compatible architectures. Once the open-sourcing is complete and repository sharing is enabled, it would be much easier to simply check-out the source and do a native-build :-) (e.g. gcc -march native) For the time-being however, just ballpark-ing it.
+
+
+--------------------------------------------------------------------------------

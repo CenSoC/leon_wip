@@ -1,0 +1,54 @@
+
+Written and contributed by Leonid Zadorin at the Centre for the Study of Choice
+(CenSoC), the University of Technology Sydney (UTS).
+
+Copyright (c) 2012 The University of Technology Sydney (UTS), Australia
+<www.uts.edu.au>
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+1. Redistributions of source code must retain the above copyright notice,
+this list of conditions and the following disclaimer.
+2. Redistributions in binary form must reproduce the above copyright notice,
+this list of conditions and the following disclaimer in the documentation
+and/or other materials provided with the distribution.
+3. All products which use or are derived from this software must display the
+following acknowledgement:
+  This product includes software developed by the Centre for the Study of
+  Choice (CenSoC) at The University of Technology Sydney (UTS) and its
+  contributors.
+4. Neither the name of The University of Technology Sydney (UTS) nor the names
+of the Centre for the Study of Choice (CenSoC) and contributors may be used to
+endorse or promote products which use or are derived from this software without
+specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE CENTRE FOR THE STUDY OF CHOICE (CENSOC) AT THE
+UNIVERSITY OF TECHNOLOGY SYDNEY (UTS) AND CONTRIBUTORS ``AS IS'' AND ANY 
+EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE 
+DISCLAIMED. IN NO EVENT SHALL THE CENTRE FOR THE STUDY OF CHOICE (CENSOC) OR
+THE UNIVERSITY OF TECHNOLOGY SYDNEY (UTS) OR CONTRIBUTORS BE LIABLE FOR ANY 
+DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES 
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; 
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON 
+ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT 
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS 
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+
+-------------------------------------------------------------------------------
+
+The reason for such a code -- I really do object to the re-hacking of the main project's (netcpu et al.) code to yield a native 'service' interface for Win(lose) OS with all the (on the other thread) callbacks to start/stop/blah-blah the service... The only thing that is really needed is to start the main process under a given (low-priv.) account -- preiod. So simple in UNIX, and UNIX shall be the main governing factor in the development of the bulk of the code. Any other OS issues shall be solved/remedied/etc. with additional utils (such as this temporary hack) as much as possible. If there shall be more time, then prehaps one shall write a 'wrapper' service process which will simply 'createprocess' for the main application an go no further than that. Currently, just using a 'task' which starts when the computer starts and then lanches the batch file.
+
+In it's essence, this directory represents a quick hack related to the system-admin installation issues on lose OS (which are, indeed, better solved by a specific distribution-on-a-given-OS undertaking). Thusly, at this stage, it is a temporary patch to allow for the deployment of the lose-OS (under)powered boxes in the NetCPU infrastracture.
+
+TODO: Will look into this when the first stage has been open-sourced and more 'native-builds' and tests can take place.
+
+In addition to the censoc_netcpu_update_client.bat
+the subdirs of usb_distro/{32,64}/censoc/netcpu
+must have  
+censoc_netcpu_update_client.exe
+and
+certificate.pem
+
+The .exe is to be generated as per build/compilation stage; and certificate should be unique as per any given deployment scenario (i.e. not to be shared in "one for all" public context).
+

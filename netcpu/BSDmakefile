@@ -1,0 +1,259 @@
+
+#
+# Written and contributed by Leonid Zadorin at the Centre for the Study of Choice
+# (CenSoC), the University of Technology Sydney (UTS).
+#
+# Copyright (c) 2012 The University of Technology Sydney (UTS), Australia
+# <www.uts.edu.au>
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+# 1. Redistributions of source code must retain the above copyright notice,
+# this list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+# this list of conditions and the following disclaimer in the documentation
+# and/or other materials provided with the distribution.
+# 3. All products which use or are derived from this software must display the
+# following acknowledgement:
+#   This product includes software developed by the Centre for the Study of
+#   Choice (CenSoC) at The University of Technology Sydney (UTS) and its
+#   contributors.
+# 4. Neither the name of The University of Technology Sydney (UTS) nor the names
+# of the Centre for the Study of Choice (CenSoC) and contributors may be used to
+# endorse or promote products which use or are derived from this software without
+# specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE CENTRE FOR THE STUDY OF CHOICE (CENSOC) AT THE
+# UNIVERSITY OF TECHNOLOGY SYDNEY (UTS) AND CONTRIBUTORS ``AS IS'' AND ANY 
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
+# WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE 
+# DISCLAIMED. IN NO EVENT SHALL THE CENTRE FOR THE STUDY OF CHOICE (CENSOC) OR
+# THE UNIVERSITY OF TECHNOLOGY SYDNEY (UTS) OR CONTRIBUTORS BE LIABLE FOR ANY 
+# DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES 
+# (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; 
+# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON 
+# ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT 
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS 
+# SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+#
+
+# Early days still... (a bit of this and that leftover from previous refactoring hacks/designs/etc).
+
+.PATH : 
+
+.ifndef TARGET_XXX
+.error This makefile should only be executed from the ./custom_env.sh which sets various env variables such as TARGET_XXX
+.endif
+
+.if ${TARGET_XXX:C/^.*-.*-mingw32$/mingw32/1} == "mingw32"
+FLAGS_YUCK = "-D_WIN32_WINNT=0x0501"
+LIB_YUCK_I = -mwindows -lws2_32 -lgdi32 
+LIB_YUCK_II = -lole32
+LIB_YUCK_III = -lntdll
+LIB_YUCK_IV = -liphlpapi 
+.endif
+
+.ifndef LIBS_DEFINED
+
+.MAIN : tests server processor controller update_server update_client lognormal_test flexi_dist_test exp_lookup_test survey_generator gmnl_2/simulator gmnl_2/2csv gmnl_2/2logit
+
+server :
+	make LIBS_DEFINED="-lboost_filesystem -lboost_system -lssl -lcrypto -lz" ${.TARGET}.exe
+
+finite_math : 
+	make LIBS_DEFINED=" " POSTFLAGS="-fno-lto -fno-whole-program -fno-finite-math-only" ${.TARGET}.o
+#	make LIBS_DEFINED=" " POSTFLAGS="-fno-lto -fno-whole-program -fno-fast-math" ${.TARGET}.o
+
+processor : finite_math
+	make LIBS_DEFINED="finite_math.o -lboost_filesystem -lboost_system -lssl -lcrypto -lz ${LIB_YUCK_I} ${LIB_YUCK_III}" ${.TARGET}.exe
+
+controller :
+	make LIBS_DEFINED="-lboost_system -lssl -lcrypto -lz" ${.TARGET}.exe
+#make LIBS_DEFINED="-lxlsreader -liconv -lboost_system -lssl -lcrypto" ${.TARGET}.exe
+
+nosleep :
+	make LIBS_DEFINED="${LIB_YUCK_IV} ${LIB_YUCK_III}" ${.TARGET}.exe
+
+gmnl_2/simulator : finite_math
+	make LIBS_DEFINED="finite_math.o -lz" ${.TARGET}.exe
+
+gmnl_2/2csv : 
+	make LIBS_DEFINED="-lz" ${.TARGET}.exe
+
+gmnl_2/2logit : 
+	make LIBS_DEFINED="-lz" ${.TARGET}.exe
+
+update : update_server update_client
+
+update_server : 
+	make LIBS_DEFINED="-lboost_regex -lboost_filesystem -lboost_system -lssl -lcrypto -lz" ${.TARGET}.exe
+
+update_client : 
+	make LIBS_DEFINED="-lboost_filesystem -lboost_system -lssl -lcrypto -lz ${LIB_YUCK_I} ${LIB_YUCK_II}" ${.TARGET}.exe
+
+clean : .PHONY 
+	cd gmnl_2 && rm -f *.core *.dd _viminfo *.exe *.okrun *.o 
+	cd mixed_logit && rm -f *.core *.dd _viminfo *.exe *.okrun *.o 
+	cd logit && rm -f *.core *.dd _viminfo *.exe *.okrun *.o 
+	rm -f *.core *.dd _viminfo *.exe *.okrun *.o 
+
+# TESTS...
+# NOTE -- tests are largerly incomplete w.r.t. automated error detection etc. In fact -- some of those should be move into a lib-related director{y,ies}
+tests : cdfinvn_utest combos_builder_utest range_utils_utest sha_file_utest csv_utest serialise_utest
+
+cdfinvn_utest :
+	make LIBS_DEFINED="-lboost_system" ${.TARGET}.okrun
+
+combos_builder_utest :
+	make LIBS_DEFINED="" ${.TARGET}.okrun
+
+range_utils_utest :
+	make LIBS_DEFINED="-lcrypto" ${.TARGET}.okrun
+
+sha_file_utest :
+	make LIBS_DEFINED="-lboost_filesystem -lboost_system -lcrypto" ${.TARGET}.okrun
+
+lognormal_test : finite_math
+	make LIBS_DEFINED="finite_math.o -lboost_system" ${.TARGET}.exe
+
+flexi_dist_test : finite_math
+	make LIBS_DEFINED="finite_math.o -lboost_system" ${.TARGET}.exe
+
+exp_lookup_test : finite_math
+	make LIBS_DEFINED="finite_math.o -lboost_system" ${.TARGET}.exe
+
+csv_utest :
+	make LIBS_DEFINED="" ${.TARGET}.okrun
+
+serialise_utest :
+	make LIBS_DEFINED="-lz" ${.TARGET}.okrun
+
+# outdated params: --param max-gcse-passes=3
+survey_generator :
+	make LIBS_DEFINED="-lcrypto" POSTFLAGS_FAST="" ${.TARGET}.exe
+
+.else
+
+# TODO -- ICONV was not detected during installation of libxls -- so needed to manually hack (+ it may also have mem leak)... will need to use custom patches...
+
+CENSOC_HOME = ${.CURDIR}/../
+
+# NOTE -- currently bypassing LIB XLS specifications in the makefile and adjusting those directly in the environment shell!!!
+# --- LIB XLS ---
+
+# FOR BUILDING WITH SYSTEM-WIDE LIBXLS OR for static linking with in-tree version (in case system-wide version does not use lib iconv, or perhaps leaks too much). RUN LIBXLS_REBUILD.SH FIRST THOUGH.
+
+# base location for lib xls
+
+# for external dynamic/shared xls lib (e.g. if such is installed in a custom dir)
+# LIBXLS=/home/online/libxls/installed/
+# or override for in-tree version
+# LIBXLS = ${CENSOC_HOME}3rdparty/libxls/
+
+# header location as a subdir of base location
+# LIBXLS_INC = ${LIBXLS}include/
+
+# lib location as a subdir of base location
+
+# for most cases
+# LIBXLS_LIB = ${LIBXLS}lib/
+# or override for in-tree version
+# LIBXLS_LIB = ${LIBXLS}src/.libs/
+
+# ---------------
+
+#INCS = -I${CENSOC_HOME} -I${LIBXLS_INC} 
+INCS = -I${CENSOC_HOME} 
+#LIBS = -L${LIBXLS_LIB} 
+
+# TODO -- use -Wconversion 
+# TODO -- combine may not be needed at all
+# TODO -- -Wno-parentheses could be enabled/changed later to -Wparentheses for occasional quality-assurance -sanity checks
+# NOTE -- for the time-being will use static linking throughout (to ease the initial update_{server, client} code), TODO later -- will use ${ORIGIN} in ELF (and similar tricks for non-ELF OSX) to make use of dynamic libs. This will call for more elaborate/complex(ish) updating of .so files and relevant symlinks  for some platforms, whilst other platforms may not need symlinks at all -- thought for future...)
+
+# -std=c++98
+# -std=c++0x
+FLAGS_COMMON = -std=c++0x -pipe -pedantic -static -ffor-scope -fstrict-aliasing -fstrict-overflow -DLITTLE_ENDIAN -DEIGEN_NO_EXCEPTIONS -Wall -Wunused -Wno-parentheses -Wextra -Wstrict-overflow -Wstrict-overflow=5 ${INCS} ${LIBS}
+
+FLAGS_DEBUG = ${FLAGS_COMMON} -ggdb -DNDEBUG_XSLOW
+#FLAGS_DEBUG = ${FLAGS_COMMON} -ggdb 
+
+# TODO -- may be brake-up some more into cpu-specific and non-cpu-specific ones (but then again, non-cpu-specific may be affected by cpu/arch/cache-size (e.g. -Os on some may be better than -O3 and --inlin(ing) may not be wise for some cpus with smaller caches, etc.) -- will need to think about it more...
+
+FLAGS_SMALL = -O0 ${FLAGS_COMMON} -s -DNDEBUG -D NDEBUG
+
+# outdated params: --param max-gcse-passes=100
+# some flags such as no-threadsafe-statics may not be needed as the whole thing (e.g. gcc, openssl, boost) should be bootstrapped to single-threaded memory model anyway...
+# NOTE -- the  -ftree-loop-if-convert-stores is only safe for single-threaded design!
+# note -- -floop-interchange may be thesame as -ftree-loop-linear... todo: read the doc more ...
+FLAGS_FAST_COMMON = -Ofast ${FLAGS_COMMON} -s \
+-fexcess-precision=fast \
+-ftree-loop-if-convert-stores  -floop-parallelize-all -floop-flatten -fgraphite-identity -floop-block -floop-strip-mine -floop-interchange -fipa-struct-reorg \
+-fno-float-store \
+-finline-functions -finline-functions-called-once -funit-at-a-time -Wno-inline \
+-fno-enforce-eh-specs -flto -fwhole-program -fuse-linker-plugin \
+-fno-threadsafe-statics \
+-fno-rtti \
+-maccumulate-outgoing-args -fomit-frame-pointer -momit-leaf-frame-pointer \
+-fvect-cost-model -ftracer -ftree-loop-ivcanon -ftree-loop-distribution -ftree-loop-im -fivopts -fdelete-null-pointer-checks \
+-fsee -fipa-cp -fipa-pta -fipa-matrix-reorg -fvariable-expansion-in-unroller -funroll-loops -ftree-loop-linear -funsafe-loop-optimizations -ftree-vectorize -DNDEBUG -D NDEBUG \
+--param max-reload-search-insns=8000 --param max-cselib-memory-locations=8000 --param max-gcse-memory=230000000 -fgcse-sm -fgcse-las -fgcse-after-reload --param max-sched-ready-insns=500 \
+--param max-crossjump-edges=15000 --param max-delay-slot-insn-search=15000 --param max-delay-slot-live-search=15000 --param scev-max-expr-size=15000 --param max-iterations-to-track=15000 --param max-cse-path-length=15000 --param max-cse-insns=15000 --param max-reload-search-insns=15000 --param max-sched-region-blocks=15000 --param max-sched-region-insns=15000 \
+-ffast-math \
+-fmerge-all-constants \
+-fno-pic \
+-fmodulo-sched \
+
+
+#-ftree-vectorizer-verbose=2 \
+#-fsection-anchors \
+
+
+
+FLAGS_FAST_E6550 = ${FLAGS_FAST_COMMON} -finline-limit=8888888 --param inline-unit-growth=8888888 --param large-function-growth=88888888 \
+-msahf -mrecip --param l1-cache-size=64 --param l1-cache-line-size=64 --param l2-cache-size=4096 \
+-mfpmath=sse+387 -march=native -DEIGEN_TUNE_FOR_CPU_CACHE_SIZE=1048576
+
+FLAGS_FAST_CORE2 = ${FLAGS_FAST_COMMON} -msahf -mrecip -mfpmath=sse,387 -march=core2 
+
+FLAGS_FAST_I386 = ${FLAGS_FAST_COMMON} -msahf -mrecip -march=i386 
+
+# TODO -- rerun the above (when building in release mode) and comb for loop index wraparound warnings... to make sure... with -Wunsafe-loop-optimizations 
+
+# TODO -- later add architecture defines as well!
+.ifdef BUILD_DEBUG
+FLAGS = ${FLAGS_YUCK} ${FLAGS_DEBUG} 
+.elifdef BUILD_SMALL
+FLAGS = ${FLAGS_YUCK} ${FLAGS_SMALL}
+.elifdef BUILD_FAST
+FLAGS = ${FLAGS_YUCK} ${FLAGS_FAST_E6550} ${POSTFLAGS_FAST}
+.else
+FLAGS = ${FLAGS_YUCK} ${FLAGS_DEBUG} 
+#FLAGS = ${FLAGS_YUCK} ${FLAGS_SMALL}
+#FLAGS = ${FLAGS_YUCK} ${FLAGS_FAST_E6550} ${POSTFLAGS_FAST}
+.endif
+
+
+DEPS != find ./ -maxdepth 1 -name "*.dd" || echo ""
+.for i in ${DEPS}
+.include "${i}"
+.endfor
+
+.SUFFIXES : .dd .cc .exe .okrun 
+
+# w.r.t. TMPDIR -- gcc sometimes needs a lot of space which memory-backed md device (fstab for /tmp) is not happy with (i.e. I don't feel like re-growing the fstab's entry at this point in time)
+.cc.exe : ${LIBS_DEFINED:M*.o}
+	c++ ${FLAGS} ${POSTFLAGS} -P -M ${.IMPSRC} -MG -MP -MT ${.TARGET} -o ${.TARGET:S/.exe/.dd/g} || ( rm -f ${.TARGET} && exit 1 )
+	TMPDIR=/home/`whoami`/tmp c++ ${FLAGS} ${POSTFLAGS} ${.IMPSRC} ${LIBRARY_PATH_XXX} ${LIBS_DEFINED} -o ${.TARGET} || ( rm -f ${.TARGET} && exit 1 )
+
+.cc.o : 
+	c++ ${FLAGS} ${POSTFLAGS} -P -M ${.IMPSRC} -MG -MP -MT ${.TARGET} -o ${.TARGET:S/.o/.dd/g} || ( rm -f ${.TARGET} && exit 1 )
+	TMPDIR=/home/`whoami`/tmp c++ ${FLAGS} ${POSTFLAGS} -c ${.IMPSRC} ${LIBRARY_PATH_XXX} -o ${.TARGET} || ( rm -f ${.TARGET} && exit 1 )
+
+# NOTE -- tests are largerly incomplete w.r.t. automated error detection etc. In fact -- some of those should be move into a lib-related director{y,ies}
+.cc.okrun : ${LIBS_DEFINED:M*.o}
+	c++ ${FLAGS} ${POSTFLAGS} -P -M ${.IMPSRC} -MG -MP -MT ${.TARGET} -o ${.TARGET:S/.okrun/.dd/g} || ( rm -f ${.TARGET} && exit 1 )
+	TMPDIR=/home/`whoami`/tmp c++ ${FLAGS} ${POSTFLAGS} ${.IMPSRC} ${LIBRARY_PATH_XXX} ${LIBS_DEFINED} -o ${.TARGET:S/.okrun/.exe/g} || ( rm -f ${.TARGET:S/.okrun/.exe/g} && exit 1 )
+	( ./${.TARGET:S/.okrun/.exe/g} && touch ${.TARGET} ) || ( rm -f ${.TARGET} && exit 1 )
+
+.endif
