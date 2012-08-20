@@ -52,8 +52,7 @@ struct models_ids {
 	enum val {
 		logit = 1,
 		mixed_logit = 2,
-		christine = 76,
-		gmnl_2 = 77
+		gmnl_2 = 3
 	};
 };
 
