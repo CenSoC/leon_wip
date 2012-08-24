@@ -42,6 +42,12 @@
 
 # temp hack only, use with cross-build env shell settings from netcpu project..
 
+bail()
+{
+	echo "Error: [$1]"
+	exit 1
+}
+
 
 # i686-w64-mingw32-gcc -mwindows -s -O3 -DNDEBUG -D_WIN32_WINNT=0x0501 autoinput.cc  -o autoinput.exe
 
@@ -57,8 +63,10 @@ c++ -Wall -mwindows -static -s -O3 -DNDEBUG -D_WIN32_WINNT=0x0501 autoinput.cc -
 
 #cp autoinput_start.exe autoinput/autoinput_start.xxx
 #cp autoinput_stop.exe autoinput/autoinput_stop.xxx
-cp autoinput.exe autoinput/autoinput.xxx
-cp start.csv stop.csv autoinput/
+cp info_etc/autoinput.pdf autoinput/README.pdf || bail "doc copy"
+cp autoinput.exe autoinput/ || bail "exe copy"
+cp start.csv stop.csv autoinput/ || bail "sample csv copy"
+cp ../LICENSE.txt autoinput/ || bail "license copy"
 
 zip -r autoinput.zip autoinput
 
