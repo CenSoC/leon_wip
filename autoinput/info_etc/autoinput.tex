@@ -1,0 +1,307 @@
+
+%
+% Written and contributed by Leonid Zadorin at the Centre for the Study of Choice
+% (CenSoC), the University of Technology Sydney (UTS).
+%
+% Copyright (c) 2012 The University of Technology Sydney (UTS), Australia
+% <www.uts.edu.au>
+%
+% Redistribution and use in source and binary forms, with or without
+% modification, are permitted provided that the following conditions are met:
+% 1. Redistributions of source code must retain the above copyright notice,
+% this list of conditions and the following disclaimer.
+% 2. Redistributions in binary form must reproduce the above copyright notice,
+% this list of conditions and the following disclaimer in the documentation
+% and/or other materials provided with the distribution.
+% 3. All products which use or are derived from this software must display the
+% following acknowledgement:
+%   This product includes software developed by the Centre for the Study of
+%   Choice (CenSoC) at The University of Technology Sydney (UTS) and its
+%   contributors.
+% 4. Neither the name of The University of Technology Sydney (UTS) nor the names
+% of the Centre for the Study of Choice (CenSoC) and contributors may be used to
+% endorse or promote products which use or are derived from this software without
+% specific prior written permission.
+%
+% THIS SOFTWARE IS PROVIDED BY THE CENTRE FOR THE STUDY OF CHOICE (CENSOC) AT THE
+% UNIVERSITY OF TECHNOLOGY SYDNEY (UTS) AND CONTRIBUTORS ``AS IS'' AND ANY 
+% EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
+% WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE 
+% DISCLAIMED. IN NO EVENT SHALL THE CENTRE FOR THE STUDY OF CHOICE (CENSOC) OR
+% THE UNIVERSITY OF TECHNOLOGY SYDNEY (UTS) OR CONTRIBUTORS BE LIABLE FOR ANY 
+% DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES 
+% (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; 
+% LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON 
+% ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT 
+% (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS 
+% SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+%
+
+
+\documentclass[12pt,a4paper]{article}
+
+\usepackage{rotating}
+\usepackage{fancyhdr}
+\usepackage{url}
+\usepackage{hyperref}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{bm}
+\usepackage{soul}
+\usepackage{graphicx}
+\usepackage[cm]{fullpage}
+\usepackage{float}
+\usepackage{color,soul,xcolor,colortbl}
+\usepackage{framed}
+
+
+%\floatstyle{boxed} 
+%\restylefloat{figure}
+
+
+% \renewcommand{\labelitemi}{$\bullet$}
+% \renewcommand{\labelitemi}{$\circ$}
+\renewcommand{\labelitemii}{$\circ$}
+% \renewcommand{\labelitemii}{$\cdot$}
+% \renewcommand{\labelitemiii}{$\diamond$}
+% \renewcommand{\labelitemiv}{$\ast$}
+
+\pagestyle{fancy}
+\renewcommand{\headrulewidth}{0pt}
+\renewcommand{\footrulewidth}{0.3pt}
+\fancyhf{}
+\lfoot{\footnotesize{autoinput documentation}}
+\rfoot{\small{page \thepage}}
+
+
+\begin{document}
+
+
+\sethlcolor{yellow}
+
+\pdfpkresolution=2400
+\pdfcompresslevel=0
+\pdfobjcompresslevel=0
+\pdfdecimaldigits=9
+
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{2ex}
+
+
+\begin{titlepage}
+\begin{center}
+
+
+% Title
+
+\vspace*{3cm}
+
+\rule{\linewidth}{0.5mm} \\[0.4cm]
+{ \huge \bfseries autoinput }\\[0.4cm]
+
+
+{\large \emph{A very basic hack for a software utility to automate mouse-click and key-press events.}}
+\rule{\linewidth}{0.5mm}
+\\[1.5cm]
+
+
+
+\vspace{3cm}
+
+{\Large \textsc{Centre for the Study of Choice (CenSoC)}}
+
+{\large University of Technology Sydney (UTS), Australia.}
+
+
+\vfill
+
+% Bottom of the page
+
+\end{center}
+
+\end{titlepage}
+
+\newpage
+\tableofcontents
+
+\newpage
+\section{License and authorship}
+
+Written and contributed by Leonid Zadorin at the Centre for the Study of Choice (CenSoC), the University of Technology Sydney (UTS).
+
+The work is released under the following open-source license:
+
+Copyright (c) 2012 The University of Technology Sydney (UTS), Australia \(\langle\)www.uts.edu.au\(\rangle\)
+
+Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+
+3. All products which use or are derived from this software must display the following acknowledgement:
+
+\textit{This product includes software developed by the Centre for the Study of Choice (CenSoC) at The University of Technology Sydney (UTS) and its contributors.}
+
+4. Neither the name of The University of Technology Sydney (UTS) nor the names of the Centre for the Study of Choice (CenSoC) and contributors may be used to endorse or promote products which use or are derived from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE CENTRE FOR THE STUDY OF CHOICE (CENSOC) AT THE UNIVERSITY OF TECHNOLOGY SYDNEY (UTS) AND CONTRIBUTORS ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE CENTRE FOR THE STUDY OF CHOICE (CENSOC) OR THE UNIVERSITY OF TECHNOLOGY SYDNEY (UTS) OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+
+\newpage
+\section{Additional contributors}
+
+\newpage
+\section{Introduction}
+
+At present this document should be invariably seen as a ``work-in-progress'' -- to the point of representing a ``thinking out loud'' process. As time goes by, the utility of this document and it's correctness are expected to improve.
+
+The overall intent of the document is to describe various relevant installation and deployment caveats as well as to document the scripting file format used by the software to perform it's functions.
+
+\section{Background}
+
+The \textit{autoinput} utility represents a very small hack which simulates mouse-movements -clicks and key-presses via a script file provided as a command-line argument. 
+
+Although it is applicable to many deployment scenarios it was initially scribbled for the purposes of aiding a project where an extremely coarse synchronization between various programs was desired -- instead of manually clicking on ``start'' buttons and pressing various \textit{esc} and \textit{enter} keys to begin multiple activities within different programs at ``almost'' the same time, an automated process was desired to accomplish such actions.
+
+In presence of many already-existing solutions yielding similar functionality, this utility was written due to the following considerations:
+\begin{itemize}
+\item it represented a very quick hack/job and did not take much time at all
+
+\item it needed to be lightweight and easily-learned -scripted with respect to it's automation and general use
+
+\item it needed to be open-sourced and fully extensible for the purposes of future specializations including issues such as 
+\begin{itemize}
+\item ability to further specialize/add/change various events (e.g. mouse, keyboard, etc.) or other input-simulation generated by the utility (thereby pointing to an implicit need for a source-level access to the utility's internals)
+\item being launched and running in the background without any GUI/windows of its own (i.e. low user-interface intrusion)
+\item low amount of overhead with respect to script-processing and overall system interaction (i.e. whilst being extensible, the utility should also be without any unnecessary ``bells'n'whistles'' associated with more generic, wider-audience solutions)
+\item simple scripting format (e.g. .csv) which is easily editable within and integrated with other applications (e.g. text editors, spreadsheets, etc.)
+\end{itemize}
+\end{itemize}
+
+\section{Scripting format}
+
+The autoinput utility reads lines from a .CSV (comma separated values) file and executes \textit{each line} as a separate command.
+
+Commands (text contained in each line) are \textit{case sensitive}.
+
+The \textit{fir}st value/field on a given line denotes which command it happens to be. Whether there are additional  fields/values (separated by comas) depends on the command in question.
+
+The empty first field (e.g. lines beginning with a coma) denote a comment line. You can type whatever you like after the coma for your informative purposes as the line will not be executed/processed by the utility.
+
+
+The double-quotes are allowed to enclose any field (including the empty/missing values). Thusly the following are both comments:
+
+\texttt{, this is a comment}
+
+\texttt{"", this is a comment}
+
+Empty lines are also allowed (will be skipped).
+
+\section{Supported commands}
+
+\subsection{mose\_move}
+The \texttt{mouse\_move} command the moves mouse pointer around on the screen. It has two additional arguments: the x and y (pixel-wise) coordinates for the mouse pointer's new location. Allowed coordinates are non-negative integers with top-left corner being the origin. Greater numbers move the pointer down and right respectively.
+
+For example a complete \texttt{mose\_move} command in a .csv file may look like: \\
+\texttt{mouse\_move,0,0} \\
+and would move the mouse pointer to a location at a top-left corner of the computer's desktop. 
+
+After the autoinput is finished processing a given .csv scripting file the mouse-pointer is returned to the original location (i.e. before autoinput's invocation).
+
+The best thing is not to wiggle the mouse during the automated execution (just an advise really ;-)
+
+\subsection{mouse\_down}
+The \texttt{mouse\_down} sends a left-click \textit{down} event (i.e. user pressing-down on the left button of a mouse).
+
+\subsection{mouse\_up}
+The \texttt{mouse\_up} sends a left-click \textit{up} event (i.e. user releasing the left button of a mouse).
+
+\subsection{click}
+The \texttt{click} command is synonymous with \\
+\texttt{mouse\_move,x,y} \\
+\texttt{mouse\_down} \\
+\texttt{mouse\_up} \\
+sequence of commands.
+
+Double left-click could be achieved by two \texttt{click} commands with the same coordinates: \\
+\texttt{click,100,100} \\
+\texttt{click,100,100}
+
+\subsection{sleep}
+The \texttt{sleep} command, whenever such is encountered in a .csv file, pauses the execution of the script file. The command has one argument: the positive amount to sleep in milliseconds, for example: \\
+\texttt{sleep,1000}
+
+\subsection{ascii}
+The \texttt{ascii} command emulates a user pressing (down, then up) a given key on a keyboard. The key in question is specified by the second argument/value on the line. It represents a decimal value of the ASCII symbol. For example the following command: \\
+\texttt{ascii,27} \\
+will make computer think that the user had pressed an \textit{esc} key.
+
+\section{Installation}
+
+\hl{TODO -- a very basic hack at the moment}
+
+Create a folder for the program and relevant script .csv file, e.g. \\ 
+\texttt{ c:\textbackslash\textbackslash autoinput } \\
+ and put the autoinput.exe and script files (e.g. start.csv, stop.csv) in the aforementioned folder.
+
+Program basically runs by supplying a .csv filename as it's first argument on the command line. 
+
+If wanting to launch the autoinput via a GUI element (e.g. an icon on the taskbar) then the following must be considered: some Windows\textsuperscript{\textregistered} versions will not allow to have duplicate quick-launch icons for the same program. This, however, is usually easy to fix as it a \textit{pair} of the program's name \textit{and} it's command-line arguments that must be unique. So, simply:
+\begin{itemize} 
+\item create the first quick-launch icon (e.g. right-clicking on the autoinput and choosing``pin to taskbar'')
+\item then edit the icon's run arguments to include a given .csv file (e.g. start.csv) by:
+\begin{itemize} 
+\item right-clicking on the taskbar's icon, 
+\item then right-clicking again on the application's name in the newly popped-up window, 
+\item then editing the ``target'' field details by appending start.csv text
+\end{itemize}
+\item next, create a second quick-launch icon (just by dragging utility to the bar or similar)
+\item edit the second icon's run arguments to have a different .csv file (e.g. stop.csv)
+\end{itemize}
+So that basically one has two distinct launch settings for the two icons: \\
+\texttt{autoinput.exe start.csv} \\ 
+and \\
+\texttt{autoinput.exe stop.csv}
+
+\section{Deployment caveats}
+
+\subsection{Timing-performance or lack thereof}
+The target demographics of this utility should be under no illusion in expecting any of the ``hard'' real-time latencies and/or ``tight'' timing synchronization.
+
+Whilst the ``sleep'' command stipulates time in milliseconds -- in most of the generic desktop computers this is only the time that is being \textit{asked} of the computer/OS to sleep the utility for.
+
+Most desktop systems will \textit{not} honor this request to the exact millisecond. 
+
+Usually the timeout/sleep-duration is tentatively implemented in steps of 10 milliseconds -- simply asking 1 ms of sleep and expecting to ``wake up'' afterwards right away may not result in a 1 ms timeout (i.e. most likely it will be somewhat longer -- how much exactly depends on complex things relating to current computer configuration which may or may not be tunable). 
+
+For example some Linux boxes may offer 1ms granulation in scheduling (albeit in exchange for greater CPU-overhead when managing multi-tasking issues) but even then, such precisions are \textit{not} able to guarantee an exact wake-up time (i.e. \textit{differences between ``soft'' real-time and ``hard'' real-time scheduling}).
+
+Moreover, even if/when using a ``hard'' real-time scheduling system, one must realize that without any hardware-clock synchronization of the underlying hardware (e.g. eye-trackers, EEG scanners) at the actual \textit{hardware} level, any of the attempts to yield precise (e.g. non-drifting) synchronization of the devices are likely to be futile.
+
+\subsection{The phantom events issues}
+
+Some cases may arise where user may see the mouse pointer being moved, but the actual mouse-click and key-press events not eventuating as if they are not working or not being present in the script.
+
+This is most likely an error on behalf of the user (or the sysadmin who had installed and configured the autoinput utility). The reasons are as follows:
+\begin{itemize}
+\item a given, to-be-automated, program (e.g. an eye-tracker software) may have been installed in such a way that it needs to run at the highest administrator-privileged level whist most other programs, inclusive of the autoinput utility, may be running with normal-user privileges.
+
+\item when autoinput utility is sending mouse-click events (and key-press events) to the to-be-automated program -- the system simply blocks such events (because it sees a normally-privileged program trying to manipulate a super-privileged program and security-wise this is a big NO NO).
+\end{itemize}
+
+The quickest of remedies is to configure autoinput to \textit{also} run in a super-privileged mode, i.e. "run as administrator".
+However, such an approach has a side-effect -- whenever \textit{any} super-privileged program starts Windows\textsuperscript{\textregistered} defaults to displaying an annoying dialog box (something to the tune of: "this program is trying to do xyz... do you want to allow it?"). This would now hold true not only for the to-be-automated software but \textit{also} for \textit{every} invocation of the autoinput. 
+
+The following steps could be taken in a response to the aforementioned side-effect:
+\begin{itemize}
+\item Just live with it -- will have to click on "yes" button... a minor annoyance but will drive you nuts as it has to be done every time.
+\item Disable the annoying dialog box for all the super-admin programs in the first place (so that when you start to-be-automated program, autoinput, etc. -- no annoying dialog box shall be shown for any of such programs. \\ 
+\hl{BUT BEWARE}: the thing that defaults to displaying the aforementioned dialog box is called UAC (user access control). It is a very good security feature and disabling it \textit{will} make your system less secure -- so you'd better know what you are doing... (this is where the sys-admin position should deal with these things).
+
+\end{itemize}
+
+\subsection{Editing of the scripting .csv file}
+You can edit the commands.csv in a text editor or a spreadsheet program. If using a spreadsheet program, do make sure that you save-as commands.csv and not as native spreadsheet formats.
+
+\end{document}
