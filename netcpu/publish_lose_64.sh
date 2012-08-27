@@ -38,7 +38,7 @@
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
 #
 
-. ./bail.sh
+. ../shell_scripts/bail.sh
 
 SUBREPO="lose_64_"
 #TARGETS="q9400 xeon w3505 e5504"

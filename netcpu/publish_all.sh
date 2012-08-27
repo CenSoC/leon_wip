@@ -38,7 +38,7 @@
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
 #
 
-. ./bail.sh
+. ../shell_scripts/bail.sh
 
 ./publish_lose_32.sh || bail lose_32
 ./publish_lose_64.sh || bail lose_64

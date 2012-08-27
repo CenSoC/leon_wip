@@ -38,7 +38,7 @@
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
 #
 
-. ./bail.sh
+. ../shell_scripts/bail.sh
 
 SUBREPO="lose_32_"
 TARGETS="unknown"
