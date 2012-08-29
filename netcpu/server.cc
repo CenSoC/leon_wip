@@ -792,6 +792,7 @@ main(int argc, char * * argv)
 	return 0;
 }
 
+#include "gmnl_2a/server.h"
 #include "gmnl_2/server.h"
 #include "logit/server.h"
 #include "mixed_logit/server.h"

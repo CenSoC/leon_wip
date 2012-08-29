@@ -1,0 +1,4 @@
+MUST reduce code duplication between gmnl_2 and gmnl_2a... depending on whether both are actually of use... currently in the 'scetch' mode.
+
+deprecate gamma in the controller and server portions (if needed), I think processor has already been done
+

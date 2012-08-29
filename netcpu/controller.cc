@@ -310,6 +310,7 @@ main(int argc, char * * argv)
 	return 0;
 }
 
+#include "gmnl_2a/controller.h"
 #include "gmnl_2/controller.h"
 #include "logit/controller.h"
 #include "mixed_logit/controller.h"

@@ -38,47 +38,30 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 */
 
-#include <map>
+// includes... {
 
-#include "message.h"
+#include <netcpu/converger_1/server.h>
 
+#include <netcpu/gmnl_2/message/meta.h>
+#include <netcpu/gmnl_2/message/bulk.h>
 
-#ifndef CENSOC_NETCPU_MAIN_MODELS_H
-#define CENSOC_NETCPU_MAIN_MODELS_H
+// includes }
 
-namespace censoc { namespace netcpu { 
+#ifndef CENSOC_NETCPU_SCALED_OFFSET_MIXED_LOGIT_SERVER_H
+#define CENSOC_NETCPU_SCALED_OFFSET_MIXED_LOGIT_SERVER_H
 
-struct models_ids {
-	enum val {
-		logit = 1,
-		mixed_logit = 2,
-		gmnl_2 = 3,
-		gmnl_2a = 4
-	};
+//{ for the time-being model_factory_interface will be automatically declared, no need to include explicitly...}
+
+namespace censoc { namespace netcpu { namespace gmnl_2a { 
+
+template <typename N, typename F>
+struct model_traits {
+	typedef netcpu::converger_1::message::meta<N, F, gmnl_2::message::meta<N> > meta_msg_type;
+	typedef netcpu::converger_1::message::bulk<N, F, gmnl_2::message::bulk> bulk_msg_type;
 };
 
-typedef ::std::map<unsigned, model_factory_interface *> models_type;
-models_type static models;
+netcpu::converger_1::model_factory<gmnl_2a::model_traits, netcpu::models_ids::gmnl_2a> static factory;
 
-template <models_ids::val Id>
-struct model_factory_base : model_factory_interface {
-	model_factory_base()
-	{
-		assert(netcpu::models.find(Id) == netcpu::models.end());
-		netcpu::models.insert(::std::pair<unsigned, model_factory_interface *>(Id, this));
-	}
-	enum {id = Id};
-
-#ifndef NDEBUG
-	~model_factory_base()
-	{
-		netcpu::models_type::iterator i(netcpu::models.find(Id));
-		assert(i != netcpu::models.end());
-		assert(i->second == this);
-	}
-#endif
-};
-
-}}
+}}}
 
 #endif
