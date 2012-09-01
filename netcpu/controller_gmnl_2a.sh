@@ -45,7 +45,7 @@ CMDLINE=" --server_cert certificate.pem --client_cert client_certificate.pem --c
 --model 4:offer \
 	--file ../simul_data_gmnl_2a.csv --x 5:6 --resp 1 --fromrow 2 --sort 1,2,3 --alts 2 --best 4 \
 	--repeats 1000 \
-	--int_resolution 32 --float_resolution single --extended_float_resolution double --complexity_size 88800000 --minimpr 1.0000001 --draws_sets_size 200 --shrink_slowdown 0.3 --dissect off --reduce_exp_complexity off \
+	--int_resolution 32 --float_resolution single --extended_float_resolution double --complexity_size 88800000 --minimpr 1.0000001 --draws_sets_size 1 --shrink_slowdown 0.3 --dissect off --reduce_exp_complexity off \
 	--coeffs_atonce_size 4 \
 		--cm 1:-4:4:.003:4 \
 		--cm 3:0:4:.003:4 \
