@@ -247,8 +247,8 @@ struct task_processor {
 		ev_cache_tmp_or_censor_cache_tmp = eta_cache + float_repetitions_column_stride_size * draws_sets_size * x_size;
 		set_pointer(ev_cache, ev_cache_tmp_or_censor_cache_tmp + float_repetitions_column_stride_size * alternatives);
 		set_pointer(matrix_haltons_nonsigma, ev_cache + extended_float_repetitions_column_stride_size);
-		matrix_haltons_sigma = matrix_haltons_nonsigma + float_repetitions_column_stride_size * x_size * respondents_size;
-		sigma_bar_tau_cached_main = matrix_haltons_sigma + float_repetitions_column_stride_size * respondents_size - (float_repetitions_column_stride_size_modulo ? repetitions_column_stride_size_extend_by : 0);
+		matrix_haltons_sigma = matrix_haltons_nonsigma + float_repetitions_column_stride_size * x_size * draws_sets_size;
+		sigma_bar_tau_cached_main = matrix_haltons_sigma + float_repetitions_column_stride_size * draws_sets_size - (float_repetitions_column_stride_size_modulo ? repetitions_column_stride_size_extend_by : 0);
 		sigma_bar_tau_cached_tmp = sigma_bar_tau_cached_main + draws_sets_size;
 		stage3_composite_equation_tau_cached = sigma_bar_tau_cached_tmp + draws_sets_size;
 		stage3_composite_equation_phi_cached = stage3_composite_equation_tau_cached + draws_sets_size;
