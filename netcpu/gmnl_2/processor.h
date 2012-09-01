@@ -420,6 +420,21 @@ public:
 						float_type const tmp(tau_value * matrix_haltons_sigma_[r]);
 						sigma_cache_[r] = tmp < 0 ? 1 / (1 - tmp) : tmp + 1;
 					}
+#if 0
+					/**
+						@note experimental mean-normalisation -- currently disabled. Provided only for record-keeping purposes (so it will be in the repository). 
+						This is quite simply due to the following:
+						1) There was no clear advantage in empirical terms in using it (although this could well be due to the fact that simulation process cannot use the exact same mean-values (no "random" draws there); and the fact that mean-normalisation distorts the shape of the distribution (because it scales its draws by a scalar, thus invariably "shriking" the whole thing... somewhat).
+						2) The product of "fluctuating mean of the scaling distro" with the "betas and etas" is of no significance to me as, in my case, the finally converged-on betas and etas are normalised (scaled) anyway. In other words, the concept of final parameters includes not raw but normalised betas and etas (whilst discarding sigma and tau altogether).
+						3) The apparent help that mean-normalisation provides in order to prevent "all betas at once" coefficient complexity requirement in the underlying convergence algorithm is a double-edged sword... As previously stated -- normalising arithmetic mean of the distribution (by ritue of scaling) whose geometric mean is already one (and aligend with the mode) is also going to distort the shape of the scaling distribution (in comparison to the "as is" mean); and who knows what is going to produce better likelihood: changed shape'n'width of the scaling distribution with the unchanged mean; or the changed mean with "greater-variance in scaled distribution", but with the "undistorted" shape. To this extent GMNL2a may provide a better approach anyway as it has a separatly adjusted "offset" variable which can also act as a mean-normaliser (not via scaling but rather via additive process).
+					*/
+					float_type drawise_arithmetic_mean_normalisation(0);
+					for (size_type r(0); r != repetitions; ++r)
+						drawise_arithmetic_mean_normalisation += sigma_cache_[r];
+					drawise_arithmetic_mean_normalisation = repetitions / drawise_arithmetic_mean_normalisation;
+					for (size_type r(0); r != repetitions; ++r)
+						sigma_cache_[r] *= drawise_arithmetic_mean_normalisation;
+#endif
 				}
 
 				if (censoc::was_fpu_ok(respondent_probability_cache, &censoc::init_fpu_check_anchor) == false) { // No point in caching -- otherwise may reuse it detrementally on subsequent iteration(s) [when such may not have fpu exceptions flag set then)
