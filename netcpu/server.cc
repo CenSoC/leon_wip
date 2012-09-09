@@ -283,7 +283,7 @@ on_completed_tasks_update()
 	{
 		::std::ofstream index_stream((index_stream_filepath + ".tmp").c_str(), ::std::ios::trunc);
 		if (index_stream.is_open()) {
-			for (::std::list<netcpu::task *>::iterator i(pending_tasks.begin()); i != pending_tasks.end(); ++i) 
+			for (::std::list<netcpu::task *>::iterator i(completed_tasks.begin()); i != completed_tasks.end(); ++i) 
 				index_stream << (*i)->name() << ::std::endl;
 		}
 	}
