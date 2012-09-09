@@ -70,6 +70,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <iostream>
 #include <set>
 #include <boost/bind.hpp>
+#include <boost/scoped_ptr.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/asio.hpp>
 #include <boost/asio/ssl.hpp>
@@ -145,6 +146,7 @@ struct _interface {
 		// while (config_file) 
 
 			::std::string const server_at("netcpu.zapto.org:8877"), cert_filename("certificate.pem"), alternative_cert_filename("new_certificate.pem");
+			//::std::string const server_at("localhost:8889"), cert_filename("certificate.pem"), alternative_cert_filename("new_certificate.pem");
 #if 0
 			// see above for why non-config_file setup is being used now...
 			config_file >> server_at;
@@ -306,12 +308,12 @@ launch_processors()
 }
 
 // NOTE: largely copy from 'processor.cc'...
-struct peer_connection : public netcpu::io_wrapper {
+struct peer_connection : public netcpu::io_wrapper<netcpu::message::async_driver> {
 
 	::boost::filesystem::path target_path;
 
 	peer_connection(netcpu::message::async_driver & x)
-	: netcpu::io_wrapper(x) {
+	: netcpu::io_wrapper<netcpu::message::async_driver>(x) {
 		// not calling 'run' code here because 'write' will implicitly call 'shared_from_this' and external onwership by shared pointer is not yet setup (ctor for shared pointer will wait for the ctor of peer_con to complete first)...
 		// still, however, it is more elegant than having shared_ptr(this) here in ctor an then worrying/making sure that nothing that follows it in ctor will ever throw
 	}
@@ -754,7 +756,7 @@ run(char const * ownpath)
 				censoc::scheduler::idle();
 
 
-				censoc::ptr<_interface> ui(new _interface);
+				::boost::scoped_ptr<_interface> ui(new _interface);
 
 				::boost::shared_ptr<netcpu::message::async_driver> new_driver;
 				netcpu::peer_connection * new_peer;
@@ -791,7 +793,7 @@ run(char const * ownpath)
 
 				new_driver->set_keepalive();
 
-				ui.reset(NULL); 
+				ui.reset(); 
 
 #ifdef __WIN32__
 				// ideally 'TerminateProcess' in loser-os should be as robust as signal/raise/kill as in Unix-like oses (inclusive of people not writing system-wide dll/shared-libs which are robust w.r.t. global data and unexpectedly terminating processes...) alas shall be "nice" to loser-os
@@ -821,15 +823,8 @@ run(char const * ownpath)
 	}
 }
 
-}}
-
-#include "io_wrapper.pi"
-
-namespace censoc { namespace netcpu { 
 peer_connection::~peer_connection() throw()
 {
-	io().being_taken_over = true; // to prevent re-newing of another peer_connection in the base class
-	io().final_in_chain = true; // will reset io(? -- todo re-check/refresh my memory w.r.t. my own code -- things take sooo long I end up forgetting my own code!)
 	censoc::llog() << "dtor in peer_connection" << ::std::endl;
 }
 

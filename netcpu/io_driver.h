@@ -57,7 +57,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 namespace censoc { namespace netcpu { 
 	
-class io_wrapper;
+template <typename> class io_wrapper;
 	
 namespace message { // todo -- possibly migrate out of the "message" namespace scope
 
@@ -273,11 +273,6 @@ struct async_driver : ::boost::enable_shared_from_this<async_driver>, ::boost::n
 	netcpu::message::write_wrapper write_raw; 
 	typedef ::boost::asio::ssl::stream<boost::asio::ip::tcp::socket> socket_type;
 	socket_type socket;
-	bool being_taken_over;
-	bool final_in_chain;
-
-	// { hack, for the time-being: see server.cc for use/purpose. Basically an alternative would have been to let model-specific code (e.g. christine/server.h) to have to remember NOT to call 'delete this' on 'bad' -- otherwise there'd be a loop of 'delete this -> end_process sent -> client/peer eventually re-sends 'ready_to_process' and the same (already-rejected) task is resent to the client/peer). All because the model-specific code may have forgotten to have to code an exceptional case for 'bad' msg being read in certain cases. Now, however it is much simpler -- the library take care so there's less semantic duplication to be written in every model's implementation. }
-	bool never_replaced; 
 
 	void
 	set_keepalive()
@@ -346,9 +341,7 @@ private:
 	bool write_is_pending;
 public:
 
-	bool valid; // to indacate if dtor is being conducted right on this async_driver class.
-	// NOTE: should be the LAST data member (othewise make sure to call 'user_key.reset()' in dtor 
-	censoc::ptr<netcpu::io_wrapper> user_key;
+	::std::auto_ptr<netcpu::io_wrapper<async_driver> > user_key;
 
 
 private:
@@ -441,7 +434,6 @@ public:
 			} catch (netcpu::message::exception const & e) { 
 				censoc::llog() << "ssl handshake-related exception: [" << e.what() << ", " << socket.lowest_layer().remote_endpoint(netcpu::ec) << "]\n";
 			} catch (...) { 
-				// could have used io(), but compiler complains about unused 'driver' variable... :-)
 				censoc::llog() << "unexpected exception during ssl handshake. peer at a time was: [" << socket.lowest_layer().remote_endpoint(netcpu::ec) << "]\n"; 
 				throw; 
 			} 
@@ -593,16 +585,13 @@ public:
 	}
 
 	async_driver()
-	:	socket(netcpu::io, netcpu::ssl), 
-	being_taken_over(false), final_in_chain(false), never_replaced(true)
+	:	socket(netcpu::io, netcpu::ssl)
 	, write_raw_keepalive(0, 0), keepalive_write_is_pending(false), data_written_inplaceof_keepalive_between_timeouts(false), keepalive_wait(0), 
 	read_is_pending(false), 
 #ifndef NDEBUG
 	on_peek_is_pending(false),
 #endif
 	write_is_pending(false), 
-	valid(true), 
-	user_key(NULL),
 	canceled_(false)
 	{
 		reset_callbacks();
@@ -613,9 +602,7 @@ public:
 
 	~async_driver()
 	{
-		valid = false;
-		being_taken_over = true;
-		final_in_chain = false;
+		canceled_ = true;
 		censoc::llog() << "dtor in async_driver: " << this << '\n';
 	}
 
@@ -631,6 +618,12 @@ public:
 		write_callback_ = ::boost::bind(&async_driver::on_write, this);
 		error_callback_ = ::boost::bind(&async_driver::on_error, this);
 		handshake_callback_ = ::boost::bind(&async_driver::on_handshake, this);
+	}
+
+	bool
+	canceled() const
+	{
+		return canceled_;
 	}
 
 	/**

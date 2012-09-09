@@ -61,6 +61,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <iostream>
 #include <fstream>
 #include <boost/bind.hpp>
+#include <boost/scoped_ptr.hpp>
 #include <boost/asio.hpp>
 #include <boost/asio/ssl.hpp>
 #include <boost/filesystem.hpp>
@@ -449,17 +450,10 @@ struct interface {
 	::boost::asio::ip::tcp::resolver::iterator endpoints_i;
 };
 
-struct peer_connection : public netcpu::io_wrapper {
-
-	void
-	on_new_in_chain()
-	{
-		// sending ready-to-work again...
-		on_write();
-	}
+struct peer_connection : public netcpu::io_wrapper<netcpu::message::async_driver> {
 
 	peer_connection(netcpu::message::async_driver & x)
-	: netcpu::io_wrapper(x) {
+	: netcpu::io_wrapper<netcpu::message::async_driver>(x) {
 		// not calling 'run' code here because 'write' will implicitly call 'shared_from_this' and external onwership by shared pointer is not yet setup (ctor for shared pointer will wait for the ctor of peer_con to complete first)...
 		// still, however, it is more elegant than having shared_ptr(this) here in ctor an then worrying/making sure that nothing that follows it in ctor will ever throw
 	}
@@ -526,7 +520,7 @@ run()
 	// TODO -- also add this to the server (inclusive of linking with finite_math.o)
 	censoc::init_fpu_check();
 
-	censoc::ptr<interface> ui(new interface);
+	::boost::scoped_ptr<interface> ui(new interface);
 	
 	::boost::shared_ptr<netcpu::message::async_driver> new_driver(new netcpu::message::async_driver);
 	netcpu::peer_connection * new_peer(new peer_connection(*new_driver)); // another way would be to do shared_ptr(this) in ctor of peer_connection (but then one must take extra bit of care for anything that follows this in ctor, and potentially derived types, not to throw at all)... this way, howere, can throw all one wants...
@@ -549,7 +543,7 @@ run()
 
 	new_driver->set_keepalive();
 
-	ui.reset(NULL); 
+	ui.reset(); 
 	new_peer->run();
 	new_driver.reset();
 	io.run();
@@ -557,18 +551,8 @@ run()
 	io.reset();
 }
 
-}}
-
-#include "io_wrapper.pi"
-
-namespace censoc { namespace netcpu { 
 peer_connection::~peer_connection() throw()
 {
-	// if not being deleted by virtue of being taken-over
-	if (io().being_taken_over == false) {
-		io().being_taken_over = true; // to prevent re-newing of another peer_connection in the base class
-		io().final_in_chain = true;
-	}
 	censoc::llog() << "dtor in peer_connection" << ::std::endl;
 }
 

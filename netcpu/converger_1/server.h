@@ -382,6 +382,46 @@ public:
 
 template <typename N, typename F, typename Model, netcpu::models_ids::val ModelId> struct processing_peer;
 
+// current end-process sequence: server->'end_process_message'->client; client->'good'->server; client->ready_to_process->server;
+struct end_process_writer : netcpu::io_wrapper<netcpu::message::async_driver> {
+
+	bool stale_message_seen;
+
+	end_process_writer(netcpu::message::async_driver & io_driver)
+	: netcpu::io_wrapper<netcpu::message::async_driver>(io_driver), stale_message_seen(false) {
+		if (io().is_write_pending() == false) 
+			io().write(netcpu::message::end_process(), &end_process_writer::on_write, this);
+		else
+			io().write_callback(&end_process_writer::late_write_end_process, this);
+	}
+	void
+	late_write_end_process()
+	{
+		io().write(netcpu::message::end_process(), &end_process_writer::on_write, this);
+	}
+	void
+	on_write()
+	{
+		if (io().is_read_pending() == false) 
+			io().read();
+	}
+	void
+	on_read()
+	{
+		switch (io().read_raw.id()) {
+		case netcpu::message::good::myid :
+			(new netcpu::peer_connection(io()))->io().read();
+			break;
+		default :
+			if (stale_message_seen == false) { // allow one stale message (e.g. from previous peer or bootstrapping report) to be present in the pipeline...
+				stale_message_seen = true;
+				io().read();
+			} else
+				delete this;
+		}
+	}
+};
+
 template <typename N, typename F, typename Model, netcpu::models_ids::val ModelId>
 struct task_processor : ::boost::noncopyable {
 
@@ -648,7 +688,7 @@ struct task_processor : ::boost::noncopyable {
 	~task_processor()
 	{
 		while (scoped_peers.empty() == false) 
-			delete scoped_peers.front();
+			new converger_1::end_process_writer(scoped_peers.front()->io());
 	}
 
 	/**
@@ -1135,7 +1175,9 @@ struct task_processor : ::boost::noncopyable {
 				::std::cout
 					<< ::std::endl;
 
-				assert(0);
+				//assert(0);
+				netcpu::pending_tasks.front()->markcompleted();
+				return;
 			}
 
 
@@ -1298,26 +1340,9 @@ struct task_processor : ::boost::noncopyable {
 	key_type io_key;
 };
 
-struct end_process_writer : netcpu::io_wrapper {
-	end_process_writer(netcpu::message::async_driver & io_driver)
-	: netcpu::io_wrapper(io_driver) {
-		if (io().is_write_pending() == false) 
-			io().write(netcpu::message::end_process(), &end_process_writer::on_end_process_write, this);
-	}
-	void
-	on_write()
-	{
-		io().write(netcpu::message::end_process(), &end_process_writer::on_end_process_write, this);
-	}
-	void
-	on_end_process_write()
-	{
-		delete this;
-	}
-};
 
 template <typename N, typename F, typename Model, netcpu::models_ids::val ModelId>
-struct processing_peer : netcpu::io_wrapper {
+struct processing_peer : netcpu::io_wrapper<netcpu::message::async_driver> {
 
 	typedef censoc::lexicast< ::std::string> xxx;
 	typedef typename converger_1::key_typepair::ram key_type;
@@ -1369,7 +1394,6 @@ struct processing_peer : netcpu::io_wrapper {
 	censoc::scoped_membership_iterator<processing_peers_iterator_traits> processing_peers_i;
 
 	key_type io_key_echo_;
-	bool write_more;
 	bool peer2peer_assisted_complexity_present; // used to indicate that other peer has done some of my own complexities (currently, as per design, no need to initialise in ctor; as user code in bootstrapping, recentering, do_recalculated_remaining_complexities, will set it) 
 
 #ifndef NDEBUG
@@ -1380,7 +1404,7 @@ struct processing_peer : netcpu::io_wrapper {
 	complexities_type remaining_complexities;
 
 	processing_peer(task_processor<N, F, Model, ModelId> & processor, netcpu::message::async_driver & io_driver)
-	: netcpu::io_wrapper(io_driver), processor(processor), scoped_peers_i(processor.scoped_peers, processor.scoped_peers.insert(processor.scoped_peers.end(), this)), processing_peers_i(processor.processing_peers), write_more(false)
+	: netcpu::io_wrapper<netcpu::message::async_driver>(io_driver), processor(processor), scoped_peers_i(processor.scoped_peers, processor.scoped_peers.insert(processor.scoped_peers.end(), this)), processing_peers_i(processor.processing_peers)
 #ifndef NDEBUG
 		, do_assert_processing_peers_i(false) 
 #endif
@@ -1403,7 +1427,6 @@ struct processing_peer : netcpu::io_wrapper {
 	{
 		assert(do_assert_processing_peers_i == true && processing_peers_i.nulled() == false || !0);
 		if (io().is_write_pending() == false) {
-			write_more = false;
 			msg.complexities.resize(remaining_complexities.size());
 			size_type j(0);
 			for (typename complexities_type::const_iterator i(remaining_complexities.begin()); i != remaining_complexities.end(); ++i) {
@@ -1413,17 +1436,22 @@ struct processing_peer : netcpu::io_wrapper {
 			}
 			io().write(msg);
 		} else 
-			write_more = true;
+			io().write_callback(&processing_peer::on_late_write_sync_peer_to_server, this);
+	}
+
+	void
+	on_late_write_sync_peer_to_server()
+	{
+		io().write_callback(&processing_peer::on_write_sync_peer_to_server, this);
+		assert(processing_peers_i.nulled() == false);
+		censoc::llog() << "cathing up a peer to the latest state of the server (due to faster writes than network communication or client processing of messages)" << ::std::endl;
+		sync_peer_to_server(processor.server_state_sync_msg); // running late -- catch up completely (do the whole state sync -- a simple hack for the time-being)
 	}
 
 	void
 	on_write_sync_peer_to_server()
 	{
 		assert(processing_peers_i.nulled() == false);
-		if (write_more == true) {
-			censoc::llog() << "'write_more' is true" << ::std::endl;
-			sync_peer_to_server(processor.server_state_sync_msg); // running late -- catch up completely (do the whole state sync -- a simple hack for the time-being)
-		}
 
 		enum {stale_limit = 8192}; // todo -- make parametric
 		BOOST_STATIC_ASSERT(::boost::integer_traits<key_type>::const_max > stale_limit); // to allow robustness against key_type wraparound (unlikely but this safety is compile-time -- free)
@@ -1447,7 +1475,7 @@ struct processing_peer : netcpu::io_wrapper {
 			if (processor.io_key == io_key_echo_) 
 				processor.on_peer_report(*this);
 		} else {
-			delete this;
+			io().cancel();
 			return;
 		}
 		io().read();
@@ -1494,7 +1522,7 @@ struct processing_peer : netcpu::io_wrapper {
 	void
 	on_write()
 	{
-		if (io().is_read_pending() == false)
+		if (io().is_read_pending() == false) // on_write can happen during new_processing_peer in server.cc, or upon the already-constructed 'ready-to-process' peer list (e.g. because there was no active task available during the initiall client's connection to the server).
 			io().read(&processing_peer::on_read_offer_response, this);
 		else
 			io().read_callback(&processing_peer::on_read_offer_response, this);
@@ -1503,33 +1531,43 @@ struct processing_peer : netcpu::io_wrapper {
 	void
 	on_read_offer_response()
 	{
-		if (netcpu::message::good::myid != io().read_raw.id()) 
-			delete this;
-		else 
+		if (netcpu::message::good::myid != io().read_raw.id())
+			io().read(); // will 'pause' in limbo state until end_process_writer shoots the message
+		else {
 			io().write(processor.res_msg, &processing_peer::on_write_res, this);
+			censoc::llog() << "issued write res message command\n";
+		}
 	}
 
 	void
 	on_write_res()
 	{
-		io().write(processor.meta_msg, &processing_peer::on_write_meta, this);
+		io().read(&processing_peer::on_read_res_response, this);
+	}
+
+	void
+	on_read_res_response() 
+	{
+		if (netcpu::message::good::myid != io().read_raw.id()) {
+			censoc::llog() << "limboing\n";
+			io().read(); // will 'pause' in limbo state until end_process_writer shoots the message
+		} else {
+			io().write(processor.meta_msg, &processing_peer::on_write_meta, this);
+			censoc::llog() << "issued write meta message command\n";
+		}
 	}
 
 	void
 	on_write_meta()
 	{
-		// because 'processing peer' may already have been in the read-ready state (generic, non-model specific) due to no jobs being available during the connection of the processing peers, but then the controller may load the job and the task_loader will iterate through generic 'processing ready peers' and tell them to activate... which will subsequently bring about this
-		if (io().is_read_pending() == false)
-			io().read(&processing_peer::on_read_meta_response, this);
-		else
-			io().read_callback(&processing_peer::on_read_meta_response, this);
+		io().read(&processing_peer::on_read_meta_response, this);
 	}
 
 	void
 	on_read_meta_response()
 	{
 		if (netcpu::message::good::myid != io().read_raw.id()) 
-			delete this;
+			io().read(); // will 'pause' in limbo state until end_process_writer shoots the message
 		else {
 			io().write(processor.bulk_msg_wire, &processing_peer::on_write_bulk, this);
 			censoc::llog() << "issued write bulk message command\n";
@@ -1551,13 +1589,6 @@ struct processing_peer : netcpu::io_wrapper {
 #ifndef NDEBUG
 		do_assert_processing_peers_i = true;
 #endif
-	}
-
-	~processing_peer()
-	{
-		detach_this(); // tell io() not to call my dtor (i am already in dtor)
-		if (io().valid == true) // don't new up the chain if the io() itself is being dtored...
-			new end_process_writer(io());
 	}
 };
 
@@ -1641,13 +1672,13 @@ struct task : netcpu::task {
 };
 
 template <typename N, typename F, typename Model, netcpu::models_ids::val ModelId>
-struct task_loader_detail : netcpu::io_wrapper {
+struct task_loader_detail : netcpu::io_wrapper<netcpu::message::async_driver> {
 	typedef censoc::lexicast< ::std::string> xxx;
 
 	converger_1::task<N, F, Model, ModelId> * t;
 
 	task_loader_detail(netcpu::message::async_driver & io_driver)
-	: netcpu::io_wrapper(io_driver), 
+	: netcpu::io_wrapper<netcpu::message::async_driver>(io_driver), 
 	// generating name in a form "COUNTER_MODELID-INTRESxFLOATRES" e.g. "1_1-0x1" (TODO -- make it more elegant)
 	t(new converger_1::task<N, F, Model, ModelId>(netcpu::generate_taskdir(::std::string(xxx(int(ModelId))) + '-' + ::std::string(xxx(int(converger_1::message::int_res<N>::value))) + 'x' + ::std::string(xxx(int(converger_1::message::float_res<F>::value)))))) {
 		assert(t != NULL);
@@ -1735,7 +1766,7 @@ struct task_loader_detail : netcpu::io_wrapper {
 		assert(io().is_read_pending() == false);
 		t->markpending();
 		censoc::llog() << "task stored -- the model-specific loader is done with this task\n";
-		delete this;
+		new netcpu::peer_connection(io());
 	}
 
 	~task_loader_detail() throw()
@@ -1747,11 +1778,11 @@ struct task_loader_detail : netcpu::io_wrapper {
 
 // TODO!!! -- MUST re-use commonly used code (like this struct) w.r.t. processor.h (e.g. task_processor in processor.h)
 template <template <typename, typename> class Model, netcpu::models_ids::val ModelId>
-struct task_loader : netcpu::io_wrapper {
+struct task_loader : netcpu::io_wrapper<netcpu::message::async_driver> {
 	typedef censoc::lexicast< ::std::string> xxx;
 
 	task_loader(netcpu::message::async_driver & io_driver)
-	: netcpu::io_wrapper(io_driver) {
+	: netcpu::io_wrapper<netcpu::message::async_driver>(io_driver) {
 		io().write(netcpu::message::good());
 		censoc::llog() << "ctor in task_loader in converger_1: " << this << ::std::endl;
 	}
@@ -1804,7 +1835,7 @@ struct task_loader : netcpu::io_wrapper {
 	void
 	on_bad_write()
 	{
-		delete this;
+		new netcpu::peer_connection(io());
 	}
 };
 

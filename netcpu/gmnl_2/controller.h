@@ -50,7 +50,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <censoc/compare.h>
 #include <censoc/stl_container_utils.h>
 #include <netcpu/io_wrapper.h>
-#include <netcpu/io_wrapper.pi>
 #include <netcpu/combos_builder.h>
 #include <netcpu/converger_1/controller.h>
 #include <netcpu/dataset_1/controller.h>

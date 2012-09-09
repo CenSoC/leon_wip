@@ -43,22 +43,20 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 namespace censoc { namespace netcpu {
 	
+template <typename AsyncDriver>
 class io_wrapper {
-	netcpu::message::async_driver & io_;
+	AsyncDriver & io_;
 protected:
-	io_wrapper(netcpu::message::async_driver & io) throw()
+	io_wrapper(AsyncDriver & io) throw()
 	: io_(io) {
-		censoc::llog() << "io_wrapper ctor...: " << this << "\n";
-		if (io.user_key != NULL) 
-			io.being_taken_over = true;
-		censoc::llog() << "in io_wrapper ctor -- about to assign this to driver\n";
-		io.user_key = this;
-		censoc::llog() << "in io_wrapper ctor -- done assigning this to driver\n";
+		io_wrapper const * const other(io.user_key.release());
+		io.user_key.reset(this);
+		delete other;
 		io.read_callback(&io_wrapper::on_read, this);
 		io.write_callback(&io_wrapper::on_write, this);
 		io.error_callback(&io_wrapper::on_error, this);
 		io.handshake_callback(&io_wrapper::on_handshake, this);
-		::std::clog << "io_wrapper took ownership of the callbacks\n";
+		censoc::llog() << "io_wrapper ctor: " << this << "\n";
 	}
 	void virtual
 	on_handshake()
@@ -76,29 +74,26 @@ protected:
 	on_error()
 	{
 		censoc::llog() << "io_wrapper on error!: " << this << "\n";
-		io().being_taken_over = true;
-		io().final_in_chain = true;
+		assert(io().user_key.get() == this);
 		io().cancel();
-		delete this;
 	}
 public:
-	// call before newing up another model from within destructor of current model 
-	void
-	detach_this()
+	virtual 
+	~io_wrapper()
 	{
-		assert(io().user_key == this);
-
-		io().user_key.clobber(NULL);
-		io().being_taken_over = true;
+		if (io().user_key.get() == this && io().canceled() == false) {
+			io().user_key.release();
+			io().reset_callbacks();
+			io().cancel();
+		}
+		censoc::llog() << "io_wrapper dtor: " << this << "\n";
 	}
-	virtual ~io_wrapper();
-	netcpu::message::async_driver & 
+
+	AsyncDriver & 
 	io() throw()
 	{
 		return io_;
 	}
-	void virtual
-	on_new_in_chain() { }
 };
 
 }}

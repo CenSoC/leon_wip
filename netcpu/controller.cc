@@ -46,11 +46,11 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <iostream>
 
 #include <boost/bind.hpp>
+#include <boost/scoped_ptr.hpp>
 #include <boost/asio.hpp>
 #include <boost/asio/ssl.hpp>
 
 #include <censoc/lexicast.h>
-#include <censoc/arrayptr.h>
 
 namespace censoc { namespace netcpu {
 ::boost::asio::io_service static io;
@@ -171,15 +171,16 @@ struct interface {
 	::boost::asio::ip::tcp::resolver::iterator endpoints_i;
 };
 
-struct peer_connection : public netcpu::io_wrapper {
+struct peer_connection : public netcpu::io_wrapper<netcpu::message::async_driver> {
 
 	peer_connection(netcpu::message::async_driver & io)
-	: netcpu::io_wrapper(io) {
+	: netcpu::io_wrapper<netcpu::message::async_driver>(io) {
 		// TODO -- some of the below comments may be outdated!
 		// not calling 'run' code here because 'write' will implicitly call 'shared_from_this' and external onwership by shared pointer is not yet setup (ctor for shared pointer will wait for the ctor of peer_con to complete first)...
 		// still, however, it is more elegant than having shared_ptr(this) here in ctor an then worrying/making sure that nothing that follows it in ctor will ever throw
 	}
 
+	// TODO -- currently deprecated... (i.e. loading multiple jobs in one invocation)
 	void
 	on_new_in_chain()
 	{
@@ -245,7 +246,7 @@ struct peer_connection : public netcpu::io_wrapper {
 void static
 run(int argc, char * * argv) 
 {
-	censoc::ptr<interface> ui(new interface(argc, argv));
+	::boost::scoped_ptr<interface> ui(new interface(argc, argv));
 	
 	::boost::shared_ptr<netcpu::message::async_driver> new_driver(new netcpu::message::async_driver);
 	netcpu::peer_connection * new_peer_connection(new peer_connection(*new_driver)); // another way would be to do shared_ptr(this) in ctor of peer_connection (but then one must take extra bit of care for anything that follows this in ctor, and potentially derived types, not to throw at all)... this way, howere, can throw all one wants...
@@ -267,25 +268,14 @@ run(int argc, char * * argv)
 		throw ::std::runtime_error("could not do SSL handshake");
 	new_driver->set_keepalive();
 
-	ui.reset(NULL); 
+	ui.reset(); 
 	new_peer_connection->run();
 	new_driver.reset();
 	io.run();
 }
 
-}}
-
-#include "io_wrapper.pi"
-
-namespace censoc { namespace netcpu { 
-
 peer_connection::~peer_connection() throw()
 {
-	// if not being deleted by virtue of being taken-over
-	if (io().being_taken_over == false) {
-		io().being_taken_over = true; // to prevent re-newing of another peer_connection
-		io().final_in_chain = true;
-	}
 	censoc::llog() << "dtor in peer_connection" << ::std::endl;
 }
 

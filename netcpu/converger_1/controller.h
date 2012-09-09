@@ -45,7 +45,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <censoc/lexicast.h>
 #include <netcpu/io_wrapper.h>
-#include <netcpu/io_wrapper.pi>
 #include <netcpu/combos_builder.h>
 
 #include "types.h"
@@ -65,7 +64,7 @@ namespace censoc { namespace netcpu { namespace converger_1 {
 	such stipulate high-level processing/calculation resolutions/domain. Then each of the classes (e.g. network-related message, task_loader_detail, some processor-related ram structs) are free to typedef the exact float_type type to use for actual calculations. Even though this may seem somewhat convoluted for RAM-only structs (or by the same token wire-only structs) it allows for a more uniform design-policy).
 		*/
 template <typename N, typename F, typename Model>
-struct task_loader_detail : netcpu::io_wrapper {
+struct task_loader_detail : netcpu::io_wrapper<netcpu::message::async_driver> {
 	Model model;
 
 	/* 
@@ -139,7 +138,7 @@ struct task_loader_detail : netcpu::io_wrapper {
 	};
 
 	task_loader_detail(netcpu::message::async_driver & io_driver, int extended_float_res)
-	: netcpu::io_wrapper(io_driver) {
+	: netcpu::io_wrapper<netcpu::message::async_driver>(io_driver) {
 
 		censoc::llog() << "ctor in task_loader_detail\n";
 
@@ -516,6 +515,8 @@ struct task_loader_detail : netcpu::io_wrapper {
 			msg.print();
 		} else
 			censoc::llog() << "wanted new_taskname message, but did not get one.\n";
+
+		// TODO -- the previous code of calling "on_new_in_chain" is currently deprecated... (i.e. loading multiple jobs in one invocation)... just deleting this (dropping connection, etc.)
 		delete this;
 	}
 
@@ -526,10 +527,10 @@ struct task_loader_detail : netcpu::io_wrapper {
 };
 
 template <template <typename, typename> class Model, netcpu::models_ids::val ModelId>
-struct task_loader : netcpu::io_wrapper {
+struct task_loader : netcpu::io_wrapper<netcpu::message::async_driver> {
 
 	task_loader(netcpu::message::async_driver & io_driver)
-	: netcpu::io_wrapper(io_driver) {
+	: netcpu::io_wrapper<netcpu::message::async_driver>(io_driver) {
 		// TODO -- if it proves that this 'offer writing' procedure/sequence is commonly shared by other models, then move it into some base class 
 		// write the offer
 		netcpu::message::task_offer msg;

@@ -57,6 +57,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <fstream>
 
 #include <boost/bind.hpp>
+#include <boost/scoped_ptr.hpp>
 #include <boost/shared_ptr.hpp>
 #include <boost/asio.hpp>
 #include <boost/asio/ssl.hpp>
@@ -65,7 +66,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <censoc/empty.h>
 #include <censoc/type_traits.h>
 #include <censoc/lexicast.h>
-#include <censoc/arrayptr.h>
 #include <censoc/opendir.h>
 #include <censoc/scoped_membership_iterator.h>
 
@@ -253,6 +253,8 @@ struct task {
 	markcompleted()
 	{
 		assert(completed_i == completed_tasks_scoped_membership_iterator::iterator_type());
+
+		cancel();
 		pending_i.reset();
 
 		completed_i = completed_tasks.insert(completed_tasks.end(), this);
@@ -480,21 +482,16 @@ struct interface {
 	}
 };
 
-class peer_connection : public netcpu::io_wrapper { 
+class peer_connection : public netcpu::io_wrapper<netcpu::message::async_driver> { 
+
 
 	// TODO -- this is a cludge, later will refactor 'peer_connection' with other types specific to controller, processor and update_client !!!
 	ready_to_process_peers_scoped_membership_iterator processing_peers_i;
 
 public:
 
-	void
-	on_new_in_chain()
-	{
-		io().read();
-	}
-
 	peer_connection(netcpu::message::async_driver & io) 
-	: io_wrapper(io) {
+	: netcpu::io_wrapper<netcpu::message::async_driver>(io) {
 		censoc::llog() << "ctor in peer_connection, driver addr: " << &io << ::std::endl;
 	}
 
@@ -547,10 +544,7 @@ public:
 			netcpu::message::ready_to_process msg;
 			msg.from_wire(io().read_raw);
 			censoc::llog() << "peer is ready to process: [" << io().socket.lowest_layer().remote_endpoint(netcpu::ec) << "]\n";
-			if (pending_tasks.empty() == false && pending_tasks.front()->active() == true 
-				// because don't want to feed next 'ready_to_process' message from the same peer back to the current task (given that this peer may already have rejected the task during the 1st offering).
-				&& io().never_replaced == true
-				) {
+			if (pending_tasks.empty() == false && pending_tasks.front()->active() == true) {
 				censoc::llog() << "starting new_processing_peer from active task\n";
 				return pending_tasks.front()->new_processing_peer(io());
 			} else {
@@ -630,7 +624,7 @@ struct acceptor : ::boost::enable_shared_from_this<netcpu::acceptor> {
 void static
 run(int argc, char * * argv)
 {
-	censoc::ptr<interface> ui(new interface(argc, argv));
+	::boost::scoped_ptr<interface> ui(new interface(argc, argv));
 
 	{
 		// load pending index file if present (otherwise have empty index_list in RAM)
@@ -728,17 +722,11 @@ run(int argc, char * * argv)
 	purge_old_tasks_timer.timeout(&purge_old_tasks);
 
 	::boost::shared_ptr<netcpu::acceptor> acceptor_ptr(new acceptor(ui->endpoints_i)); 
-	ui.reset(NULL);
+	ui.reset();
 	acceptor_ptr->run();
 	io.run();
 	acceptor_ptr.reset();
 }
-
-}}
-
-#include "io_wrapper.pi"
-
-namespace censoc { namespace netcpu { 
 
 void static
 on_pending_tasks_update()
@@ -762,11 +750,6 @@ on_pending_tasks_update()
 
 peer_connection::~peer_connection() throw()
 {
-	// if not being deleted by virtue of being taken-over
-	if (io().being_taken_over == false) {
-		io().being_taken_over = true; // to prevent re-newing of another peer_connection
-		io().final_in_chain = true;
-	}
 	censoc::llog() << "dtor in peer_connection" << ::std::endl;
 }
 

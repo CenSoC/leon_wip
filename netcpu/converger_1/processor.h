@@ -57,7 +57,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <censoc/stl_container_utils.h>
 
 #include <netcpu/io_wrapper.h>
-#include <netcpu/io_wrapper.pi>
 
 #include <netcpu/combos_builder.h>
 #include <netcpu/range_utils.h>
@@ -234,7 +233,7 @@ public:
 };
 
 template <typename N, typename F, typename Model>
-struct task_processor_detail : netcpu::io_wrapper {
+struct task_processor_detail : netcpu::io_wrapper<netcpu::message::async_driver> {
 
 	typedef typename Model::meta_msg_type meta_msg_type;
 
@@ -317,7 +316,6 @@ struct task_processor_detail : netcpu::io_wrapper {
 	netcpu::message::async_timer rollback_report_timer; // used to *rarely* report accumulated unreported complexities, so that the server can update its view/state of the overall convergence process and can recover quicker if the server crashes due to power outage, etc... (otherwise a given 'coeffs at once' combination may take very long time to complete (e.g. may be a day) and then, if no new peers are connecting/dropping in the meantime, the after-crash server will need to start from the very start of the given combination thereby loosing a day (or something like that anyway...)
 	netcpu::message::async_timer process_iteration_timer;
 	bool skip_next_process_iteration;
-	bool write_more;
 
 	// message (net-io) caching
 	converger_1::message::bootstrapping_peer_report<N, F> bootstrapping_peer_report_msg;
@@ -334,7 +332,7 @@ struct task_processor_detail : netcpu::io_wrapper {
 	//}
 
 	task_processor_detail(netcpu::message::async_driver & io_driver, meta_msg_type const & meta_msg)
-	: netcpu::io_wrapper(io_driver),
+	: netcpu::io_wrapper<netcpu::message::async_driver>(io_driver),
 	model(meta_msg), 
 	echo_status_key(0),
 	// should be the same as the bulk's coeffs metadata size of array...
@@ -342,7 +340,7 @@ struct task_processor_detail : netcpu::io_wrapper {
 	coefficients_metadata(coefficients_size),
 	init_complexity_size(meta_msg.complexity_size()),
 	e_min(censoc::largish<float_type>(), netcpu::message::deserialise_from_decomposed_floating<float_type>(meta_msg.improvement_ratio_min)), 
-	skip_next_process_iteration(false), write_more(false)
+	skip_next_process_iteration(false)
 	{
 		// todo -- see if this is still needed (decomposed floating gets automatically initialised to 0 now... if this automatic initialisation is to be taken away, for efficiency purposes, then things in meta message like min improvement threshold would need to be explicitly set to 0 -- as things like controller.exe rely on testing for whether this was set in the command line by the user when creating a task...)
 		netcpu::message::serialise_to_decomposed_floating(static_cast<float_type>(0), bootstrapping_peer_report_msg.value);
@@ -409,7 +407,6 @@ struct task_processor_detail : netcpu::io_wrapper {
 		// note -- no need to do this really (unless testing in debug mode in the following code)...
 		//combos_modem.build(coefficients_size, init_complexity_size, init_coeffs_atonce_size, coefficients_metadata);
 
-		io().write_callback(&task_processor_detail::on_peer_report_write, this);
 		io().read(&task_processor_detail::on_first_server_state_sync_read, this);
 	}
 
@@ -528,7 +525,7 @@ struct task_processor_detail : netcpu::io_wrapper {
 			if (io().is_write_pending() == false) 
 				on_peer_report();
 			else
-				write_more = true;
+				io().write_callback(&task_processor_detail::on_peer_report_write, this);
 		} else // only need to start another iteration if nothing better was found and some complexities still remain 
 			process_iteration_timer.timeout();
 	}
@@ -606,7 +603,7 @@ struct task_processor_detail : netcpu::io_wrapper {
 			if (io().is_write_pending() == false) 
 				on_bootstrapping_peer_report();	
 			else
-				write_more = true;
+				io().write_callback(&task_processor_detail::on_peer_report_write, this);
 
 			//@note -- do not do any more processing (inline with "stopping right after the 1st find" logic as well as for the fact of maintaining coefficients values for when reporting is written out to wire.
 
@@ -631,14 +628,16 @@ struct task_processor_detail : netcpu::io_wrapper {
 		censoc::llog() << "}\n";
 	}
 
+	void virtual
+	on_write()
+	{
+	}
 
 	void
 	on_peer_report_write()
 	{
-		if (write_more == true) {
-			(this->*peer_report)();
-			write_more = false;
-		}
+		io().write_callback(&task_processor_detail::on_write, this);
+		(this->*peer_report)();
 	}
 
 	void
@@ -666,6 +665,19 @@ struct task_processor_detail : netcpu::io_wrapper {
 			censoc::netcpu::range_utils::add(remaining_complexities, tmp_container);
 	}
 
+	void
+	respond_to_end_process()
+	{
+		assert(io().is_write_pending() == false);
+		io().write(netcpu::message::good(), &task_processor_detail::on_end_process_reply_written, this);
+	}
+
+	void
+	on_end_process_reply_written()
+	{
+		(new netcpu::peer_connection(io()))->on_write();
+	}
+
 	/** { //note should only be called last in the code -- may call 'delete this'
 		} */
 	void
@@ -674,7 +686,10 @@ struct task_processor_detail : netcpu::io_wrapper {
 		censoc::llog() << "processing server_state sync\n";
 		typename censoc::param<netcpu::message::id_type>::type msg_id(io().read_raw.id());
 		if (netcpu::message::end_process::myid == msg_id) {
-			delete this;
+			if (io().is_write_pending() == false)
+				respond_to_end_process();
+			else
+				io().write_callback(&task_processor_detail::respond_to_end_process, this);
 			return;
 		} else if (converger_1::message::server_state_sync<N, F>::myid == msg_id) {
 
@@ -703,7 +718,7 @@ struct task_processor_detail : netcpu::io_wrapper {
 
 			if (echo_status_key != server_state_sync_msg.echo_status_key()) {
 				echo_status_key = server_state_sync_msg.echo_status_key();
-				write_more = false;
+				io().write_callback(&task_processor_detail::on_write, this);
 				unreported_complexities.clear();
 				e_min = netcpu::message::deserialise_from_decomposed_floating<float_type>(server_state_sync_msg.value);
 
@@ -731,7 +746,7 @@ struct task_processor_detail : netcpu::io_wrapper {
 				if (io().is_write_pending() == false) 
 					on_peer_report();
 				else
-					write_more = true;
+					io().write_callback(&task_processor_detail::on_peer_report_write, this);
 			}
 				
 			// substitute complexity range (need to do in all cases -- as could be a part of either -- proper state-sync, or just recalculation of complexities due to another peer connecting to server...
@@ -772,7 +787,7 @@ struct task_processor_detail : netcpu::io_wrapper {
 
 			censoc::llog() << "... recentre\n";
 
-			write_more = false;
+			io().write_callback(&task_processor_detail::on_write, this);
 
 			server_recentre_only_sync_msg.from_wire(io().read_raw);
 			assert(echo_status_key != server_recentre_only_sync_msg.echo_status_key());
@@ -831,7 +846,7 @@ struct task_processor_detail : netcpu::io_wrapper {
 				if (io().is_write_pending() == false) 
 					on_peer_report();
 				else
-					write_more = true;
+					io().write_callback(&task_processor_detail::on_peer_report_write, this);
 			}
 			// NOTE -- no need to have echo_status_key/io_key for this message (not atomic/serialised w.r.t. server state)
 			remaining_complexities.clear();
@@ -880,14 +895,15 @@ struct task_processor_detail : netcpu::io_wrapper {
 };
 
 template <typename N, typename F, typename Model>
-struct task_processor_detail_meta : netcpu::io_wrapper {
+struct task_processor_detail_meta : netcpu::io_wrapper<netcpu::message::async_driver> {
 	typedef censoc::lexicast< ::std::string> xxx;
 	typedef typename netcpu::message::typepair<N>::ram size_type;
 	typedef F float_type;
 
 	task_processor_detail_meta(netcpu::message::async_driver & io_driver)
-	: netcpu::io_wrapper(io_driver) {
+	: netcpu::io_wrapper<netcpu::message::async_driver>(io_driver) {
 		censoc::llog() << "ctor in converger_1::task_processor_detail_meta\n";
+		io().write(netcpu::message::good());
 		io().read();
 	}
 
@@ -919,11 +935,17 @@ struct task_processor_detail_meta : netcpu::io_wrapper {
 	on_end_process_read()
 	{
 		typename censoc::param<netcpu::message::id_type>::type msg_id(io().read_raw.id());
-		if (netcpu::message::end_process::myid == msg_id) {
-			censoc::llog() << "got end_process -- will nuke self...\n";
-			delete this;
-		} else  
+		if (netcpu::message::end_process::myid == msg_id)
+			io().write(netcpu::message::good(), &task_processor_detail_meta::on_end_process_replied_write, this);
+		else  
 			throw ::std::runtime_error("expected end_process after sending bad message, but got something else");
+	}
+
+	void
+	on_end_process_replied_write()
+	{
+		censoc::llog() << "got end_process -- will nuke self...\n";
+		(new netcpu::peer_connection(io()))->on_write();
 	}
 
 	void
@@ -935,36 +957,30 @@ struct task_processor_detail_meta : netcpu::io_wrapper {
 };
 
 template <template <typename, typename, typename> class Model>
-struct task_processor : netcpu::io_wrapper {
+struct task_processor : netcpu::io_wrapper<netcpu::message::async_driver> {
 	typedef censoc::lexicast< ::std::string> xxx;
 	typedef converger_1::message::res res_msg_type;
 
 	task_processor(netcpu::message::async_driver & io_driver)
-	: netcpu::io_wrapper(io_driver) {
-		io().write(netcpu::message::good());
+	: netcpu::io_wrapper<netcpu::message::async_driver>(io_driver) {
 		censoc::llog() << "task_processor ctor in converger_1" << ::std::endl;
+		io().write(netcpu::message::good());
+		io().read();
 	}
 	~task_processor() throw()
 	{
 		censoc::llog() << "dtor of task_processor in converger_1: " << this << ::std::endl;
 	}
-	void
-	on_write()
-	{
-		censoc::llog() << "written good meesage in reply to task offer \n" ;
-		io().read();
-	}
 
 	void
 	on_read()
 	{
-
 		if (res_msg_type::myid != io().read_raw.id()) 
 			//delete this;
 			throw ::std::runtime_error(xxx("wrong message: [") << io().read_raw.id() << "] want res id: [" << static_cast<netcpu::message::id_type>(res_msg_type::myid) << ']');
 
 		res_msg_type msg(io().read_raw);
-		censoc::llog() << "received meta message\n";
+		censoc::llog() << "received res message\n";
 		msg.print();
 
 		switch (msg.int_res()) {
@@ -994,7 +1010,23 @@ struct task_processor : netcpu::io_wrapper {
 	void
 	on_bad_write()
 	{
-		delete this;
+		io().read(&task_processor::on_end_process_read, this);
+	}
+	void 
+	on_end_process_read()
+	{
+		typename censoc::param<netcpu::message::id_type>::type msg_id(io().read_raw.id());
+		if (netcpu::message::end_process::myid == msg_id)
+			io().write(netcpu::message::good(), &task_processor::on_end_process_replied_write, this);
+		else  
+			throw ::std::runtime_error("expected end_process after sending bad message, but got something else");
+	}
+
+	void
+	on_end_process_replied_write()
+	{
+		censoc::llog() << "got end_process -- will nuke self...\n";
+		(new netcpu::peer_connection(io()))->on_write();
 	}
 };
 

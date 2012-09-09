@@ -1,4 +1,4 @@
-#!/bin/sh
+#! /bin/sh -x
 
 #
 # Written and contributed by Leonid Zadorin at the Centre for the Study of Choice
@@ -38,28 +38,17 @@
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
 #
 
-MYPATH=`realpath ${0}`
-MYDIR=`dirname ${MYPATH}`/
-#CMDLINE="--key new_key.pem --cert new_certificate.pem --dh new_dh.pem --listen_at 127.0.0.1:8889 --root ${MYDIR}update_server_repo "
-CMDLINE="--key key.pem --cert certificate.pem --dh dh.pem --listen_at netcpu.zapto.org:8877 --root ${MYDIR}update_server_repo "
+. ../shell_scripts/bail.sh
 
-# release mode
-MALLOC_OPTIONS="10nP" ./update_server.exe ${CMDLINE}
+SUBREPO="freebsd_64_"
+#TARGETS="q9400 xeon w3505 e5504"
+TARGETS="e6550"
 
-exit
+# cludge for the time-being later expand builds for specific target cpus
+# note MUST build update_client and nosleep with the same flags (see nosleep.cc for reasoning)
+( ./custom_env_freebsd_64.sh make -DBUILD_SMALL clean update_client ) || bail BUILD_SMALL
+. ./publish_common.sh
+( ./custom_env_freebsd_64.sh make -DBUILD_FAST clean processor ) || bail BUILD_FAST
+. ./publish_common.sh
 
-# GDB this is for normal sh (not bash) 
-echo "catch throw" > update_server.gdb
-echo "run ${CMDLINE}" >> update_server.gdb 
-MALLOC_OPTIONS="10nPJ" gdb update_server.exe -x update_server.gdb
-rm server.gdb
-
-exit
-
-# note -- whilst 'processor' code is concerned with portability issues (i.e. must run on many differens systesm) 
-# the 'server' et al are not, indeed, expected to run on anything other than a 
-# specific/chosen one. Therefore, can afford to write a sys-specific code. 
-# In this case such is FreeBSD-centric MALLOC_OPTIONS env setting
-MALLOC_OPTIONS="10nPJ" ./update_server.exe ${CMDLINE}
-
-exit
+exit 0

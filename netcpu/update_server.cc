@@ -186,14 +186,14 @@ struct hushed_file {
 	}
 };
 
-struct peer_connection : public netcpu::io_wrapper { 
+struct peer_connection : public netcpu::io_wrapper<netcpu::message::async_driver> { 
 
 	typedef hushed_file<censoc::sha_file<netcpu::size_type>::hushlen> hushed_file_type;
 
 	::std::list<hushed_file_type> tosend;
 
 	peer_connection(netcpu::message::async_driver & io) 
-	: io_wrapper(io) {
+	: netcpu::io_wrapper<netcpu::message::async_driver>(io) {
 		censoc::llog() << "ctor in peer_connection, driver addr: " << &io << " Clients(=" << total_clients++ << ')' << ::std::endl;
 	}
 
@@ -484,28 +484,17 @@ struct acceptor : ::boost::enable_shared_from_this<netcpu::acceptor> {
 void static
 run(int argc, char * * argv)
 {
-	censoc::ptr<interface> ui(new interface(argc, argv));
+	::boost::scoped_ptr<interface> ui(new interface(argc, argv));
 
 	::boost::shared_ptr<netcpu::acceptor> acceptor_ptr(new acceptor(ui->endpoints_i)); 
-	ui.reset(NULL);
+	ui.reset();
 	acceptor_ptr->run();
 	io.run();
 	acceptor_ptr.reset();
 }
 
-}}
-
-#include "io_wrapper.pi"
-
-namespace censoc { namespace netcpu { 
-
 peer_connection::~peer_connection() throw()
 {
-	// if not being deleted by virtue of being taken-over
-	if (io().being_taken_over == false) {
-		io().being_taken_over = true; // to prevent re-newing of another peer_connection
-		io().final_in_chain = true;
-	}
 	censoc::llog() << "dtor in peer_connection. Clients(=" << --total_clients - 1 << ')' << ::std::endl;
 }
 
