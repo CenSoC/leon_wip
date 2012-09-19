@@ -39,9 +39,10 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 // @note -- quick hack at the moment (empty cells are allowed, but empty rows will be quietly discarded)
-// @note -- any text strings MUST be enclosed in double quotes 
-// @note -- the double quote itself is encoded as two consecutive double quotes
-// @note -- any number may not need to be enclosed in double quotes -- in either case ANY whitespace that is not ensclosed by double quotes is not guaranteed to be preserved.
+// @note -- any whitespace that is not ensclosed by double quotes is not guaranteed to be preserved.
+// @note -- the double quote itself (as a part of the fields value) must be encoded as two consecutive double quotes
+// @note -- a number may not need to be enclosed in double quotes.
+// @note -- if an encoded double-quote character appears in the cell value, then such cell value must be enclosed in double quotes. for example to have a cell value consisting of nothing but a double-quote character, the following must be present: """"
 
 #include <assert.h>
 #include <stdint.h>
@@ -132,14 +133,14 @@ public:
 						} else if (!is.good() || !c)
 							return;
 						else if (c == '"') {
-							if (is.peek() == '"') {
-								grid.back().back() += c;
-								is.get();
-								assert(is.good());
-							}
-							else if (unmatched_quotes == true)
-								unmatched_quotes = false;
-							else
+							if (unmatched_quotes == true) {
+								if (is.peek() == '"') {
+									grid.back().back() += c;
+									is.get();
+									assert(is.good());
+								} else
+									unmatched_quotes = false;
+							} else
 								unmatched_quotes = true;
 						} else if (!::isspace(c) || unmatched_quotes == true)
 							grid.back().back() += c;

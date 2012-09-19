@@ -68,7 +68,7 @@ struct grid_base {
 };
 typedef censoc::spreadsheet::csv<size_type, xxx, grid_base> rawgrid_type;
 
-char const buffer[] = "\"test\" , , boo, \"test \",\n   01, 2, 3, 4, 15.15, \"\"\"a\"\n\n\tte\t st,\"\"boo,goo\nbam,baa";
+char const buffer[] = "\"test\" , , boo, \"test \",\n   01, 2, 3, 4, 15.15, \"\"\"a\"\n\n\tte\t st,\"\"\"boo\",goo\nbam,baa";
 char const static filepath[] = "/tmp/csv_utest_1.tmp"; 
 
 
@@ -95,6 +95,7 @@ int main()
 	assert(grid.column< ::std::string>(0) == "bam");
 	assert(grid.column< ::std::string>(1) == "baa");
 	assert(grid.rows() == 4);
+	// todo -- add test for empty fields enclosed in quotes...
 	return 0;
 }
 
