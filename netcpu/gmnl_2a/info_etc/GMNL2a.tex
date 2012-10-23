@@ -98,13 +98,21 @@ Moreover, given that I (Leon) am not a qualified scientist/academic/researcher i
 
 In other words -- ``take it with a grain of salt''.
 
-The document exists for the purposes of transparency and account-keeping so to speak -- it represents some thoughts and variations on the theme of Generalized Multinomial Logit (GMNL) and, specifically, part thereof: the GMNL-II. 
+The document exists for the purposes of transparency and account-keeping so to speak -- it some thoughts and variations on the theme of Generalized Multinomial Logit (GMNL) and, specifically, part thereof: the GMNL-II. 
 
 Such variations are conducted in light of attempting to better assimilate any of the numerically-scaled relationships amongst respondents' preferences.
 
 The issues relating to possible misinterpretation of the numerically-scaled relationship for other, non preference-homogeneous, factors are deemed to be outside the scope of this document (and shall, perhaps, be happily addressed later on -- in other ramblings). 
 
 Consequently, as far as this document is concerned -- ``if it looks like a scale then it is a scale'' (i.e. a set of homogeneous preferences).
+
+Moreover, the following choice-characterization of the underlying respondents' data is not aimed at being identified by Gmnl2a:
+\begin{itemize}
+\item ``Distance from zero'' -- the model essentially discards any semantics associated with how close-to (or far from) zero-line a given respondent's beta values happen to be. There is no preservation of how confident or unsure a given respondent's preference happens to be.
+\item ``Proportional inter-attribute relationships'' -- the model does not attempt to preserve/identify the ratio(s) between various attributes. Consequently, those surveys which aim at dealing with such ratios (e.g. willingness to pay) may need to understand this point rather well. 
+\end{itemize}
+
+The model (Gmnl2a) only concerns itself with a differential relationship between attributes (such may be normalized/scaled to a given boundary for the purpose of juxtaposition with other models' results, but the notion of differential relationship stands) -- that is to say: ``how much one attribute is more/less important in comparison to another, where importance is essentially a distance between the attributes' beta values''.
 
 \section{Background}
 
@@ -278,5 +286,29 @@ Then it's normalization process would yield:
 \end{itemize}
 
 Finally two models would be juxtaposed with respect to their parameters (e.g. \(\pmb{\hm{\eta}}\) values). Naturally, the aforementioned example illustrates \(\pmb{\hm{\beta}}\)'s absolute equality rather naively, but the thesis of the intent for the post-normalization process remains. 
+
+\subsection{Further models -- SOMML (Scaled Offset Mixed Multinomial Logit)}
+
+Given that the model in question (i.e. Gmnl2a) only attempts to identify \textit{differential} relationships between attributes, one may consider ``\textit{parallel}'' betas (i.e. no scale, just the offset) from \textit{different} respondents as also being synonymous. For example, in a case of two respondents and two attributes, the following data could be considered synonymous: \(\{\beta^{^1}_{1} = 1, \beta^{^1}_{2} = 2\} == \{\beta^{^2}_{1} = -2, \beta^{^2}_{2} = -1\}\) because  \(\beta^{^1}_{2} - \beta^{^1}_{1}  = \beta^{^2}_{2} - \beta^{^2}_{1} = 1\)
+
+To account for such a ``parallelism'', one may introduce additional \textit{offsetting distribution} prior to scaling:
+{ \Large 
+\begin{equation}
+\label{eq:somml_1}
+U=\phi + \sigma(\Phi + \pmb{\hm{\beta}}+\pmb{\hm{\eta}}) + \varepsilon
+\end{equation}
+}
+
+where \(\Phi\) is not a scalar, constant across different respondents; but rather, in a fashion similar to \(\sigma\), is re-drawn for each of the respondents from an arbitrary (e.g. normal) distribution.
+
+Such a process is left for further experimentation (even though the SOMML code has, practically, been written alredy) -- as it shall invariably introduce additional computational requirements:
+\begin{itemize}
+\item estimation of the mean of \(\Phi\)
+\item estimation of the variance of \(\Phi\) -- a process which involves redrawing a set of values and recalculating \textit{vector}-based arithmetic (i.e. not just a coefficient's value being injected in a simple sum, but rather a ``number of draws'' repetitive computations).
+\end{itemize}
+
+Even though such computations may not be used in the final solution (e.g. variance of \(\Phi\) may be discarded in a fashion similar to that of \(\sigma\)'s influence on the finally-presented set of coefficients), the computations will still need to be conducted during the convergence process.
+
+Given that, generally, distribution-based identification (e.g. \(\sigma\), etc.) is not 100\% precise anyway (i.e. who can possibly expect any given fixed-shape distribution to completely fit a realistic case), and that the aforementioned cases of ``offsetting'' approximation are not anticipated to drastically corrupt ``scale relationships'' (and vice versa) -- the identification benefits of \(\Phi\) need to be empirically tested for in order to determine whether they are worthy of the inevitable slowdown in computation/performance... anyway a \hl{TODO} for the future musings when the time allows :-) :-) :-) ... 
 
 \end{document}
