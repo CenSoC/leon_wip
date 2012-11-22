@@ -43,7 +43,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <censoc/lexicast.h>
 #include <censoc/spreadsheet/util.h>
-#include <censoc/spreadsheet/csv.h>
 #include <censoc/compare.h>
 #include <censoc/stl_container_utils.h>
 #include <netcpu/io_wrapper.h>
@@ -81,21 +80,20 @@ struct model_traits {
 	}
 
 	bool
-	parse_arg(char const * const name, char const * const value, meta_msg_type & meta_msg, bulk_msg_type & bulk_msg) 
+	parse_arg(::std::string const & name, ::std::string const & value, meta_msg_type & meta_msg, bulk_msg_type & bulk_msg) 
 	{
-		if (!::strcmp(name, "--draws_sets_size")) {
+		if (name == "--draws_sets_size") {
 			meta_msg.model.draws_sets_size(censoc::lexicast<size_type>(value));
 			censoc::llog() << "Draws sets size: [" << meta_msg.model.draws_sets_size() << "]\n";
-		} else if (!::strcmp(name, "--reduce_exp_complexity")) {
-			::std::string const reduce_exp_complexity_do_str(value);
-			if (reduce_exp_complexity_do_str == "off") {
+		} else if (name == "--reduce_exp_complexity") {
+			if (value == "off") {
 				meta_msg.model.reduce_exp_complexity(0);
-			} else if (reduce_exp_complexity_do_str == "on") {
+			} else if (value == "on") {
 				meta_msg.model.reduce_exp_complexity(1);
 			} else
-				throw ::std::runtime_error("unknown reduce_exp_complexity value: [" + reduce_exp_complexity_do_str + ']');
-			censoc::llog() << "Reduce exponential complexity during computation run: [" << reduce_exp_complexity_do_str << "]\n";
-		} else if (!::strcmp(name, "--repeats")) {
+				throw netcpu::message::exception("unknown reduce_exp_complexity value: [" + value + ']');
+			censoc::llog() << "Reduce exponential complexity during computation run: [" << value << "]\n";
+		} else if (name == "--repeats") {
 			meta_msg.model.repetitions(censoc::lexicast<size_type>(value));
 			censoc::llog() << "Repetitions in a simulation run: [" << meta_msg.model.repetitions() << "]\n";
 		} else 
@@ -110,16 +108,16 @@ struct model_traits {
 		dataset_loader.verify_args(meta_msg.model.dataset, bulk_msg.model.dataset);
 
 		if (meta_msg.model.repetitions() == static_cast<typename netcpu::message::typepair<N>::wire>(-1))
-			throw ::std::runtime_error("must supply number of repetitions in a simulation run");
+			throw netcpu::message::exception("must supply number of repetitions in a simulation run");
 
 		if (meta_msg.model.repetitions() % 2)
-			throw ::std::runtime_error("the number of repetitions must be even");
+			throw netcpu::message::exception("the number of repetitions must be even");
 
 		if (meta_msg.model.reduce_exp_complexity() == static_cast<typename netcpu::message::typepair<uint8_t>::wire>(-1))
-			throw ::std::runtime_error("must supply --reduce_exp_complexity on or off");
+			throw netcpu::message::exception("must supply --reduce_exp_complexity on or off");
 
 		if (meta_msg.model.draws_sets_size() == static_cast<typename netcpu::message::typepair<N>::wire>(-1))
-			throw ::std::runtime_error("must supply vaild draws sets size of > 0");
+			throw netcpu::message::exception("must supply vaild draws sets size of > 0");
 		else if (!meta_msg.model.draws_sets_size())
 			meta_msg.model.draws_sets_size(meta_msg.model.dataset.respondents_choice_sets.size());
 		else
@@ -127,8 +125,6 @@ struct model_traits {
 
 	}
 };
-
-netcpu::converger_1::model_factory<gmnl_2a::model_traits, netcpu::models_ids::gmnl_2a> static factory;
 
 }}}
 

@@ -68,6 +68,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <censoc/lexicast.h>
 #include <censoc/opendir.h>
 #include <censoc/scoped_membership_iterator.h>
+#include <censoc/stl_container_utils.h>
 
 #include "big_int_context.h"
 namespace censoc { namespace netcpu { 
@@ -76,7 +77,9 @@ big_int_context_type static big_int_context;
 #include "big_int.h"
 
 #include "types.h"
+#include "message.h"
 //}
+
 
 namespace censoc { namespace netcpu { 
 
@@ -84,7 +87,7 @@ namespace message {
 	class async_driver;
 }
 	
-typedef uint_fast16_t tasks_size_type;
+typedef netcpu::message::typepair<uint64_t>::ram tasks_size_type;
 typedef censoc::param<tasks_size_type>::type tasks_size_paramtype;
 typedef netcpu::task_id_typepair::ram task_id_type;
 typedef censoc::param<task_id_type>::type task_id_paramtype;
@@ -122,8 +125,8 @@ verify_callback(bool preverified, ::boost::asio::ssl::verify_context& ctx)
 
 struct task;
 ::std::multimap<time_t, netcpu::task *> static aged_tasks;
-::std::list<netcpu::task *> static pending_tasks;
-::std::list<netcpu::task *> static completed_tasks;
+::censoc::stl::fastsize< ::std::list<netcpu::task *>, uint_fast32_t> static pending_tasks;
+::censoc::stl::fastsize< ::std::list<netcpu::task *>, uint_fast32_t> static completed_tasks;
 
 // containing explicitly via a ::boost::shared_ptr does not give any nicer syntax to the user-code, and it wastes more memory/cpu-cycles (as 'shared' context is replicated 1:element of the list. Instead will have a ~dtor thingy
 struct named_tasks_type : ::std::map< ::std::string, netcpu::task *> {
@@ -154,7 +157,7 @@ struct named_tasks_iterator_traits {
 
 struct pending_tasks_iterator_traits {
 	typedef censoc::empty ctor_type;
-	typedef ::std::list<netcpu::task *> container_type;
+	typedef ::censoc::stl::fastsize< ::std::list<netcpu::task *>, uint_fast32_t> container_type;
 	container_type static &
 	container()
 	{
@@ -164,7 +167,7 @@ struct pending_tasks_iterator_traits {
 
 struct completed_tasks_iterator_traits {
 	typedef censoc::empty ctor_type;
-	typedef ::std::list<netcpu::task *> container_type;
+	typedef ::censoc::stl::fastsize< ::std::list<netcpu::task *>, uint_fast32_t> container_type;
 	container_type static &
 	container()
 	{
@@ -204,20 +207,36 @@ struct task {
 	completed_tasks_scoped_membership_iterator completed_i; // TODO -- may not even really need this one at all...
 
 	censoc::strip_const<censoc::param< ::std::string>::type>::type 
-	name()
+	name() const
 	{
 		return name_i.i->first;
 	}
 
-	void virtual cancel() = 0;
-	void virtual suspend() = 0;
+	void virtual deactivate() = 0;
 	void virtual activate() = 0;
 	bool virtual active() = 0;
 	void virtual new_processing_peer(netcpu::message::async_driver & io) = 0;
+	
+
+	// NOTE -- a temporary, quick hack; this is because the deriving task already has floating-point and integral specialisations (needed for reading convergence_state message); moreover convergence_state is specific to the converger_1 algorithm which may, later on, not be the only algo used and so the awareness of the mapping/translation of algo-native message structure to a more universal/common format may be needed anyway. Just about the only choice is to whether make each algo write-out the common-format convergence when it writes its native convergence_state message (then just reading the file upon every controller request); or, alternatively calculate the mapping on-the-run: the way it is done now... 
+	// TODO -- consider (in more detail) the former alternative...
+	// TODO -- it may even be plausible that different models will not have a common representational structure (coefficient values, etc.) in the first place, and so the message-building -cooking process will need to be re-factored to perhaps generate either a dynamically-structured messages or a multi-message sequences during io-communication with the peer... this, however, is rather in a very distant future to consider...
+	virtual void load_coefficients_info(netcpu::message::task_info &) = 0;
 
 	task(::std::string const & name, time_t birthday = ::time(NULL))
 	: name_i(named_tasks.insert(::std::make_pair(name, this)).first), age_i(aged_tasks.insert(::std::make_pair(birthday, this))) {
 		::std::clog << "ctor for task: time: " << birthday << ::std::endl;
+	}
+
+	virtual 
+	~task()
+	{
+		// NOTE no need to test for deactivation, should really be a part of dtor code in the deriving class
+		::std::string const path(netcpu::root_path + name());
+		censoc::llog() << "purging: [" << path << "]\n";
+		// short-term hack (later use ::boost::filesystem libs)
+		if (::system(("rm -fr '" + path + "'").c_str()))
+			throw ::std::runtime_error(xxx("could not rm -fr: [") << path << ']');
 	}
 
 	void
@@ -231,30 +250,35 @@ struct task {
 		on_pending_tasks_update();
 	}
 	void
-	swapinqueue(task * other)
+	move_in_list_of_pending_tasks(int const steps_to_move_by)
 	{
-		assert(other != NULL);
-		assert(other != this);
-		*pending_i.i = other;
-		*other->pending_i.i = this;
-		::std::list<netcpu::task *>::iterator tmp(pending_i.i);
-		pending_i.i = other->pending_i.i;
-		other->pending_i.i = tmp;
-		assert(this == *pending_i.i);
-	}
-	void
-	movefrontinqueue() 
-	{
-		assert(pending_tasks.size() > 1);
-		assert(pending_tasks.front() != this);
-		pending_i = pending_tasks.insert(pending_tasks.begin(), this);
+		assert(steps_to_move_by);
+		assert(pending_i != pending_tasks_scoped_membership_iterator::iterator_type());
+
+		::std::list<netcpu::task *>::iterator i(pending_i.i);
+		assert(this == *i);
+		int tmp(steps_to_move_by);
+		if (steps_to_move_by > 0)
+			for (; tmp && i != pending_tasks.end(); ++i, --tmp);
+		else
+			for (; tmp && i != pending_tasks.begin(); --i, ++tmp);
+
+		if (tmp != steps_to_move_by) {
+			if (active() == true)
+				deactivate();
+			if ((*i)->active() == true)
+				(*i)->deactivate();
+			pending_i = pending_tasks.insert(i, this);
+		}
+		
+		// not calling activate (if needed) because the caller is expected to eventually call 'on_pending_tasks_update' (which will not only activate front pending task but will also serialize the pending list to file/disk) 
 	}
 	void
 	markcompleted()
 	{
 		assert(completed_i == completed_tasks_scoped_membership_iterator::iterator_type());
 
-		cancel();
+		deactivate();
 		pending_i.reset();
 
 		completed_i = completed_tasks.insert(completed_tasks.end(), this);
@@ -313,13 +337,22 @@ generate_taskdir(::std::string const & postfix)
 				throw ::std::runtime_error(xxx("could not mkdir: [") << path << "] with error: [" << ::strerror(errno) << ']' );
 			else if (++netcpu::max_taskid == tmp)
 				throw ::std::runtime_error(xxx("could not mkdir: [") << path << "] all options exhausted due to maximum possible tasks being already stored on the drive (consider cleaning or changing typedef for tasks_size_type)");
-		} else 
+		} else {
+			// store max_taskid
+			::std::ofstream f((netcpu::root_path + "last_taskid.tmp").c_str(), ::std::ios::trunc);
+			if (f.is_open()) {
+				netcpu::message::typepair<uint64_t>::wire w = max_taskid;
+				uint8_t raw[sizeof(w)];
+				netcpu::message::to_wire<netcpu::message::typepair<uint64_t>::wire>::eval(raw, w);
+				if (f.write(reinterpret_cast<char const *>(raw), sizeof(w)))
+					::rename((netcpu::root_path + "last_taskid.tmp").c_str(), (netcpu::root_path + "last_taskid").c_str());
+			}
 			return name;
+		}
 	}
 }
 }}
 
-#include "message.h"
 #include "io_driver.h"
 
 namespace censoc { namespace netcpu { 
@@ -356,25 +389,14 @@ void static
 purge_old_tasks()
 {
 	::std::clog << "purge check\n";
-	// TODO -- convert pending and completed tasks from list to fastsize<list> for faster access of 'size' property
 	size_t const pending_task_size(pending_tasks.size());
 	size_t const completed_task_size(completed_tasks.size());
 	while (aged_tasks.size()) { 
 		netcpu::task * tmp(aged_tasks.begin()->second);
-		if (::time(NULL) - aged_tasks.begin()->first > netcpu::task_oldage) {
-
-			if (pending_tasks.front() == tmp) {
-				// TODO -- if calculation-model is non-NULL -- dismantle it!!!
-			}
-
-			::std::string const path(netcpu::root_path + tmp->name());
-			censoc::llog() << "purging: [" << path << "]\n";
-			// short-term hack (later use ::boost::filesystem libs)
-			if (::system(("rm -fr '" + path + "'").c_str()))
-				throw ::std::runtime_error(xxx("could not rm -fr: [") << path << ']');
-
+		assert(tmp != NULL);
+		if (::time(NULL) - aged_tasks.begin()->first > netcpu::task_oldage)
 			delete tmp;
-		} else 
+		else 
 			break;
 	}
 
@@ -493,6 +515,8 @@ public:
 	peer_connection(netcpu::message::async_driver & io) 
 	: netcpu::io_wrapper<netcpu::message::async_driver>(io) {
 		censoc::llog() << "ctor in peer_connection, driver addr: " << &io << ::std::endl;
+		this->io().handshake_callback(&peer_connection::on_handshake, this);
+		io.write_callback(&peer_connection::on_write, this);
 	}
 
 	~peer_connection() throw();
@@ -534,6 +558,79 @@ public:
 			io().write(netcpu::message::bad());
 	}
 
+	void
+	on_get_tasks_list()
+	{
+		netcpu::message::tasks_list msg;
+		uint_fast32_t task_i(0);
+		msg.tasks.resize(pending_tasks.size() + completed_tasks.size());
+		for (censoc::stl::fastsize< ::std::list<netcpu::task *>, uint_fast32_t>::const_iterator i(pending_tasks.begin()); i != pending_tasks.end(); ++i, ++task_i) {
+#ifndef NDEBUG
+			if (!task_i)
+				assert((*i)->active() == true);
+#endif
+			netcpu::message::task_info & tsk(msg.tasks[task_i]);
+			tsk.name.resize((*i)->name().size());
+			::memcpy(tsk.name.data(), (*i)->name().c_str(), (*i)->name().size());
+			tsk.state(netcpu::message::task_info::state_type::pending);
+			(*i)->load_coefficients_info(tsk);
+		}
+		for (censoc::stl::fastsize< ::std::list<netcpu::task *>, uint_fast32_t>::const_iterator i(completed_tasks.begin()); i != completed_tasks.end(); ++i, ++task_i) {
+			netcpu::message::task_info & tsk(msg.tasks[task_i]);
+			tsk.name.resize((*i)->name().size());
+			::memcpy(tsk.name.data(), (*i)->name().c_str(), (*i)->name().size());
+			tsk.state(netcpu::message::task_info::state_type::completed);
+			(*i)->load_coefficients_info(tsk);
+		}
+		io().write(msg);
+	}
+
+	void
+	on_move_task_in_list()
+	{
+		netcpu::message::move_task_in_list msg;
+		msg.from_wire(io().read_raw);
+		int const steps_to_move_by(netcpu::message::deserialise_from_unsigned_to_signed_integral(msg.steps_to_move_by()));
+		if (steps_to_move_by) {
+			::std::string task_name(::std::string(msg.task_name.data(), msg.task_name.size()));
+			::std::map< ::std::string, netcpu::task * >::iterator i(named_tasks.find(task_name));
+			if (i != named_tasks.end()) {
+				i->second->move_in_list_of_pending_tasks(steps_to_move_by);
+				on_pending_tasks_update();
+				io().write(netcpu::message::good());
+			} else { 
+				censoc::llog() << "controller is asking to move a task which does not exist [" << task_name << "]\n";
+				io().write(netcpu::message::bad());
+			}
+		} else {
+			censoc::llog() << "controller is asking to move a task by zero-steps (not allowed)\n";
+			io().write(netcpu::message::bad());
+		}
+	}
+
+	void
+	on_delete_task()
+	{
+		netcpu::message::delete_task msg;
+		msg.from_wire(io().read_raw);
+		::std::string task_name(::std::string(msg.task_name.data(), msg.task_name.size()));
+		::std::cerr << "deleting a task " << task_name << '\n';
+		::std::map< ::std::string, netcpu::task * >::iterator i(named_tasks.find(task_name));
+		if (i != named_tasks.end()) {
+			size_t const pending_task_size(pending_tasks.size());
+			size_t const completed_task_size(completed_tasks.size());
+			delete i->second;
+			if (pending_tasks.size() != pending_task_size)
+				on_pending_tasks_update();
+			if (completed_tasks.size() != completed_task_size)
+				on_completed_tasks_update();
+				io().write(netcpu::message::good());
+		} else {
+			censoc::llog() << "controller is asking to delete a task which does not exist [" << task_name << "]\n";
+			io().write(netcpu::message::bad());
+		}
+	}
+
 	void 
 	on_read()
 	{
@@ -558,6 +655,15 @@ public:
 		case netcpu::message::task_offer::myid : 
 		return on_task_offer();
 
+		case netcpu::message::get_tasks_list::myid : 
+		return on_get_tasks_list();
+
+		case netcpu::message::move_task_in_list::myid : 
+		return on_move_task_in_list();
+
+		case netcpu::message::delete_task::myid : 
+		return on_delete_task();
+
 		default:
 		censoc::llog() << "unexpected message: [" << id << "], ignoring.\n";
 		}
@@ -567,7 +673,6 @@ public:
 	void 
 	on_write()
 	{
-		censoc::llog() << "written something" << ::std::endl;
 		io().read();
 	}
 };
@@ -627,6 +732,20 @@ run(int argc, char * * argv)
 	::boost::scoped_ptr<interface> ui(new interface(argc, argv));
 
 	{
+		// load max_taskid
+		{
+			::std::ifstream f((netcpu::root_path + "last_taskid").c_str());
+			if (f.is_open()) {
+				netcpu::message::typepair<uint64_t>::wire w;
+				uint8_t raw[sizeof(w)];
+				if (f.read(reinterpret_cast<char *>(raw), sizeof(w))) {
+					netcpu::message::from_wire<netcpu::message::typepair<uint64_t>::wire>::eval(raw, w);
+					max_taskid = w;
+					::std::cerr << "max_taskid cached: " << max_taskid << ::std::endl;
+				}
+			}
+		}
+
 		// load pending index file if present (otherwise have empty index_list in RAM)
 		::std::list< ::std::string> pending_order;
 		::std::set< ::std::string> pending_index;
@@ -697,7 +816,7 @@ run(int argc, char * * argv)
 		for (::std::list< ::std::string>::reverse_iterator i(pending_order.rbegin()); i != pending_order.rend(); ++i) {
 			::std::map< ::std::string, netcpu::task * >::iterator j(named_tasks.find(*i));
 			if (j != named_tasks.end() && pending_tasks.front() != j->second)
-				j->second->movefrontinqueue();
+				j->second->pending_i = pending_tasks.insert(pending_tasks.begin(), j->second);
 		}
 
 #ifndef NDEBUG

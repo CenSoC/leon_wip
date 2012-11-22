@@ -903,8 +903,12 @@ struct task_processor_detail_meta : netcpu::io_wrapper<netcpu::message::async_dr
 	task_processor_detail_meta(netcpu::message::async_driver & io_driver)
 	: netcpu::io_wrapper<netcpu::message::async_driver>(io_driver) {
 		censoc::llog() << "ctor in converger_1::task_processor_detail_meta\n";
-		io().write(netcpu::message::good());
-		io().read();
+		io().write(netcpu::message::good(), &task_processor_detail_meta::on_written_good, this);
+	}
+	void
+	on_written_good()
+	{
+		io().read(&task_processor_detail_meta::on_read, this);
 	}
 
 	~task_processor_detail_meta()
@@ -964,12 +968,18 @@ struct task_processor : netcpu::io_wrapper<netcpu::message::async_driver> {
 	task_processor(netcpu::message::async_driver & io_driver)
 	: netcpu::io_wrapper<netcpu::message::async_driver>(io_driver) {
 		censoc::llog() << "task_processor ctor in converger_1" << ::std::endl;
-		io().write(netcpu::message::good());
-		io().read();
+		io().write(netcpu::message::good(), &task_processor::on_written_good, this);
 	}
+
 	~task_processor() throw()
 	{
 		censoc::llog() << "dtor of task_processor in converger_1: " << this << ::std::endl;
+	}
+
+	void
+	on_written_good()
+	{
+		io().read(&task_processor::on_read, this);
 	}
 
 	void

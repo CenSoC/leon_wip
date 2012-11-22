@@ -74,12 +74,14 @@ char const static filepath[] = "/tmp/csv_utest_1.tmp";
 
 int main()
 {
-	{
-		::std::ofstream tmp_file(filepath, ::std::ios::binary | ::std::ios::trunc);
-		tmp_file.write(buffer, sizeof(buffer));
-	}
+	//{
+		::std::fstream tmp_file(filepath, ::std::ios::binary | ::std::ios::trunc | ::std::ios::in | ::std::ios::out);
+		tmp_file.write(buffer, sizeof(buffer) - 1);
+	//}
+	//::std::ifstream tmp_file(filepath);
+	tmp_file.seekg(0);
 	ute_type ute;
-	rawgrid_type grid(filepath, grid_base::ctor(ute));
+	rawgrid_type grid(tmp_file, grid_base::ctor(ute));
 	grid.torow(1);
 	assert(grid.column< ::std::string>(5) ==  "\"a");
 	grid.torow(0);

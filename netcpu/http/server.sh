@@ -1,4 +1,4 @@
-#!/bin/sh -x
+#!/bin/sh
 
 #
 # Written and contributed by Leonid Zadorin at the Centre for the Study of Choice
@@ -38,35 +38,34 @@
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
 #
 
+MYPATH=`realpath ${0}`
+MYDIR=`dirname ${MYPATH}`/
+
 #SERVER_AT="netcpu.zapto.org:8070"
 SERVER_AT="localhost:8081"
 
-CMDLINE=" --server_cert certificate.pem --client_cert client_certificate.pem --client_key client_key.pem --server_at ${SERVER_AT} \
---model 1:offer \
-	--filepath ../simul_data_logit.csv --x 5:6 --resp 1 --fromrow 1 --sort 1,2,3 --alts 2 --best 4 \
-	--int_resolution 32 --float_resolution double --extended_float_resolution double --complexity_size 88800000 --minimpr 1.00000001 --shrink_slowdown 0.47 --dissect off --reduce_exp_complexity off \
-	--coeffs_atonce_size 2 \
-		--cm 1:-35:35:.003:25 \
-	--coeffs_atonce_size 2 \
-		--cm 1:.35:3 \
-	--coeffs_atonce_size 2 \
-		--cm 1:.05:2 \
-" 
+#CMDLINE="--server_at ${SERVER_AT} --server_cert ../certificate.pem --client_cert ../client_certificate.pem --client_key ../client_key.pem --key ../key.pem --cert ../certificate.pem --clients_certificates ../clients_certificates --listen_at 127.0.0.1:8051 "
+CMDLINE="--server_at ${SERVER_AT} --server_cert ../certificate.pem --client_cert ../client_certificate.pem --client_key ../client_key.pem --key ../key.pem --cert ../certificate.pem --clients_certificates ../clients_certificates --listen_at localhost:8055 "
+
+# note -- whilst 'processor' code is concerned with portability issues (i.e. must run on many different systesm) 
+# the 'server' et al are not, indeed, expected to run on anything other than a 
+# specific/chosen one. Therefore, can afford to write a sys-specific code. 
+# In this case such is FreeBSD-centric MALLOC_OPTIONS env setting
+MALLOC_OPTIONS="10nPJ" ./server.exe ${CMDLINE}
+
+exit
 
 # GDB this is for normal sh (not bash) 
-echo "catch throw" > controller.gdb
-echo "run  ${CMDLINE}" >> controller.gdb 
-gdb controller.exe -x controller.gdb
-rm controller.gdb
+echo "catch throw" > server.gdb
+echo "run ${CMDLINE}" >> server.gdb 
+MALLOC_OPTIONS="10nPJ" gdb server.exe -x server.gdb
+rm server.gdb
 
-CMDLINE=" --server_cert certificate.pem --client_cert client_certificate.pem --client_key client_key.pem --server_at ${SERVER_AT} \
---model 1:offer \
-	--file ../attic/results/logit/test_noscale_novariance_xxx.csv --x 5:8 --resp 1 --fromrow 1 --sort 1,2,3 --alts 2 --best 4 \
-	--int_resolution 32 --float_resolution double --extended_float_resolution double --complexity_size 88800000 --minimpr 1.00000001 --shrink_slowdown 0.47 --dissect off --reduce_exp_complexity off \
-	--coeffs_atonce_size 4 \
-		--cm 1:-15:15:.003:9 \
-	--coeffs_atonce_size 3 \
-		--cm 1:.35:3 \
-	--coeffs_atonce_size 2 \
-		--cm 1:.05:2 \
-" 
+exit
+
+
+# release mode
+MALLOC_OPTIONS="10nP" ./server.exe ${CMDLINE}
+
+exit
+

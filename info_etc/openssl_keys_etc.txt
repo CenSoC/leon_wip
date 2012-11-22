@@ -58,3 +58,6 @@ openssl x509 -text -in cert.pem
 
 to print end date of the certificate
 openssl x509 -startdate -enddate -noout -in certificate.pem
+
+to convert certificate and key to a web-browser importable certificate (e.g. for web-browser to use as a client certificate):
+openssl pkcs12 -export -out netcpu_client_certificate.p12 -inkey client_key.pem -in client_certificate.pem

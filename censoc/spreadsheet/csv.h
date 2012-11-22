@@ -76,21 +76,17 @@ class csv : public Base {
 	size_type const static buf_size = 10 * 1024 * 1024; // todo -- make tunable
 	char buf[buf_size]; 
 
-public:
-	/**
-		@param 'path' location of csv file
-	*/
-	csv(char const * path, typename Base::ctor const & base_ctor)
-	: Base(base_ctor), current_row_i(-1) {
+	size_type const static grid_grow_rows_by = 200;
+	size_type const static grid_grow_columns_by = 15;
 
-		::std::ifstream is(path);
-		if (!is.good())
-			throw ::std::runtime_error(xxx() << "Failed to open csv file(=" << path << ")");
+public:
+	csv(::std::istream & is, typename Base::ctor const & base_ctor)
+	: Base(base_ctor), current_row_i(-1) {
 
 	  is.rdbuf()->pubsetbuf(buf, buf_size);
 
-		size_type rows_reservations_size(100); // todo -- make tunable
-		size_type columns_reservations_size(2); // todo -- make tunable
+		size_type rows_reservations_size(1000); // todo -- make tunable
+		size_type columns_reservations_size(75); // todo -- make tunable
 
 		grid.reserve(rows_reservations_size); 
 
@@ -99,17 +95,18 @@ public:
 
 		while (!0) {
 
-			char c = is.get();
-			if (!is.good() || !c)
+			char c(is.get());
+			if (!is.good())
 				return;
 
 			if (!::isspace(c)) {
 				if (newrow_pending == true) {
 					newrow_pending = false;
-					if (grid.size() > rows_reservations_size) {
-						if (::std::numeric_limits<size_t>::max() / 2 < rows_reservations_size)
-							throw ::std::runtime_error(xxx() << "Failed to grow the rows buffer for csv file(=" << path << ")");
-						grid.reserve(rows_reservations_size <<= 1);
+					if (grid.size() == rows_reservations_size) {
+						size_type const new_rows_reservations_size(rows_reservations_size + grid_grow_rows_by);
+						if (::std::numeric_limits<size_t>::max() < new_rows_reservations_size || new_rows_reservations_size < rows_reservations_size)
+							throw ::std::runtime_error(xxx() << "Failed to grow the rows buffer for csv parser(=" << this << ")");
+						grid.reserve(rows_reservations_size = new_rows_reservations_size);
 					}
 					assert(is.tellg() > 0);
 					grid.push_back(::std::vector< ::std::string>());
@@ -119,10 +116,11 @@ public:
 					while (!0) {
 						if (c == ',') {
 							if (unmatched_quotes == false) {
-								if (grid.back().size() > columns_reservations_size) {
-									if (::std::numeric_limits<size_t>::max() / 2 < columns_reservations_size)
-										throw ::std::runtime_error(xxx() << "Failed to grow the columns buffer for csv file(=" << path << ")");
-									grid.back().reserve(columns_reservations_size <<= 1);
+								if (grid.back().size() == columns_reservations_size) {
+									size_type const new_columns_reservations_size(columns_reservations_size + grid_grow_columns_by);
+									if (::std::numeric_limits<size_t>::max() < new_columns_reservations_size || new_columns_reservations_size <= columns_reservations_size)
+										throw ::std::runtime_error(xxx() << "Failed to grow the columns buffer for csv parser(=" << this << ")");
+									grid.back().reserve(columns_reservations_size = new_columns_reservations_size);
 								}
 								grid.back().push_back(::std::string());
 							} else 
@@ -130,9 +128,7 @@ public:
 						} else if (isnewline(c) == true) {
 							newrow_pending = true;
 							break;
-						} else if (!is.good() || !c)
-							return;
-						else if (c == '"') {
+						} else if (c == '"') {
 							if (unmatched_quotes == true) {
 								if (is.peek() == '"') {
 									grid.back().back() += c;
@@ -145,6 +141,8 @@ public:
 						} else if (!::isspace(c) || unmatched_quotes == true)
 							grid.back().back() += c;
 						c = is.get();
+						if (!is.good())
+							return;
 					}
 				} 
 			} 

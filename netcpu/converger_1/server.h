@@ -1145,6 +1145,7 @@ struct task_processor : ::boost::noncopyable {
 			assert(offset.size());
 
 			if (!coefficients_rand_range_ended_wait) {
+				save_convergence_state();
 				float_type tmp_max(::boost::numeric::bounds<float_type>::lowest());
 				for (size_type i(0); i != coefficients_size - 1; ++i)
 				//for (size_type i(0); i != coefficients_size; ++i)
@@ -1227,63 +1228,7 @@ struct task_processor : ::boost::noncopyable {
 		size_type static write_to_disk_wait(3);
 		if (!--write_to_disk_wait) {
 			write_to_disk_wait = 7;
-
-			censoc::llog() << "Writing to disk...\n";
-
-			// build the message
-			converger_1::message::convergence_state<N, F> convergence_state_msg;
-			convergence_state_msg.coeffs.resize(coefficients_size);
-			for (size_type i(0); i != coefficients_size; ++i) {
-				coefficient_metadata<N, F> const & ram(coefficients_metadata[i]);
-				converger_1::message::coeffwise_server_state_sync<N, F> & wire(convergence_state_msg.coeffs(i));
-				wire.value(ram.saved_index());
-				wire.range_ended(ram.range_ended() == true ? 1 : 0);
-				netcpu::message::serialise_to_decomposed_floating(ram.saved_value(), wire.value_f);
-				netcpu::message::serialise_to_decomposed_floating(ram.value_from(), wire.value_from);
-				netcpu::message::serialise_to_decomposed_floating(ram.rand_range(), wire.rand_range);
-				size_type const grid_resolutions_size(ram.grid_resolutions.size());
-				wire.grid_resolutions.resize(grid_resolutions_size);
-				for (size_type i(0); i != grid_resolutions_size; ++i)
-					wire.grid_resolutions(i, ram.grid_resolutions[i]);
-			}
-			netcpu::message::serialise_to_decomposed_floating(e_min, convergence_state_msg.value);
-			convergence_state_msg.am_bootstrapping(am_bootstrapping == true ? 1 : 0);
-			convergence_state_msg.intended_coeffs_at_once(intended_coeffs_at_once);
-			convergence_state_msg.coefficients_rand_range_ended_wait(coefficients_rand_range_ended_wait);
-			assert(current_complexity_level != combos_modem.metadata().end());
-			convergence_state_msg.current_complexity_level_first(current_complexity_level->first);
-			convergence_state_msg.complexities.resize(remaining_complexities.size());
-			size_type j(0);
-			for (typename complexities_type::const_iterator i(remaining_complexities.begin()); i != remaining_complexities.end(); ++i) {
-				converger_1::message::complexitywise_element<N> & wire(convergence_state_msg.complexities(j++));
-				wire.complexity_begin(i->first);
-				wire.complexity_size(i->second);
-			}
-
-			convergence_state_msg.visited_places.resize(visited_places.size());
-			j = 0;
-			for (typename ::std::map<netcpu::big_uint<size_type>, size_type>::const_iterator i(visited_places.begin()); i != visited_places.end(); ++i) {
-				converger_1::message::visited_place<N> & wire(convergence_state_msg.visited_places(j++));
-				//assert(i->first.size());
-				wire.begin.resize(i->first.size());
-				if (wire.begin.size())
-					i->first.store(wire.begin.data());
-				wire.size(i->second);
-			}
-
-			// serialise
-			::std::string const convergence_state_filepath(netcpu::root_path + netcpu::pending_tasks.front()->name() + "/convergence_state.msg");
-			{
-				netcpu::message::write_wrapper write_raw; 
-				convergence_state_msg.to_wire(write_raw);
-				::std::ofstream convergence_state_file((convergence_state_filepath + ".tmp").c_str(), ::std::ios::binary | ::std::ios::trunc);
-				convergence_state_file.write(reinterpret_cast<char const *>(write_raw.head()), write_raw.size());
-				if (convergence_state_file == false)
-					throw ::std::runtime_error("could not write " + convergence_state_filepath + ".tmp");
-			}
-			::rename((convergence_state_filepath + ".tmp").c_str(), convergence_state_filepath.c_str());
-
-			censoc::llog() << "...done writing to disk\n";
+			save_convergence_state();
 		}
 
 #if 0
@@ -1291,6 +1236,68 @@ struct task_processor : ::boost::noncopyable {
 		if (server_state_sync_timer.is_pending() == false) // could have been called from 'on_peer_report' immediately (not via timer) -- so the timer is still pending/going independently...
 			server_state_sync_timer.timeout(boost::posix_time::seconds(3)); // TODO make it a runtime param
 #endif
+	}
+
+	void
+	save_convergence_state()
+	{
+
+		censoc::llog() << "Writing convergence state to disk...\n";
+
+		// build the message
+		converger_1::message::convergence_state<N, F> convergence_state_msg;
+		convergence_state_msg.coeffs.resize(coefficients_size);
+		for (size_type i(0); i != coefficients_size; ++i) {
+			coefficient_metadata<N, F> const & ram(coefficients_metadata[i]);
+			converger_1::message::coeffwise_server_state_sync<N, F> & wire(convergence_state_msg.coeffs(i));
+			wire.value(ram.saved_index());
+			wire.range_ended(ram.range_ended() == true ? 1 : 0);
+			netcpu::message::serialise_to_decomposed_floating(ram.saved_value(), wire.value_f);
+			netcpu::message::serialise_to_decomposed_floating(ram.value_from(), wire.value_from);
+			netcpu::message::serialise_to_decomposed_floating(ram.rand_range(), wire.rand_range);
+			size_type const grid_resolutions_size(ram.grid_resolutions.size());
+			wire.grid_resolutions.resize(grid_resolutions_size);
+			for (size_type i(0); i != grid_resolutions_size; ++i)
+				wire.grid_resolutions(i, ram.grid_resolutions[i]);
+		}
+		netcpu::message::serialise_to_decomposed_floating(e_min, convergence_state_msg.value);
+		convergence_state_msg.am_bootstrapping(am_bootstrapping == true ? 1 : 0);
+		convergence_state_msg.intended_coeffs_at_once(intended_coeffs_at_once);
+		convergence_state_msg.coefficients_rand_range_ended_wait(coefficients_rand_range_ended_wait);
+		assert(current_complexity_level != combos_modem.metadata().end());
+		convergence_state_msg.current_complexity_level_first(current_complexity_level->first);
+		convergence_state_msg.complexities.resize(remaining_complexities.size());
+		size_type j(0);
+		for (typename complexities_type::const_iterator i(remaining_complexities.begin()); i != remaining_complexities.end(); ++i) {
+			converger_1::message::complexitywise_element<N> & wire(convergence_state_msg.complexities(j++));
+			wire.complexity_begin(i->first);
+			wire.complexity_size(i->second);
+		}
+
+		convergence_state_msg.visited_places.resize(visited_places.size());
+		j = 0;
+		for (typename ::std::map<netcpu::big_uint<size_type>, size_type>::const_iterator i(visited_places.begin()); i != visited_places.end(); ++i) {
+			converger_1::message::visited_place<N> & wire(convergence_state_msg.visited_places(j++));
+			//assert(i->first.size());
+			wire.begin.resize(i->first.size());
+			if (wire.begin.size())
+				i->first.store(wire.begin.data());
+			wire.size(i->second);
+		}
+
+		// serialise
+		::std::string const convergence_state_filepath(netcpu::root_path + netcpu::pending_tasks.front()->name() + "/convergence_state.msg");
+		{
+			netcpu::message::write_wrapper write_raw; 
+			convergence_state_msg.to_wire(write_raw);
+			::std::ofstream convergence_state_file((convergence_state_filepath + ".tmp").c_str(), ::std::ios::binary | ::std::ios::trunc);
+			convergence_state_file.write(reinterpret_cast<char const *>(write_raw.head()), write_raw.size());
+			if (convergence_state_file == false)
+				throw ::std::runtime_error("could not write " + convergence_state_filepath + ".tmp");
+		}
+		::rename((convergence_state_filepath + ".tmp").c_str(), convergence_state_filepath.c_str());
+
+		censoc::llog() << "...done writing to disk\n";
 	}
 
 	void
@@ -1411,7 +1418,7 @@ struct processing_peer : netcpu::io_wrapper<netcpu::message::async_driver> {
 	{
 		netcpu::message::task_offer msg;
 		msg.task_id(ModelId);
-		io().write(msg);
+		io().write(msg, &processing_peer::on_write, this);
 		censoc::llog() << "processing_peer ctor is done\n";
 	}
 
@@ -1605,6 +1612,7 @@ task_processor<N, F, Model, ModelId>::new_processing_peer(netcpu::message::async
 template <typename N, typename F, typename Model, netcpu::models_ids::val ModelId>
 struct task : netcpu::task {
 
+	typedef F float_type;
 	typedef typename netcpu::message::typepair<N>::ram size_type;
 
 	::boost::scoped_ptr<converger_1::task_processor<N, F, Model, ModelId> > active_task_processor;
@@ -1614,22 +1622,47 @@ struct task : netcpu::task {
 	}
 	~task()
 	{
-		cancel();
+		deactivate();
 	}
 
-	void cancel() 
+	void 
+	deactivate() 
 	{
 		active_task_processor.reset();
 	}
 
-	void suspend() {}
+	void 
+	load_coefficients_info(netcpu::message::task_info & task)
+	{
+		::std::string const convergence_state_filepath(netcpu::root_path + name() + "/convergence_state.msg");
+		converger_1::message::convergence_state<N, F> convergence_state_msg;
+		if (::boost::filesystem::exists(convergence_state_filepath) == true) {
+			::std::ifstream convergence_state_file(convergence_state_filepath.c_str(), ::std::ios::binary);
+			netcpu::message::read_wrapper wrapper;
+			netcpu::message::fstream_to_wrapper(convergence_state_file, wrapper);
+			convergence_state_msg.from_wire(wrapper);
+
+			assert(convergence_state_msg.coeffs.size());
+			task.coefficients.resize(convergence_state_msg.coeffs.size());
+
+			for (size_type i(0); i != convergence_state_msg.coeffs.size(); ++i) {
+				netcpu::message::task_coefficient_info & to(task.coefficients(i));
+				converger_1::message::coeffwise_server_state_sync<N, F> const & from(convergence_state_msg.coeffs(i));
+
+				netcpu::message::serialise_to_decomposed_floating(netcpu::message::deserialise_from_decomposed_floating<float_type>(from.value_f), to.value);
+				netcpu::message::serialise_to_decomposed_floating(netcpu::message::deserialise_from_decomposed_floating<float_type>(from.value_from), to.from);
+				netcpu::message::serialise_to_decomposed_floating(netcpu::message::deserialise_from_decomposed_floating<float_type>(from.rand_range), to.range);
+			}
+
+		}
+	}
 
 	void activate() 
 	{
 		/* { NOTE -- what to do if reactivating and generic list of processing-ready peers already contains processors which have rejected current (this) task and are in the list because they are awaiting a new task?
-			 The answer is easy -- just re-process those as if they were not the prior rejectors. This may appear wastefull but keeping in mind that a task is very likely to be suspended AND another task is activated in it's place -- so the 'prior rejectors' list may well contain those that are no longer relevant to this particular task anyway.
+			 The answer is easy -- just re-process those as if they were not the prior rejectors. This may appear wastefull but keeping in mind that a task is very likely to be deactivated AND another task is activated in it's place -- so the 'prior rejectors' list may well contain those that are no longer relevant to this particular task anyway.
 
-			 Besides -- it's not like activate/suspend is expected to be done frequently at all... indeed.
+			 Besides -- it's not like activate/deactivate is expected to be done frequently at all... indeed.
 			 } */
 		
 		assert(netcpu::pending_tasks.empty() == false);
@@ -1693,7 +1726,7 @@ struct task_loader_detail : netcpu::io_wrapper<netcpu::message::async_driver> {
 		::rename((res_filepath + ".tmp").c_str(), res_filepath.c_str());
 
 		::std::cerr << "ctor task loader detail\n";
-		io().read();
+		io().read(&task_loader_detail::on_read, this);
 	}
 
 	void
@@ -1783,18 +1816,19 @@ struct task_loader : netcpu::io_wrapper<netcpu::message::async_driver> {
 
 	task_loader(netcpu::message::async_driver & io_driver)
 	: netcpu::io_wrapper<netcpu::message::async_driver>(io_driver) {
-		io().write(netcpu::message::good());
+		io().write(netcpu::message::good(), &task_loader::on_write, this);
 		censoc::llog() << "ctor in task_loader in converger_1: " << this << ::std::endl;
 	}
 	~task_loader() throw()
 	{
 		censoc::llog() << "dtor of task_loader in converger_1: " << this << ::std::endl;
 	}
+
 	void
 	on_write()
 	{
 		censoc::llog() << "written some...\n";
-		io().read();
+		io().read(&task_loader::on_read, this);
 		censoc::llog() << "issued async read...\n";
 	}
 
@@ -1877,7 +1911,6 @@ struct model_factory : netcpu::model_factory_base<ModelId> {
 			new_task_detail<uint64_t>(float_res, name, pending, birthday);
 		else
 			throw ::std::runtime_error(xxx("unsupported int resolution: [") << int_res << ']');
-
 	}
 
 private:

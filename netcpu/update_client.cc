@@ -355,7 +355,7 @@ struct peer_connection : public netcpu::io_wrapper<netcpu::message::async_driver
 	void 
 	on_write()
 	{
-		io().read();
+		io().read(&peer_connection::on_read, this);
 	}
 
 	void 

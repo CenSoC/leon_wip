@@ -162,3 +162,7 @@ SHAREDLIB etc.
 gmake -j 2
 gmake install
 
+12) Optional -- could already be present on the FreeBSD box --  build libarchive (for http server/adapter -- no need to xcross-compile). start the development environment and then:
+./configure --prefix=/usr/home/${USER}/libarchive/installed/ --disable-shared --enable-static --disable-bsdtar --disable-bsdcpio 
+make
+make install

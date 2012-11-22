@@ -150,7 +150,7 @@ public:
 	}
 
 	/**
-		@note -- cancelling is final (much like in io/socket async_driver 'cancel'), does not allow restarting timeouts later. if such restarting is needed -- re-create the timer object completely
+		@note -- cancelling is final (much like in io/socket async_driver_detail 'cancel'), does not allow restarting timeouts later. if such restarting is needed -- re-create the timer object completely
 		*/
 	void
 	cancel()
@@ -255,7 +255,7 @@ struct async_timer {
 	}
 
 	/**
-		@note -- cancelling is final (much like in io/socket async_driver 'cancel'), does not allow restarting timeouts later. if such restarting is needed -- re-create the timer object completely
+		@note -- cancelling is final (much like in io/socket async_driver_detail 'cancel'), does not allow restarting timeouts later. if such restarting is needed -- re-create the timer object completely
 		*/
 	void
 	cancel()
@@ -266,8 +266,8 @@ struct async_timer {
 };
 
 //{ quick and dirty... (todo -- move into outside the message namespace, and into a different file, and more encapsulation w.r.t. public/private/protected access qualifiers) }//
-struct async_driver : ::boost::enable_shared_from_this<async_driver>, ::boost::noncopyable {
-	typedef ::boost::enable_shared_from_this<async_driver> base;
+template <typename SharedFromThisProvider>
+struct async_driver_detail : SharedFromThisProvider, ::boost::noncopyable {
 
 	netcpu::message::read_wrapper read_raw; 
 	netcpu::message::write_wrapper write_raw; 
@@ -306,7 +306,7 @@ private:
 
 		if (write_is_pending == false && data_written_inplaceof_keepalive_between_timeouts == false) {
 			keepalive_write_is_pending = true;
-			::boost::asio::async_write(socket, ::boost::asio::buffer(write_raw_keepalive.head(), static_cast< ::std::size_t>(write_raw_keepalive.size())), ::boost::bind(&async_driver::on_write_keepalive, shared_from_this(), ::boost::asio::placeholders::error));
+			::boost::asio::async_write(socket, ::boost::asio::buffer(write_raw_keepalive.head(), static_cast< ::std::size_t>(write_raw_keepalive.size())), ::boost::bind(&async_driver_detail::on_write_keepalive, SharedFromThisProvider::shared_from_this(), ::boost::asio::placeholders::error));
 		} else {
 			data_written_inplaceof_keepalive_between_timeouts = false;
 			keepalive_timer.timeout(boost::posix_time::seconds(75));
@@ -322,7 +322,7 @@ private:
 			keepalive_write_is_pending = false;
 			if (write_is_pending == true) {
 				// todo -- make commonality-wise w.r.t. 'write' call (but no assertions, etc.), also keep in mind the 'xxx_pending' flags
-				::boost::asio::async_write(socket, ::boost::asio::buffer(write_raw.head(), static_cast< ::std::size_t>(write_raw.size())), ::boost::bind(&async_driver::on_write, shared_from_this(), ::boost::asio::placeholders::error));
+				::boost::asio::async_write(socket, ::boost::asio::buffer(write_raw.head(), static_cast< ::std::size_t>(write_raw.size())), ::boost::bind(&async_driver_detail::on_write, SharedFromThisProvider::shared_from_this(), ::boost::asio::placeholders::error));
 			}
 			keepalive_timer.timeout(boost::posix_time::seconds(75));
 		}
@@ -330,7 +330,7 @@ private:
 
 	::boost::function<void()> read_callback_;
 	::boost::function<void()> write_callback_;
-	::boost::function<void()> error_callback_;
+	::boost::function<void(::std::string const &)> error_callback_;
 	::boost::function<void()> handshake_callback_;
 	bool read_is_pending;
 
@@ -339,14 +339,10 @@ private:
 #endif
 
 	bool write_is_pending;
-public:
 
-	::std::auto_ptr<netcpu::io_wrapper<async_driver> > user_key;
-
-
-private:
 	// this is needed due to a likely bug in currently-installed boost::asio (some callbacks, even after an OK close call, get called with !error as opposed to error == canceled)
 	bool canceled_;
+
 public:
 
 	bool
@@ -363,9 +359,9 @@ public:
 
 	template <typename T>
 	void
-	error_callback(void (T::* meth)(), T * obj)
+	error_callback(void (T::* meth)(::std::string const &), T * obj)
 	{
-		error_callback_ = ::boost::bind(meth, obj);
+		error_callback_ = ::boost::bind(meth, obj, _1);
 	}
 
 	// reading
@@ -386,6 +382,7 @@ public:
 	void
 	read()
 	{
+		assert(read_callback_ != ::boost::bind(&async_driver_detail::on_read, this));
 		assert(read_is_pending == false);
 
 		read_is_pending = true;
@@ -407,7 +404,7 @@ private:
 #endif
 
 		read_raw.reset();
-		::boost::asio::async_read(socket, ::boost::asio::buffer(read_raw.head(), read_raw.peek_size), ::boost::bind(&async_driver::on_peek, shared_from_this(), ::boost::asio::placeholders::error));
+		::boost::asio::async_read(socket, ::boost::asio::buffer(read_raw.head(), read_raw.peek_size), ::boost::bind(&async_driver_detail::on_peek, SharedFromThisProvider::shared_from_this(), ::boost::asio::placeholders::error));
 	}
 
 public:
@@ -422,17 +419,23 @@ public:
 	void
 	handshake()
 	{
-		socket.async_handshake(::boost::asio::ssl::stream_base::server, ::boost::bind(&async_driver::on_handshake, shared_from_this(), ::boost::asio::placeholders::error));
+		assert(handshake_callback_ != ::boost::bind(&async_driver_detail::on_handshake, this));
+		socket.async_handshake(::boost::asio::ssl::stream_base::server, ::boost::bind(&async_driver_detail::on_handshake, SharedFromThisProvider::shared_from_this(), ::boost::asio::placeholders::error));
 	}
 
 	void 
 	on_handshake(::boost::system::error_code const & error)
 	{
+		// this is needed due to a likely bug in currently-installed boost::asio (some callbacks, even after an OK close call, get called with !error as opposed to error == canceled)
+		if (canceled_ == true)
+			return;
+
 		if (!error) { 
 			try {
 				handshake_callback_();
 			} catch (netcpu::message::exception const & e) { 
 				censoc::llog() << "ssl handshake-related exception: [" << e.what() << ", " << socket.lowest_layer().remote_endpoint(netcpu::ec) << "]\n";
+				error_callback_(e.what());
 			} catch (...) { 
 				censoc::llog() << "unexpected exception during ssl handshake. peer at a time was: [" << socket.lowest_layer().remote_endpoint(netcpu::ec) << "]\n"; 
 				throw; 
@@ -467,7 +470,7 @@ public:
 			try {
 				read_raw.from_wire_peek();
 				if (read_raw.postpeek_size()) {
-					::boost::asio::async_read(socket, ::boost::asio::buffer(read_raw.head() + read_raw.peek_size, static_cast< ::std::size_t>(read_raw.postpeek_size())), ::boost::bind(&async_driver::on_read, shared_from_this(), ::boost::asio::placeholders::error));
+					::boost::asio::async_read(socket, ::boost::asio::buffer(read_raw.head() + read_raw.peek_size, static_cast< ::std::size_t>(read_raw.postpeek_size())), ::boost::bind(&async_driver_detail::on_read, SharedFromThisProvider::shared_from_this(), ::boost::asio::placeholders::error));
 				} else {
 					if (message::keepalive::myid == read_raw.id()) {
 						action_reading();
@@ -478,14 +481,13 @@ public:
 				}
 			} catch (netcpu::message::exception const & e) { 
 				censoc::llog() << "message-related exception: [" << e.what() << ", " << socket.lowest_layer().remote_endpoint(netcpu::ec) << "]\n"; 
-				error_callback_();
+				error_callback_(e.what());
 			} catch (...) { 
 				censoc::llog() << "unexpected exception. peer at a time was: [" << socket.lowest_layer().remote_endpoint(netcpu::ec) << "]\n"; 
 				throw; 
 			} 
 		} else if (error != ::boost::asio::error::operation_aborted) { 
 			censoc::llog() << "'error' var in async callback ('on_peek') is non-zero: [" << error << ", " << socket.lowest_layer().remote_endpoint(netcpu::ec) << "]\n"; 
-			error_callback_();
 		} 
 	}
 
@@ -504,24 +506,24 @@ public:
 				read_callback_();
 			} catch (netcpu::message::exception const & e) { 
 				censoc::llog() << "message-related exception: [" << e.what() << ", " << socket.lowest_layer().remote_endpoint(netcpu::ec) << "]\n"; 
-				error_callback_();
+				error_callback_(e.what());
 			} catch (...) { 
 				censoc::llog() << "unexpected exception. peer at a time was: [" << socket.lowest_layer().remote_endpoint(netcpu::ec) << "]\n"; 
 				throw; 
 			} 
 		} else if (error != ::boost::asio::error::operation_aborted) { 
 			censoc::llog() << "'error' var in async callback ('on_read') is non-zero: [" << error << ", " << socket.lowest_layer().remote_endpoint(netcpu::ec) << "]\n"; 
-			error_callback_();
 		} 
 	}
 
 	void
 	write()
 	{
+		assert(write_callback_ != ::boost::bind(&async_driver_detail::on_write, this));
 		assert(write_is_pending == false);
 		write_is_pending = true;
 		if (keepalive_write_is_pending == false) {
-			::boost::asio::async_write(socket, ::boost::asio::buffer(write_raw.head(), static_cast< ::std::size_t>(write_raw.size())), ::boost::bind(&async_driver::on_write, shared_from_this(), ::boost::asio::placeholders::error));
+			::boost::asio::async_write(socket, ::boost::asio::buffer(write_raw.head(), static_cast< ::std::size_t>(write_raw.size())), ::boost::bind(&async_driver_detail::on_write, SharedFromThisProvider::shared_from_this(), ::boost::asio::placeholders::error));
 		}
 	}
 
@@ -573,18 +575,17 @@ public:
 				write_callback_();
 			} catch (netcpu::message::exception const & e) { 
 				censoc::llog() << "message-related exception: [" << e.what() << ", " << socket.lowest_layer().remote_endpoint(netcpu::ec) << "]\n"; 
-				error_callback_();
+				error_callback_(e.what());
 			} catch (...) { 
 				censoc::llog() << "unexpected exception. peer at a time was: [" << socket.lowest_layer().remote_endpoint(netcpu::ec) << "]\n"; 
 				throw; 
 			} 
 		} else if (error != ::boost::asio::error::operation_aborted) { 
 			censoc::llog() << "'error' var in async callback ('on_write') is non-zero: [" << error << ", " << socket.lowest_layer().remote_endpoint(netcpu::ec) << ", this: " << this << "]\n"; 
-			error_callback_();
 		} 
 	}
 
-	async_driver()
+	async_driver_detail()
 	:	socket(netcpu::io, netcpu::ssl)
 	, write_raw_keepalive(0, 0), keepalive_write_is_pending(false), data_written_inplaceof_keepalive_between_timeouts(false), keepalive_wait(0), 
 	read_is_pending(false), 
@@ -597,27 +598,29 @@ public:
 		reset_callbacks();
 		message::keepalive msg;
 		msg.to_wire(write_raw_keepalive);
-		keepalive_timer.timeout_callback(&async_driver::on_keepalive_timeout, this);
+		keepalive_timer.timeout_callback(&async_driver_detail::on_keepalive_timeout, this);
 	}
 
-	~async_driver()
+	~async_driver_detail()
 	{
 		canceled_ = true;
-		censoc::llog() << "dtor in async_driver: " << this << '\n';
+		censoc::llog() << "dtor in async_driver_detail: " << this << '\n';
 	}
 
+	// TODO -- possibly deprecate 'virtual' qualifier on these...
 	void virtual on_read() {}
 	void virtual on_write() {}
-	void virtual on_error() {}
+	void virtual on_error(::std::string const &) {}
 	void virtual on_handshake() {}
 
 	void
 	reset_callbacks()
 	{
-		read_callback_ = ::boost::bind(&async_driver::on_read, this);
-		write_callback_ = ::boost::bind(&async_driver::on_write, this);
-		error_callback_ = ::boost::bind(&async_driver::on_error, this);
-		handshake_callback_ = ::boost::bind(&async_driver::on_handshake, this);
+		read_callback_ = ::boost::bind(&async_driver_detail::on_read, this);
+		write_callback_ = ::boost::bind(&async_driver_detail::on_write, this);
+		error_callback_ = ::boost::bind(&async_driver_detail::on_error, this, _1);		
+		handshake_callback_ = ::boost::bind(&async_driver_detail::on_handshake, this);
+		assert(write_callback_ == ::boost::bind(&async_driver_detail::on_write, this));
 	}
 
 	bool
@@ -647,9 +650,15 @@ public:
 
 		if (keepalive_timer.is_pending() == true)
 			keepalive_timer.cancel();
-		censoc::llog() << "cancelling in async_driver: " << this << ", status: " << netcpu::ec << '\n';
+		censoc::llog() << "cancelling in async_driver_detail: " << this << ", status: " << netcpu::ec << '\n';
 	}
 
+};
+
+struct async_driver : async_driver_detail< ::boost::enable_shared_from_this<async_driver> >
+{
+	typedef async_driver native_protocol;
+	::std::unique_ptr<netcpu::io_wrapper<async_driver> > user_key;
 };
 
 }}}

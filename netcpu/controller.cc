@@ -63,9 +63,14 @@ namespace censoc { namespace netcpu {
 
 namespace censoc { namespace netcpu { 
 
+struct model_meta;
+
 // this must be a very very small class (it will exist through the whole of the lifespan of the server)
 struct model_factory_interface {
-	void virtual new_task(netcpu::message::async_driver &) = 0;
+	void virtual new_task(
+		netcpu::message::async_driver &, 
+		::boost::shared_ptr<model_meta> // should not pass by reference to shared_ptr, ctor in the upcoming objects will delete caller (most likely) via the base-class (io_wrapper) ctor *before* the top-level ctor takes onwership of the 'mm'
+	) = 0;
 	// not really needed if all of the factories are static-time duration/lifespan
 	// but could be of use when debugging for malloc issues/leaks and thereby freeing all factories at exit.
 #ifndef NDEBUG
@@ -86,10 +91,10 @@ struct model_meta {
 	netcpu::message::id_type id;
 	enum action {task_offer, task_status};
 	action what_to_do;
-	typedef ::std::list<char const *> args_type;
+	typedef ::std::list< ::std::pair< ::std::string, ::std::string> > args_type;
 	args_type args;
 };
-::std::list<model_meta> static model_metas;
+::std::list< ::boost::shared_ptr<model_meta> > static model_metas;
 
 struct peer_connection;
 
@@ -129,19 +134,22 @@ struct interface {
 				if (action == NULL)
 					throw ::std::runtime_error(xxx() << "incorrect --model value: [" << argv[i] << "] need 'id:action'");
 
-				model_metas.push_back(netcpu::model_meta());
-				model_metas.back().id = ::censoc::lexicast<unsigned>(id);
+				::boost::shared_ptr<netcpu::model_meta> mm(new netcpu::model_meta);
 
+				mm->id = ::censoc::lexicast<unsigned>(id);
 				if (!::strcmp(action, "offer")) 
-					model_metas.back().what_to_do = model_meta::task_offer;
+					mm->what_to_do = model_meta::task_offer;
 				else if (!::strcmp(action, "status")) 
-					model_metas.back().what_to_do = model_meta::task_status;
+					mm->what_to_do = model_meta::task_status;
 				else
 					throw ::std::runtime_error(xxx() << "incorrect --model subvalue for action: [" << action << "]");
 
+				model_metas.push_back(mm);
+
 			} else if (model_metas.empty() == false) {
-				model_metas.back().args.push_back(argv[i]);
-				model_metas.back().args.push_back(argv[++i]);
+				::std::cerr << "adding arg: " << argv[i] << ", " << argv[i + 1] << ::std::endl;
+				model_metas.back()->args.push_back(::std::pair< ::std::string, ::std::string>(argv[i], argv[i + 1]));
+				++i;
 			} else 
 				throw ::std::runtime_error(xxx() << "unknown option: [" << argv[i] << "]");
 		}
@@ -180,13 +188,10 @@ struct peer_connection : public netcpu::io_wrapper<netcpu::message::async_driver
 		// still, however, it is more elegant than having shared_ptr(this) here in ctor an then worrying/making sure that nothing that follows it in ctor will ever throw
 	}
 
-	// TODO -- currently deprecated... (i.e. loading multiple jobs in one invocation)
+	// TODO -- currently untested... (i.e. loading multiple jobs in one invocation)
 	void
-	on_new_in_chain()
+	on_new_in_chain(::std::string const &)
 	{
-		assert(model_metas.empty() == false);
-
-		model_metas.pop_front();
 		if (model_metas.empty() == false)
 			apply();
 	}
@@ -210,13 +215,14 @@ struct peer_connection : public netcpu::io_wrapper<netcpu::message::async_driver
 	{
 		assert(model_metas.empty() == false);
 
-		model_meta const & current(model_metas.front());
-
 		censoc::llog() << "total models(=" << netcpu::models.size() << ")\n";
-		netcpu::models_type::iterator implementation(netcpu::models.find(current.id));
+		netcpu::models_type::iterator implementation(netcpu::models.find(model_metas.front()->id));
+
 		if (implementation == netcpu::models.end()) 
-			throw ::std::runtime_error(netcpu::xxx("model is not supported: [") << current.id << ']');
-		implementation->second->new_task(io());
+			throw ::std::runtime_error(netcpu::xxx("model is not supported: [") << model_metas.front()->id << ']');
+
+		implementation->second->new_task(io(), model_metas.front());
+		model_metas.pop_front();
 	}
 
 	void 
@@ -302,5 +308,10 @@ main(int argc, char * * argv)
 
 #include "gmnl_2a/controller.h"
 #include "gmnl_2/controller.h"
-#include "logit/controller.h"
 #include "mixed_logit/controller.h"
+#include "logit/controller.h"
+
+::censoc::netcpu::converger_1::model_factory< ::censoc::netcpu::message::async_driver, ::censoc::netcpu::gmnl_2a::model_traits, ::censoc::netcpu::models_ids::gmnl_2a> static gmnl_2a_factory;
+::censoc::netcpu::converger_1::model_factory< ::censoc::netcpu::message::async_driver, ::censoc::netcpu::gmnl_2::model_traits, ::censoc::netcpu::models_ids::gmnl_2> static gmnl2_factory;
+::censoc::netcpu::converger_1::model_factory< ::censoc::netcpu::message::async_driver, ::censoc::netcpu::mixed_logit::model_traits, ::censoc::netcpu::models_ids::mixed_logit> static mixed_logit_factory;
+::censoc::netcpu::converger_1::model_factory< ::censoc::netcpu::message::async_driver, ::censoc::netcpu::logit::model_traits, ::censoc::netcpu::models_ids::logit> static logit_factory;

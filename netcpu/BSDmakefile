@@ -60,6 +60,9 @@ LIB_YUCK_IV = -liphlpapi
 server :
 	make LIBS_DEFINED="-lboost_filesystem -lboost_system -lssl -lcrypto -lz" ${.TARGET}.exe
 
+http/server :
+	make LIBS_DEFINED="-lboost_regex -lboost_filesystem -lboost_system -larchive -liconv -lssl -lcrypto -lz" ${.TARGET}.exe
+
 finite_math : 
 	make LIBS_DEFINED=" " POSTFLAGS="-fno-lto -fno-whole-program -fno-finite-math-only" ${.TARGET}.o
 #	make LIBS_DEFINED=" " POSTFLAGS="-fno-lto -fno-whole-program -fno-fast-math" ${.TARGET}.o
@@ -95,6 +98,7 @@ update_client :
 	make LIBS_DEFINED="-lboost_filesystem -lboost_system -lssl -lcrypto -lz ${LIB_YUCK_I} ${LIB_YUCK_II}" ${.TARGET}.exe
 
 clean : .PHONY 
+	cd http && rm -f *.core *.dd _viminfo *.exe *.okrun *.o 
 	cd gmnl_2a && rm -f *.core *.dd _viminfo *.exe *.okrun *.o 
 	cd gmnl_2 && rm -f *.core *.dd _viminfo *.exe *.okrun *.o 
 	cd mixed_logit && rm -f *.core *.dd _viminfo *.exe *.okrun *.o 
@@ -238,7 +242,7 @@ FLAGS = ${FLAGS_YUCK} ${FLAGS_DEBUG}
 .endif
 
 
-DEPS != find ./ -maxdepth 1 -name "*.dd" || echo ""
+DEPS != find ./ -maxdepth 2 -name "*.dd" || echo ""
 .for i in ${DEPS}
 .include "${i}"
 .endfor

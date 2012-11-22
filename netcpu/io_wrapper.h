@@ -52,30 +52,12 @@ protected:
 		io_wrapper const * const other(io.user_key.release());
 		io.user_key.reset(this);
 		delete other;
-		io.read_callback(&io_wrapper::on_read, this);
-		io.write_callback(&io_wrapper::on_write, this);
-		io.error_callback(&io_wrapper::on_error, this);
-		io.handshake_callback(&io_wrapper::on_handshake, this);
 		censoc::llog() << "io_wrapper ctor: " << this << "\n";
-	}
-	void virtual
-	on_handshake()
-	{
-	}
-	void virtual
-	on_read()
-	{
-	}
-	void virtual
-	on_write()
-	{
-	}
-	void virtual
-	on_error()
-	{
-		censoc::llog() << "io_wrapper on error!: " << this << "\n";
-		assert(io().user_key.get() == this);
-		io().cancel();
+#if 0
+#ifndef NDEBUG
+		io.reset_callbacks();
+#endif
+#endif
 	}
 public:
 	virtual 

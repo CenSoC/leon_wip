@@ -79,16 +79,25 @@ namespace censoc { namespace netcpu {
 namespace message {
 
 namespace messages_ids {
-	enum val {
+	enum {
 		version = 1,
 		ready_to_process,
-		task_offer,
-		new_taskname,
+		task_offer, // todo -- later on perform universe-upgrade and move this message into controller_specific domain
+		new_taskname, // todo -- later on perform universe-upgrade and move this message into controller_specific domain
 		end_process,
 		good,
 		keepalive,
 		bad,
 		end_id // must be last
+	};
+}
+
+namespace controller_messages_ids {
+	enum {
+		get_tasks_list = message::messages_ids::end_id,
+		tasks_list,
+		move_task_in_list,
+		delete_task
 	};
 }
 
@@ -617,7 +626,7 @@ deserialise_from_unsigned_to_signed_integral(T x)
 	BOOST_STATIC_ASSERT(::boost::is_unsigned<T>::value == true);
 	typedef typename ::boost::make_signed<T>::type signed_type;
 	if (x > static_cast<T>(::std::numeric_limits<signed_type>::max())) 
-		return -static_cast<signed_type>(::std::numeric_limits<T>::max() - x + 1u);
+		return -static_cast<signed_type>(::std::numeric_limits<T>::max() - x) - 1;
 	else
 		return x;
 }  
@@ -960,6 +969,47 @@ struct end_process : message_base<message::messages_ids::end_process>  {
 };
 
 struct keepalive : message_base<message::messages_ids::keepalive>  {
+};
+
+struct get_tasks_list : message_base<message::controller_messages_ids::get_tasks_list>  {
+};
+
+
+struct task_coefficient_info {
+	typedef message::decomposed_floating float_type; 
+	float_type value;
+	float_type from;
+	float_type range;
+};
+
+struct task_info {
+	message::array<char> name;
+	enum state_type { pending, completed };
+	message::scalar<uint8_t> state; 
+	message::array<message::task_coefficient_info> coefficients;
+};
+
+struct tasks_list : message_base<message::controller_messages_ids::tasks_list>  {
+	message::array<message::task_info> tasks;
+	tasks_list(message::read_wrapper & raw)
+	{
+		from_wire(raw);
+	}
+	tasks_list()
+	{
+	}
+};
+
+struct move_task_in_list : message::message_base<message::controller_messages_ids::move_task_in_list> {
+	message::array<char> task_name;
+	message::scalar<uint32_t> steps_to_move_by;
+	move_task_in_list()
+	: steps_to_move_by(0) {
+	}
+};
+
+struct delete_task : message::message_base<message::controller_messages_ids::delete_task> {
+	message::array<char> task_name;
 };
 
 }}}

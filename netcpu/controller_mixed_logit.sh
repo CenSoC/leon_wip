@@ -38,12 +38,12 @@
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
 #
 
-SERVER_AT="netcpu.zapto.org:8070"
-#SERVER_AT="localhost:8081"
+#SERVER_AT="netcpu.zapto.org:8070"
+SERVER_AT="localhost:8081"
 
 CMDLINE=" --server_cert certificate.pem --client_cert client_certificate.pem --client_key client_key.pem --server_at ${SERVER_AT} \
 --model 2:offer \
-	--file ../simul_data_mixed_logit.csv --x 5:6 --resp 1 --fromrow 2 --sort 1,2,3 --alts 2 --best 4 \
+	--filepath ../simul_data_mixed_logit.csv --x 5:6 --resp 1 --fromrow 2 --sort 1,2,3 --alts 2 --best 4 \
 	--repeats 1000 \
 	--int_resolution 32 --float_resolution single --extended_float_resolution double --complexity_size 88800000 --minimpr 1.0000001 --draws_sets_size 200 --shrink_slowdown 0.3 --dissect off --reduce_exp_complexity off \
 	--coeffs_atonce_size 4 \

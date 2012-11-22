@@ -195,6 +195,7 @@ struct peer_connection : public netcpu::io_wrapper<netcpu::message::async_driver
 	peer_connection(netcpu::message::async_driver & io) 
 	: netcpu::io_wrapper<netcpu::message::async_driver>(io) {
 		censoc::llog() << "ctor in peer_connection, driver addr: " << &io << " Clients(=" << total_clients++ << ')' << ::std::endl;
+		this->io().handshake_callback(&peer_connection::on_handshake, this);
 	}
 
 	~peer_connection() throw();

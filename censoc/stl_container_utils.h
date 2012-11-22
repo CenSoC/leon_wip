@@ -94,6 +94,7 @@ namespace censoc { namespace stl {
 #endif
 
 		using Container::value_type;
+		using Container::const_iterator;
 		using Container::iterator;
 		using Container::begin;
 		using Container::end;

@@ -59,6 +59,7 @@ GDB_TOP=${TOP}/gdb/installed
 BINUTILS_TOP=${TOP}/binutils/installed
 OPENSSL_TOP=${TOP}/openssl/installed
 ZLIB_TOP=${TOP}/zlib/installed
+LIBARCHIVE_TOP=${TOP}/libarchive/installed
 
 # NOTE -- temp hack for LIB XLS...
 MYPATH=`realpath ${0}`
@@ -79,9 +80,11 @@ OPENSSL_LIBS=${OPENSSL_TOP}/lib
 
 ZLIB_LIBS=${ZLIB_TOP}/lib
 
+LIBARCHIVE_LIBS=${LIBARCHIVE_TOP}/lib
+
 # not using these because of the cross-compiling instances :/usr/lib:/usr/local/lib
 # moreover, the user/binutils is for the fact that config in binutils relying on -ldl which is on linux, but not on freebsd...
-LIBS=/usr/home/${USER}/binutils:${BINUTILS_LIBS}:${GCC_LIBS}:${GDB_LIBS}:${BOOST_LIBS}:${XLS_LIBS}:${OPENSSL_LIBS}:${ZLIB_LIBS}
+LIBS=/usr/home/${USER}/binutils:${BINUTILS_LIBS}:${GCC_LIBS}:${GDB_LIBS}:${BOOST_LIBS}:${XLS_LIBS}:${OPENSSL_LIBS}:${ZLIB_LIBS}:${LIBARCHIVE_LIBS}
 
 export LD_RUN_PATH=${LIBS}${LD_RUN_PATH:+:}${LD_RUN_PATH}
 export LD_LIBRARY_PATH=${LIBS}:/usr/home/${USER}/gmp/installed/lib:/usr/home/${USER}/ppl/installed/lib:/usr/home/${USER}/cloog/installed/lib:/usr/home/${USER}/mpfr/installed/lib:/usr/home/${USER}/mpc/installed/lib${LD_LIBRARY_PATH:+:}${LD_LIBRARY_PATH}
@@ -113,9 +116,10 @@ EIGEN_INCS=${EIGEN_TOP}/include
 BOOST_INCS=${BOOST_TOP}/include
 OPENSSL_INCS=${OPENSSL_TOP}/include
 ZLIB_INCS=${ZLIB_TOP}/include
+LIBARCHIVE_INCS=${LIBARCHIVE_TOP}/include
 
 # not using these because of the cross-compiling instances :/usr/include:/usr/local/include
-INCS=${BINUTILS_INCS}:${GCC_INCS}:${BOOST_INCS}:${XLS_INCS}:${OPENSSL_INCS}:${EIGEN_INCS}:${ZLIB_INCS}
+INCS=${BINUTILS_INCS}:${GCC_INCS}:${BOOST_INCS}:${XLS_INCS}:${OPENSSL_INCS}:${EIGEN_INCS}:${ZLIB_INCS}:${LIBARCHIVE_INCS}
 
 # probably not needed (leftover from previous experiments)... todo -- clean up if there is time later
 export CPATH=${INCS}${CPATH:+:}${CPATH}
@@ -125,7 +129,7 @@ export OBJC_INCLUDE_PATH=${INCS}${OBJC_INCLUDE_PATH:+:}${OBJC_INCLUDE_PATH}
 
 export PATH=${BINUTILS_TOP}/${TARGET_XXX}/bin:${BINUTILS_TOP}/bin:${GCC_TOP}/libexec/gcc/${TARGET_XXX}/${GCC_VERSION}:${GCC_TOP}/libexec:${GCC_TOP}/bin:${GDB_TOP}/bin:${OPENSSL_TOP}/bin${PATH:+:}${PATH}
 
-export MANPATH=${OPENSSL_TOP}/ssl/man:${ZLIB_TOP}/share/man:${BINUTILS_TOP}/share/man:${GCC_TOP}/share/man:`manpath`
+export MANPATH=${OPENSSL_TOP}/ssl/man:${ZLIB_TOP}/share/man:${LIBARCHIVE_TOP}/share/man:${BINUTILS_TOP}/share/man:${GCC_TOP}/share/man:`manpath`
 
 
 echo ${LD_RUN_PATH}

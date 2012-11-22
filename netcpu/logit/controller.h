@@ -45,7 +45,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <censoc/lexicast.h>
 #include <censoc/spreadsheet/util.h>
-#include <censoc/spreadsheet/csv.h>
 #include <censoc/compare.h>
 #include <censoc/stl_container_utils.h>
 #include <netcpu/io_wrapper.h>
@@ -83,17 +82,16 @@ struct model_traits {
 	}
 
 	bool
-	parse_arg(char const * const name, char const * const value, meta_msg_type & meta_msg, bulk_msg_type & bulk_msg) 
+	parse_arg(::std::string const & name, ::std::string const & value, meta_msg_type & meta_msg, bulk_msg_type & bulk_msg) 
 	{
-		if (!::strcmp(name, "--reduce_exp_complexity")) {
-			::std::string const reduce_exp_complexity_do_str(value);
-			if (reduce_exp_complexity_do_str == "off") {
+		if (name == "--reduce_exp_complexity") {
+			if (value == "off") {
 				meta_msg.model.reduce_exp_complexity(0);
-			} else if (reduce_exp_complexity_do_str == "on") {
+			} else if (value == "on") {
 				meta_msg.model.reduce_exp_complexity(1);
 			} else
-				throw ::std::runtime_error("unknown reduce_exp_complexity value: [" + reduce_exp_complexity_do_str + ']');
-			censoc::llog() << "Reduce exponential complexity during computation run: [" << reduce_exp_complexity_do_str << "]\n";
+				throw netcpu::message::exception("unknown reduce_exp_complexity value: [" + value + ']');
+			censoc::llog() << "Reduce exponential complexity during computation run: [" << value << "]\n";
 		} else 
 			return dataset_loader.parse_arg(name, value, meta_msg.model.dataset, bulk_msg.model.dataset);
 		return true;
@@ -106,11 +104,9 @@ struct model_traits {
 		dataset_loader.verify_args(meta_msg.model.dataset, bulk_msg.model.dataset);
 
 		if (meta_msg.model.reduce_exp_complexity() == static_cast<typename netcpu::message::typepair<uint8_t>::wire>(-1))
-			throw ::std::runtime_error("must supply --reduce_exp_complexity on or off");
+			throw netcpu::message::exception("must supply --reduce_exp_complexity on or off");
 	}
 };
-
-netcpu::converger_1::model_factory<logit::model_traits, netcpu::models_ids::logit> static factory;
 
 }}}
 

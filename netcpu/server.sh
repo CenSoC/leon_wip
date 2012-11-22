@@ -41,8 +41,8 @@
 MYPATH=`realpath ${0}`
 MYDIR=`dirname ${MYPATH}`/
 
-#CMDLINE="--key key.pem --cert certificate.pem --clients_certificates clients_certificates --listen_at 127.0.0.1:8081 --root ${MYDIR}tasks --task_oldage 500 --task_oldage_check 1"
-CMDLINE="--key key.pem --cert certificate.pem --clients_certificates clients_certificates --listen_at netcpu.zapto.org:8070 --root ${MYDIR}tasks --task_oldage 500 --task_oldage_check 1"
+CMDLINE="--key key.pem --cert certificate.pem --clients_certificates clients_certificates --listen_at 127.0.0.1:8081 --root ${MYDIR}tasks --task_oldage 500 --task_oldage_check 1"
+#CMDLINE="--key key.pem --cert certificate.pem --clients_certificates clients_certificates --listen_at netcpu.zapto.org:8070 --root ${MYDIR}tasks --task_oldage 500 --task_oldage_check 1"
 
 # GDB this is for normal sh (not bash) 
 echo "catch throw" > server.gdb

@@ -1,0 +1,2664 @@
+<!doctype html>
+<html>
+<head>
+<meta content="text/html; charset=UTF-8" http-equiv="Content-Type" />
+<title>WebNetCPU</title>
+
+<!-- style { -->
+<style>
+
+li {
+	padding : 0.3em;
+}
+
+.debug_log_to_server {
+	font-size:10pt;
+	font-family: mono;
+}
+
+.debug_log_from_server {
+	background-color: yellow;
+	font-size:12pt;
+	font-family: mono;
+}
+
+div.loading_please_wait {
+	background-color: yellow;
+	font-size:48pt;
+	text-align:center;
+}
+
+td.normalised_value {
+	background-color: white;
+	color: black;
+}
+
+body {
+	background-color: #eeeeff;
+	font-family: serif;
+	font-size:12pt;
+}
+
+.coefficients_not_ready, .task_order_column, .hinting_text {
+	font-size:10pt;
+	font-style:italic;
+}
+
+.task_order_column {
+	background-color: #ddddee;
+	border-top-color: #aaaabb;
+}
+
+.coefficients_not_ready {
+	background-color: #ddddee;
+	border-top: 0;
+	border-bottom-color: black;
+}
+
+.coefficients_not_ready, .help_content_title, .help_content, .help_content_fieldname {
+	font-family: sans;
+}
+
+.active_task_label {
+	background-color: red;
+	color: white;
+	font-weight: bold;
+}
+.pending_task_label {
+	background-color: yellow;
+	color: black;
+}
+.complete_task_label {
+	background-color: lightgreen;
+	color: black;
+}
+
+.help_content {
+	font-size:11pt;
+	visibility:hidden;
+}
+
+.help_content_title, .help_content_fieldname {
+	color: purple;
+}
+
+.help_content_title, .help_content_fieldname {
+	font-style:italic;
+}
+
+button, select {
+width: 100%;
+	font-family: serif;
+	font-size:12pt;
+}
+
+td.unspecified_csv {
+	text-align:right;
+}
+
+td.respondent_csv {
+	text-align:right;
+	background-color: #ff3333;
+}
+
+td.observation_csv {
+	text-align:right;
+	background-color: yellow;
+}
+
+td.alternative_csv {
+	text-align:right;
+	background-color: lightblue;
+}
+
+td.attribute_csv {
+	text-align:right;
+	background-color: lightgreen;
+}
+
+td.choice_csv {
+	text-align:right;
+	background-color: orange;
+}
+
+td.centered_td {
+	text-align:center;
+}
+
+td.page_title_td {
+	text-align:center;
+	color: white;
+	background-color: purple;
+	font-weight: bold;
+	font-style:italic;
+}
+
+td.left_td {
+	text-align:left;
+}
+
+.auto_table {
+	width : auto;
+	margin-left: 0;
+	margin-right: auto;
+}
+
+.centered_table {
+	width : auto;
+	margin-left: auto;
+	margin-right: auto;
+}
+
+.full_width {
+	width : 100%; 
+	padding : 0.7em;
+}
+
+
+.contextmenu {
+	/* border-style : solid;
+	border-width : 1px; */
+	/* border-color : red; */
+	padding : 3px;
+	background : yellow;
+	position : absolute;
+	display : block;
+	width : auto;
+}
+
+.coeff_metadata {
+}
+
+.coeff_metadata_selected {
+	background-color: yellow;
+}
+
+input {
+	padding: 1pt;
+	background-color: #ddddee;
+	text-align:right;
+}
+
+table, th, td {
+	border-collapse: collapse;
+	text-align:left;
+	padding: 3pt;
+	border: 1pt solid black;
+}
+
+
+/*
+table {
+	width: 100%;
+}
+input.number {
+	text-align:center;
+	width: 50%;
+	width: 10em;
+	min: -100;
+	max: 100;
+}
+*/
+
+</style>
+<!-- } -->
+
+<!-- code { -->
+<script type="text/javascript">
+
+// TODO -- later on will have a whole array of possible servers whilst being able to determine which one to use (ala partial remedy/mitigation w.r.t. denial of service attacks where load-balancing is also actively done at the client/browser end)
+var server_at = "https://localhost:8055/";
+//"https://webnetcpu.zapto.org:443/"
+
+var http_request;
+
+// TODO -- move to the new_task_type scope...
+var file;
+var csv_grid = [];
+function split_csv(str)
+{
+	csv_grid = [];
+	var newrow_pending = true;
+	var unmatched_quotes = false;
+	var str_i = 0;
+	while (true) {
+		if (str_i == str.length)
+			return;
+		var c = str[str_i++];
+		if (/\s/.test(c) == false) {
+			if (newrow_pending == true) {
+				newrow_pending = false;
+				csv_grid.push([]);
+				var row = csv_grid[csv_grid.length - 1];
+				row.push("");
+				while (true) {
+					if (c == ',') {
+						if (unmatched_quotes == false)
+							row.push("");
+						else 
+							row[row.length - 1] += c;
+					} else if (/[\r\n]/.test(c) == true) {
+						newrow_pending = true;
+						break;
+					} else if (c == '"') {
+						if (unmatched_quotes == true) {
+							if (str_i == str.length)
+								return;
+							if (str[str_i] == '"') {
+								row[row.length - 1] += c;
+								++str_i;
+							} else
+								unmatched_quotes = false;
+						} else
+							unmatched_quotes = true;
+					} else if (/\s/.test(c) == false || unmatched_quotes == true)
+						row[row.length - 1] += c;
+					if (str_i == str.length)
+						return;
+					c = str[str_i++];
+				}
+			} 
+		} 
+	}
+}
+
+
+function cli_coefficient_range_metadata_type(i, pid)
+{
+	this.i = i;
+	this.pid = pid;
+	this.from = document.createElement("input");
+	this.from.title = "Right-click for quick-fill menu...";
+	//this.from.type = "number";
+	this.from.pid = this;
+	this.from.className = "coeff_metadata";
+	this.from.size = 5;
+
+
+	this.common_context_menu_2 = function() 
+	{
+		batch_fill_context_menu.fill_down_column_button.pid = this.pid;
+		batch_fill_context_menu.fill_down_row_button.pid = this.pid;
+		batch_fill_context_menu.fill_right_row_button.pid = this.pid;
+		batch_fill_context_menu.fill_to_corner_button.pid = this.pid;
+	}
+
+	this.common_context_menu_1 = function(x, y) 
+	{
+		batch_fill_context_menu.x = x;
+		batch_fill_context_menu.y = y;
+		batch_fill_context_menu.fill_down_column_button.i = this.i;
+		batch_fill_context_menu.fill_down_row_button.i = this.i;
+		batch_fill_context_menu.fill_right_row_button.disabled = true;
+		batch_fill_context_menu.fill_to_corner_button.disabled = true;
+		this.common_context_menu_2() ;
+
+		batch_fill_context_menu.fill_down_row_button.onclick = function () {
+			this.pid.fill_down_row(this.i);
+			batch_fill_context_menu.hide();
+		}
+
+		batch_fill_context_menu.show();
+	}
+
+	this.from.oncontextmenu = function(event)
+	{
+		batch_fill_context_menu.cell_gui = this;
+		batch_fill_context_menu.fill_down_column_button.onclick = function () {
+			this.pid.fill_down_column_from(this.i);
+			batch_fill_context_menu.hide();
+		}
+		this.pid.common_context_menu_1(event.clientX, event.clientY);
+		return false;
+	}
+
+
+	this.to = document.createElement("input");
+	//this.to.type = "number";
+	this.to.title = "Right-click for quick-fill menu...";
+	this.to.pid = this;
+	this.to.className = "coeff_metadata";
+	this.to.size = 5;
+	this.to.oncontextmenu = function(event)
+	{
+		batch_fill_context_menu.cell_gui = this;
+		batch_fill_context_menu.fill_down_column_button.i = this.pid.i;
+		batch_fill_context_menu.fill_down_column_button.onclick = function () {
+			this.pid.fill_down_column_to(this.i);
+			this.pid.batch_fill_context_menu.hide();
+		}
+		this.pid.common_context_menu_1(event.clientX, event.clientY);
+		return false;
+	}
+
+	this.minstep = document.createElement("input");
+	//this.minstep.type = "number";
+	this.minstep.title = "Right-click for quick-fill menu...";
+	this.minstep.pid = this;
+	this.minstep.className = "coeff_metadata";
+	this.minstep.size = 5;
+	this.minstep.oncontextmenu = function(event)
+	{
+		batch_fill_context_menu.cell_gui = this;
+		batch_fill_context_menu.fill_down_column_button.i = this.pid.i;
+		batch_fill_context_menu.fill_down_column_button.onclick = function () {
+			this.pid.fill_down_column_minstep(this.i);
+			batch_fill_context_menu.hide();
+		}
+		this.pid.common_context_menu_1(event.clientX, event.clientY);
+		return false;
+	}
+
+	this.validate = function()
+	{
+		var from = parseFloat(this.from.value); 
+		var to = parseFloat(this.to.value);
+		var minstep = parseFloat(this.minstep.value);
+		if (isNaN(from) == true ||
+				isNaN(to) == true ||
+				isNaN(minstep) == true ||
+				from >= to || minstep <= 0 ||
+				!this.grid_resolutions.length) {
+			alert("Initial complexity table's row(=" + this.i + ") does not have correct values.");
+			return false;
+		}
+		for (var i = 0; i != this.grid_resolutions.length; ++i) {
+			var value = parseInt(this.grid_resolutions[i].value);
+			if (isNaN(value) == true || value < 1) {
+				alert("Initial complexity table's row(=" + (this.i + 1) + ") 'Gridsteps for x-coefficients-@once modulations' column(=" + (i + 1) + ") does not have correct value.");
+				return false;
+			}
+		}
+		return true;
+	}
+
+
+	this.grid_resolutions = [];
+	this.allocate = function(x) 
+	{
+		this.grid_resolutions.length = x;
+		for (var i = 0; i != x; ++i) {
+			var tmp = document.createElement("input");
+			tmp.className = "coeff_metadata";
+			tmp.size = 5;
+			tmp.title = "Right-click for quick-fill menu...";
+			tmp.pid = this;
+			tmp.y = i;
+			tmp.oncontextmenu = function(event)
+			{
+				this.pid.common_context_menu_2() ;
+				batch_fill_context_menu.cell_gui = this;
+				batch_fill_context_menu.x = event.clientX;
+				batch_fill_context_menu.y = event.clientY;
+				batch_fill_context_menu.fill_down_column_button.i = this.pid.i;
+				batch_fill_context_menu.fill_down_column_button.y = this.y;
+				batch_fill_context_menu.fill_down_column_button.onclick = function () {
+					this.pid.fill_down_column_grid_resolutions(this.i, this.y);
+					batch_fill_context_menu.hide();
+				}
+				batch_fill_context_menu.fill_down_row_button.i = this.pid.i;
+				batch_fill_context_menu.fill_down_row_button.onclick = function () {
+					this.pid.fill_down_row(this.i);
+					batch_fill_context_menu.hide();
+				}
+				batch_fill_context_menu.fill_right_row_button.disabled = false;
+				batch_fill_context_menu.fill_right_row_button.i = this.pid.i;
+				batch_fill_context_menu.fill_right_row_button.y = this.y;
+				batch_fill_context_menu.fill_right_row_button.onclick = function () {
+					this.pid.fill_right_row_grid_resolutions(this.i, this.y);
+					batch_fill_context_menu.hide();
+				}
+				batch_fill_context_menu.fill_to_corner_button.disabled = false;
+				batch_fill_context_menu.fill_to_corner_button.i = this.pid.i;
+				batch_fill_context_menu.fill_to_corner_button.y = this.y;
+				batch_fill_context_menu.fill_to_corner_button.onclick = function () {
+					this.pid.fill_to_corner(this.i, this.y);
+					batch_fill_context_menu.hide();
+				}
+				batch_fill_context_menu.show();
+				return false;
+			}
+			this.grid_resolutions[i] = tmp;
+		}
+	}
+}
+
+function cli_coefficient_range_metadata_x_type(i, pid)
+{
+	this.i = i;
+	this.pid = pid;
+	this.threshold = document.createElement("input");
+	this.threshold.title = "Right-click for quick-fill menu...";
+	//this.threshold.type = "number";
+	this.threshold.pid = this;
+	this.threshold.className = "coeff_metadata";
+	this.threshold.size = 5;
+
+	this.validate = function()
+	{
+		var threshold = parseFloat(this.threshold.value); 
+		if (isNaN(threshold) == true ||
+				threshold <= 0 ||
+				!this.grid_resolutions.length) {
+			alert("Subesquent complexity table's row(=" + this.i + ") does not have correct values.");
+			return false;
+		}
+		for (var i = 0; i != this.grid_resolutions.length; ++i) {
+			var value = parseInt(this.grid_resolutions[i].value);
+			if (isNaN(value) == true || value < 1) {
+				alert("One of the subsequent complexity table's row(=" + (this.i + 1) + ") 'Gridsteps for x-coefficients-@once modulations' column(=" + (i + 1) + ") does not have correct value.");
+				return false;
+			}
+		}
+		return true;
+	}
+
+	this.common_context_menu_2 = function() 
+	{
+		batch_fill_context_menu.fill_down_column_button.pid = this.pid;
+		batch_fill_context_menu.fill_down_row_button.pid = this.pid;
+		batch_fill_context_menu.fill_right_row_button.pid = this.pid;
+		batch_fill_context_menu.fill_to_corner_button.pid = this.pid;
+	}
+
+	this.common_context_menu_1 = function(x, y) 
+	{
+		batch_fill_context_menu.x = x;
+		batch_fill_context_menu.y = y;
+		batch_fill_context_menu.fill_down_column_button.i = this.i;
+		batch_fill_context_menu.fill_down_row_button.i = this.i;
+		batch_fill_context_menu.fill_right_row_button.disabled = true;
+		batch_fill_context_menu.fill_to_corner_button.disabled = true;
+		this.common_context_menu_2() ;
+
+		batch_fill_context_menu.fill_down_row_button.onclick = function () {
+			this.pid.fill_down_row(this.i);
+			batch_fill_context_menu.hide();
+		}
+
+		batch_fill_context_menu.show();
+	}
+
+	this.threshold.oncontextmenu = function(event)
+	{
+		batch_fill_context_menu.cell_gui = this;
+		batch_fill_context_menu.fill_down_column_button.onclick = function () {
+			this.pid.fill_down_column_threshold(this.i);
+			batch_fill_context_menu.hide();
+		}
+		this.pid.common_context_menu_1(event.clientX, event.clientY);
+		return false;
+	}
+
+	this.grid_resolutions = [];
+	this.allocate = function(x) 
+	{
+		this.grid_resolutions.length = x;
+		for (var i = 0; i != x; ++i) {
+			var tmp = document.createElement("input");
+			tmp.className = "coeff_metadata";
+			tmp.title = "Right-click for quick-fill menu...";
+			tmp.pid = this;
+			tmp.y = i;
+			tmp.size = 5;
+			// todo -- common code with non _x inital complexity bits...
+			tmp.oncontextmenu = function(event)
+			{
+				this.pid.common_context_menu_2() ;
+				batch_fill_context_menu.cell_gui = this;
+				batch_fill_context_menu.x = event.clientX;
+				batch_fill_context_menu.y = event.clientY;
+				batch_fill_context_menu.fill_down_column_button.i = this.pid.i;
+				batch_fill_context_menu.fill_down_column_button.y = this.y;
+				batch_fill_context_menu.fill_down_column_button.onclick = function () {
+					this.pid.fill_down_column_grid_resolutions(this.i, this.y);
+					batch_fill_context_menu.hide();
+				}
+				batch_fill_context_menu.fill_down_row_button.i = this.pid.i;
+				batch_fill_context_menu.fill_down_row_button.onclick = function () {
+					this.pid.fill_down_row(this.i);
+					batch_fill_context_menu.hide();
+				}
+				batch_fill_context_menu.fill_right_row_button.disabled = false;
+				batch_fill_context_menu.fill_right_row_button.i = this.pid.i;
+				batch_fill_context_menu.fill_right_row_button.y = this.y;
+				batch_fill_context_menu.fill_right_row_button.onclick = function () {
+					this.pid.fill_right_row_grid_resolutions(this.i, this.y);
+					batch_fill_context_menu.hide();
+				}
+				batch_fill_context_menu.fill_to_corner_button.disabled = false;
+				batch_fill_context_menu.fill_to_corner_button.i = this.pid.i;
+				batch_fill_context_menu.fill_to_corner_button.y = this.y;
+				batch_fill_context_menu.fill_to_corner_button.onclick = function () {
+					this.pid.fill_to_corner(this.i, this.y);
+					batch_fill_context_menu.hide();
+				}
+				batch_fill_context_menu.show();
+				return false;
+			}
+			this.grid_resolutions[i] = tmp;
+		}
+	}
+}
+
+function subsequent_complexity_type(pid)
+{
+	this.pid = pid;
+	this.gui_deco = document.createElement("div");
+	this.coeffs_atonce = document.createElement("input");
+	//this.coeffs_atonce.type = "number";
+	this.coeffs_atonce.pid = this;
+	this.coeffs_atonce.size = 5;
+	this.coeffs_atonce.onchange = function () {
+		var value = parseInt(this.value);
+		if (isNaN(value) == true || value < 1)
+			value = 0;
+		this.value = value;
+		this.pid.populate(this.pid.gui);
+	};
+
+	this.gui_deco.appendChild(document.createElement("hr"));
+	this.gui_deco.appendChild(document.createTextNode("Additional x-coefficients-@-once complexity:"));
+	this.gui_deco.appendChild(this.coeffs_atonce);
+	this.gui_deco.appendChild(document.createElement("p"));
+
+	this.cli_coefficient_range_metadata_x = [];
+	this.table = document.createElement("table");
+
+	this.gui = null;
+
+	this.populate = function(gui) 
+	{
+		if (gui !== this.gui)
+			gui.appendChild(this.gui_deco);
+
+		var table = document.createElement("table");
+		table.className = "auto_table";
+		var coeffs_at_once_value = parseInt(this.coeffs_atonce.value);
+		if (Object.keys(this.pid.attributes).length && this.pid.coefficients.length && coeffs_at_once_value > 0) {
+			tr = document.createElement("tr");
+			td = document.createElement("td");
+			td.className = "centered_td";
+			td.rowSpan = 2;
+			td.appendChild(document.createTextNode("Semantics"));
+			tr.appendChild(td);
+
+			td = document.createElement("td");
+			td.className = "centered_td";
+			td.rowSpan = 2;
+			td.appendChild(document.createTextNode("Activate @range"));
+			td.appendChild(document.createElement("br"));
+			td.appendChild(document.createTextNode("less than"));
+			tr.appendChild(td);
+
+			td = document.createElement("td");
+			td.className = "centered_td";
+			td.colSpan = coeffs_at_once_value;
+			td.appendChild(document.createTextNode("Gridsteps for"));
+			td.appendChild(document.createElement("br"));
+			td.appendChild(document.createTextNode("x-coefficients-@once modulations"));
+			tr.appendChild(td);
+			table.appendChild(tr);
+
+			tr = document.createElement("tr");
+
+			for (var i = 1; i <= coeffs_at_once_value; ++i) {
+				td = document.createElement("td");
+				td.className = "centered_td";
+				td.appendChild(document.createTextNode(i + "-@once"));
+				tr.appendChild(td);
+			}
+			table.appendChild(tr);
+
+			this.cli_coefficient_range_metadata_x.length = this.pid.coefficients.length;
+			for (var i = 0; i != this.pid.coefficients.length; ++i) {
+				this.cli_coefficient_range_metadata_x[i] = new cli_coefficient_range_metadata_x_type(i, this);
+				this.cli_coefficient_range_metadata_x[i].allocate(coeffs_at_once_value);
+
+				tr = document.createElement("tr");
+
+				td = document.createElement("td");
+				td.className = "centered_td";
+				td.innerHTML = this.pid.coefficients[i];
+				tr.appendChild(td);
+
+				td = document.createElement("td");
+				td.className = "centered_td";
+				td.appendChild(this.cli_coefficient_range_metadata_x[i].threshold);
+				tr.appendChild(td);
+
+				for (var j = 0; j != this.coeffs_atonce.value; ++j) {
+					td = document.createElement("td");
+					td.className = "centered_td";
+					td.appendChild(this.cli_coefficient_range_metadata_x[i].grid_resolutions[j]);
+					tr.appendChild(td);
+				}
+				table.appendChild(tr);
+			}
+		}
+		if (gui !== this.gui)
+			gui.appendChild(table);
+		else 
+			gui.replaceChild(table, this.table);
+		this.table = table;
+		this.gui = gui;
+	}
+
+	this.fill_down_row = function(x)
+	{
+		var source = this.cli_coefficient_range_metadata_x[x];
+		for (var i = x + 1; i != this.cli_coefficient_range_metadata_x.length; ++i) {
+			this.cli_coefficient_range_metadata_x[i].threshold.value = source.threshold.value;
+			for (var j = 0; j != source.grid_resolutions.length; ++j)
+				this.cli_coefficient_range_metadata_x[i].grid_resolutions[j].value = source.grid_resolutions[j].value;
+		}
+	}
+
+	this.fill_down_column_threshold = function(x)
+	{
+		var value = this.cli_coefficient_range_metadata_x[x].from.value;
+		for (var i = x + 1; i != this.cli_coefficient_range_metadata_x.length; ++i)
+			this.cli_coefficient_range_metadata_x[i].threshold.value = value;
+	}
+
+	this.fill_down_column_grid_resolutions = function(x, y)
+	{
+		var value = this.cli_coefficient_range_metadata_x[x].grid_resolutions[y].value;
+		for (var i = x + 1; i != this.cli_coefficient_range_metadata_x.length; ++i)
+			this.cli_coefficient_range_metadata_x[i].grid_resolutions[y].value = value;
+	}
+
+	this.fill_right_row_grid_resolutions = function(x, y)
+	{
+		var value = this.cli_coefficient_range_metadata_x[x].grid_resolutions[y].value;
+		for (var i = y + 1; i != this.cli_coefficient_range_metadata_x[x].grid_resolutions.length; ++i)
+			this.cli_coefficient_range_metadata_x[x].grid_resolutions[i].value = value;
+	}
+
+	this.fill_to_corner = function(x, y)
+	{
+		var value = this.cli_coefficient_range_metadata_x[x].grid_resolutions[y].value;
+		for (var j = x; j != this.cli_coefficient_range_metadata_x.length; ++j) {
+			for (var i = y; i != this.cli_coefficient_range_metadata_x[j].grid_resolutions.length; ++i) {
+				this.cli_coefficient_range_metadata_x[j].grid_resolutions[i].value = value;
+			}
+		}
+	}
+}
+
+function select_csv_column_type(pid, i)
+{
+	this.index = i;
+	this.pid = pid;
+
+	this.gui = document.createElement("select");
+	this.gui.className = "full_width";
+	this.gui.size = 1;
+	this.gui.style.minWidth = "8.8em";
+
+	var tmp;
+
+	tmp = document.createElement("option");
+	tmp.value = 0;
+	tmp.appendChild(document.createTextNode("Unassigned"));
+	this.gui.appendChild(tmp);
+
+	tmp = document.createElement("option");
+	tmp.value = 1;
+	tmp.appendChild(document.createTextNode("Respondent"));
+	this.gui.appendChild(tmp);
+
+	tmp = document.createElement("option");
+	tmp.value = 2;
+	tmp.appendChild(document.createTextNode("Observation"));
+	this.gui.appendChild(tmp);
+
+	tmp = document.createElement("option");
+	tmp.value = 3;
+	tmp.appendChild(document.createTextNode("Alternative"));
+	this.gui.appendChild(tmp);
+
+	tmp = document.createElement("option");
+	tmp.value = 4;
+	tmp.appendChild(document.createTextNode("Attribute"));
+	this.gui.appendChild(tmp);
+
+	tmp = document.createElement("option");
+	tmp.value = 5;
+	tmp.appendChild(document.createTextNode("Choice"));
+	this.gui.appendChild(tmp);
+
+	this.radio_button_style = function(x)
+	{
+		for (var i = 0; x && i != this.pid.csv_column_types.length; ++i) {
+			if (this.pid.csv_column_types[i].gui != this.gui && this.pid.csv_column_types[i].gui.value == x) {
+				this.set_pid_csv_table_column_i("unspecified_csv", i);
+				this.pid.csv_column_types[i].gui.value = 0;
+				break;
+			}
+		}
+	}
+
+	this.set_pid_csv_table_column = function(x)
+	{
+		this.set_pid_csv_table_column_i(x, this.index);
+	}
+	this.set_pid_csv_table_column_i = function(x, index)
+	{
+		for (var i = 1; i !=  this.pid.csv_table.rows.length; ++i)
+			if (this.pid.csv_table.rows[i].cells.length > index)
+				this.pid.csv_table.rows[i].cells[index].className = x;
+	}
+
+	this.gui.pid = this;
+	this.gui.onchange = function () {
+		var switch_value = parseInt(this.value);
+		switch (switch_value) {
+			case 0 :
+				this.pid.set_pid_csv_table_column("unspecified_csv");
+				break;
+			case 1 :
+				this.pid.set_pid_csv_table_column("respondent_csv");
+				break;
+			case 2 :
+				this.pid.set_pid_csv_table_column("observation_csv");
+				break;
+			case 3 :
+				this.pid.set_pid_csv_table_column("alternative_csv");
+				break;
+			case 4 :
+				this.pid.set_pid_csv_table_column("attribute_csv");
+				break;
+			case 5 :
+				this.pid.set_pid_csv_table_column("choice_csv");
+				break;
+		}
+		if (switch_value != 4) {
+			this.pid.radio_button_style(switch_value);
+			if (this.pid.pid.attributes[this.pid.index] == true) {
+				delete this.pid.pid.attributes[this.pid.index];
+				this.pid.pid.model.onchange();
+			}
+		} else {
+			this.pid.pid.attributes[this.pid.index] = true;
+			this.pid.pid.model.onchange();
+		}
+	};
+}
+
+function help_content_type(title, source_id)
+{
+	this.help_content = document.getElementById(source_id);
+	document.body.removeChild(this.help_content);
+	this.help_content.style.visibility = "visible";
+
+	this.gui = document.createElement("div");
+	var title_span = document.createElement("span");
+	title_span.className = "help_content_title";
+	title_span.appendChild(document.createTextNode(title));
+	this.gui.appendChild(title_span);
+	var label = document.createElement("label");
+	label.id = "help_context_type_span_show" + source_id;
+	label.className = "help_content_title";
+	label.appendChild(document.createTextNode(" (show help"));
+	this.checkbox = document.createElement("input");
+	this.checkbox.type = "checkbox";
+	this.checkbox.checked = false;
+	this.checkbox.pid = this;
+	this.checkbox.id = "help_context_type_span_show" + source_id;
+	this.checkbox.onchange = function ()
+	{
+		if (this.checked == true)
+			this.pid.gui.appendChild(this.pid.help_content);
+		else
+			this.pid.gui.removeChild(this.pid.help_content);
+	}
+	label.appendChild(this.checkbox);
+	label.appendChild(document.createTextNode(")"));
+	this.gui.appendChild(label);
+}
+
+function new_task_type()
+{
+	this.gui = document.createElement("table");
+	this.gui.className = "centered_table";
+
+	//{ model...
+	this.model = document.createElement("select");
+	this.model.className = "full_width";
+	this.model.size = 1;
+
+	tmp = document.createElement("option");
+	tmp.value = 0;
+	tmp.selected = true;
+	tmp.appendChild(document.createTextNode("Select computational model..."));
+	this.model.appendChild(tmp);
+
+	tmp = document.createElement("option");
+	tmp.value = 1;
+	tmp.appendChild(document.createTextNode("Logit"));
+	// tmp.disabled = true;
+	this.model.appendChild(tmp);
+
+	tmp = document.createElement("option");
+	tmp.value = 2;
+	tmp.appendChild(document.createTextNode("Mixed logit"));
+	this.model.appendChild(tmp);
+
+	tmp = document.createElement("option");
+	tmp.value = 3;
+	tmp.appendChild(document.createTextNode("GMNL-II"));
+	this.model.appendChild(tmp);
+
+	tmp = document.createElement("option");
+	tmp.value = 4;
+	tmp.appendChild(document.createTextNode("Gmnl2a"));
+	this.model.appendChild(tmp);
+	this.model.pid = this;
+	this.model.onchange = function () {
+		this.pid.coefficients.length = 0;
+		switch (parseInt(this.value)) {
+			case 0:
+				break;
+			case 1:
+				for (var i = 0; i != Object.keys(this.pid.attributes).length; i++)
+					this.pid.coefficients.push("<sup>&beta;</sup><sub>" + (i + 1) + "</sub>");
+				break;
+			case 2:
+				for (var i = 0; i != Object.keys(this.pid.attributes).length; i++)
+					this.pid.coefficients.push("<sup>&beta;</sup><sub>" + (i + 1) + "</sub>");
+				for (var i = 0; i != Object.keys(this.pid.attributes).length; i++)
+					this.pid.coefficients.push("<sup>&eta;</sup><sub>" + (i + 1) + "</sub>");
+				break;
+			case 3:
+				for (var i = 0; i != Object.keys(this.pid.attributes).length; i++)
+					this.pid.coefficients.push("<sup>&beta;</sup><sub>" + (i + 1) + "</sub>");
+				for (var i = 0; i != Object.keys(this.pid.attributes).length; i++)
+					this.pid.coefficients.push("<sup>&eta;</sup><sub>" + (i + 1) + "</sub>");
+				this.pid.coefficients.push("&tau;");
+				break;
+			case 4:
+				for (var i = 0; i != Object.keys(this.pid.attributes).length; i++)
+					this.pid.coefficients.push("<sup>&beta;</sup><sub>" + (i + 1) + "</sub>");
+				for (var i = 0; i != Object.keys(this.pid.attributes).length; i++)
+					this.pid.coefficients.push("<sup>&eta;</sup><sub>" + (i + 1) + "</sub>");
+				this.pid.coefficients.push("&tau;");
+				this.pid.coefficients.push("&phi;");
+				break;
+		}
+		this.pid.populate_complexity_tables();
+	};
+	//} ... model
+
+	this.populate_complexity_tables = function() 
+	{
+		var table = document.createElement("table");
+		table.className = "auto_table";
+		if (Object.keys(this.attributes).length && this.coefficients.length && this.coeffs_atonce.value > 0) {
+			tr = document.createElement("tr");
+			tr.appendChild(document.createElement("td"));
+			td = document.createElement("td");
+			td.colSpan = 3 + this.coeffs_atonce.value;
+			td.className = "centered_td";
+			var tmp = document.createElement("span");
+			tmp.className = "hinting_text";
+			tmp.appendChild(document.createTextNode("(right-click (long-press on tablets) entry fields for quick-fill opnions)"));
+			td.appendChild(tmp);
+			tr.appendChild(td);
+			table.appendChild(tr);
+
+			tr = document.createElement("tr");
+			td = document.createElement("td");
+			td.className = "centered_td";
+			td.rowSpan = 2;
+			td.appendChild(document.createTextNode("Semantics"));
+			tr.appendChild(td);
+
+			td = document.createElement("td");
+			td.className = "centered_td";
+			td.colSpan = 2;
+			td.appendChild(document.createTextNode("Initial exploration range"));
+			tr.appendChild(td);
+
+			td = document.createElement("td");
+			td.className = "centered_td";
+			td.rowSpan = 2;
+			td.appendChild(document.createTextNode("Consider done"));
+			td.appendChild(document.createElement("br"));
+			td.appendChild(document.createTextNode("@range"));
+			tr.appendChild(td);
+
+			td = document.createElement("td");
+			td.className = "centered_td";
+			td.colSpan = this.coeffs_atonce.value;
+			td.appendChild(document.createTextNode("Gridsteps for"));
+			td.appendChild(document.createElement("br"));
+			td.appendChild(document.createTextNode("x-coefficients-@once modulations"));
+			tr.appendChild(td);
+
+			table.appendChild(tr);
+
+			tr = document.createElement("tr");
+
+			/*
+				 td = document.createElement("td");
+				 td.appendChild(document.createTextNode("coeff"));
+				 td.appendChild(document.createElement("br"));
+				 td.appendChild(document.createTextNode("number"));
+				 tr.appendChild(td);
+			 */
+
+			td = document.createElement("td");
+			td.className = "centered_td";
+			td.appendChild(document.createTextNode("from"));
+			tr.appendChild(td);
+			td = document.createElement("td");
+			td.appendChild(document.createTextNode("to"));
+			tr.appendChild(td);
+
+
+			for (var i = 1; i <= this.coeffs_atonce.value; ++i) {
+				td = document.createElement("td");
+				td.appendChild(document.createTextNode(i + "-@once"));
+				tr.appendChild(td);
+			}
+			table.appendChild(tr);
+
+			this.cli_coefficient_range_metadata.length = this.coefficients.length;
+			for (var i = 0; i != this.coefficients.length; ++i) {
+				this.cli_coefficient_range_metadata[i] = new cli_coefficient_range_metadata_type(i, this);
+				this.cli_coefficient_range_metadata[i].allocate(parseInt(this.coeffs_atonce.value));
+
+				tr = document.createElement("tr");
+
+				td = document.createElement("td");
+				td.className = "centered_td";
+				td.innerHTML = this.coefficients[i];
+				tr.appendChild(td);
+
+				/*
+					 td = document.createElement("td");
+					 td.appendChild(document.createTextNode(i + 1));
+					 tr.appendChild(td);
+				 */
+
+				td = document.createElement("td");
+				td.className = "centered_td";
+				td.appendChild(this.cli_coefficient_range_metadata[i].from);
+				tr.appendChild(td);
+
+				td = document.createElement("td");
+				td.appendChild(this.cli_coefficient_range_metadata[i].to);
+				td.className = "centered_td";
+				tr.appendChild(td);
+
+				td = document.createElement("td");
+				td.className = "centered_td";
+				td.appendChild(this.cli_coefficient_range_metadata[i].minstep);
+				tr.appendChild(td);
+
+				for (var j = 0; j != this.coeffs_atonce.value; ++j) {
+					td = document.createElement("td");
+					td.className = "centered_td";
+					td.appendChild(this.cli_coefficient_range_metadata[i].grid_resolutions[j]);
+					tr.appendChild(td);
+				}
+				table.appendChild(tr);
+			}
+		}
+
+		if (this.previous_attrubtes_length != Object.keys(this.attributes).length || this.previous_coefficients_length != this.coefficients.length) {
+			this.previous_attrubtes_length = Object.keys(this.attributes).length;
+			this.previous_coefficients_length = this.coefficients.length;
+
+			var newdiv = document.createElement("div");
+			newdiv.appendChild(table);
+			var newdivx = document.createElement("div");
+			for (var i = 0; i < this.subsequent_complexities_size.value; ++i) {
+				this.subsequent_complexities[i].populate(newdivx);
+			}
+
+			newdiv.appendChild(newdivx);
+
+			this.all_complexity_tables_holder.replaceChild(newdiv, this.initial_complexity_table_holder);
+			this.initial_complexity_table_holder = newdiv;
+			this.subsequent_complexity_tables_holder = newdivx;
+		} else {
+			this.initial_complexity_table_holder.replaceChild(table, this.initial_complexity_table);
+		}
+		this.initial_complexity_table = table;
+	}
+
+	this.csv_column_types = [];
+	this.attributes = {};
+	this.coefficients = [];
+
+	this.coeffs_atonce = document.createElement("input");
+	this.coeffs_atonce.type = "number";
+	this.coeffs_atonce.pid = this;
+	this.coeffs_atonce.size = 5;
+	this.coeffs_atonce.onchange = function () {
+		var value = parseInt(this.value);
+		if (isNaN(value) == true || value < 1)
+			value = 0;
+		this.value = value;
+		this.pid.populate_complexity_tables();
+	};
+	this.cli_coefficient_range_metadata = [];
+	this.initial_complexity_table = document.createElement("table");
+
+
+
+
+	var tr; 
+	var td; 
+
+	tr = document.createElement("tr");
+	td = document.createElement("td");
+	td.className = "page_title_td";
+	td.appendChild(document.createTextNode("ADDING A NEW TASK"));
+	tr.appendChild(td);
+	this.gui.appendChild(tr);
+
+	tr = document.createElement("tr");
+	td = document.createElement("td");
+	this.help_model_content = new help_content_type("Step 1: Choose computational model", "help_model_content");
+	td.appendChild(this.help_model_content.gui);
+	td.appendChild(this.model);
+	tr.appendChild(td);
+	this.gui.appendChild(tr);
+
+	tr = document.createElement("tr");
+	td = document.createElement("td");
+
+	this.help_dataset_content = new help_content_type("Step 2: Choose dataset", "help_dataset_content");
+	td.appendChild(this.help_dataset_content.gui);
+
+	var tmp_tbl = document.createElement("table");
+	tmp.className = "auto_table";
+	tmp_tr = document.createElement("tr");
+	tmp_td = document.createElement("td");
+	tmp_td.appendChild(document.createTextNode(".CSV file:"));
+	tmp_tr.appendChild(tmp_td);
+	tmp_td = document.createElement("td");
+	tmp = document.createElement("input");
+	tmp.type = "file";
+	tmp.pid = this;
+	tmp.onchange = function ()
+	{
+		file = this.files[0];
+		var file_slice = file.slice(0, Math.min(file.size, 30000));
+		var file_reader = new FileReader();
+		file_reader.pid = this.pid;
+		file_reader.onloadend = function() {
+			if (this.readyState == FileReader.DONE) {
+				var table = document.createElement("table");
+				split_csv(this.result);
+				var rows = Math.min(Math.max(csv_grid.length - 1, 0), 10);
+
+				if (rows > 0) {
+					var first_row_columns = csv_grid[0].length;
+					this.pid.csv_column_types.length = first_row_columns;
+					var tr = document.createElement("tr");
+					for (var i = 0; i != first_row_columns; ++i) {
+						var td = document.createElement("td");
+						td.appendChild((this.pid.csv_column_types[i] = new select_csv_column_type(this.pid, i)).gui);
+						tr.appendChild(td);
+					}
+					table.appendChild(tr);
+
+					for (var i = 0; i != rows; ++i) {
+						var row = csv_grid[i];
+						var tr = document.createElement("tr");
+						for (var j = 0; j != row.length; ++j) {
+							var td = document.createElement("td");
+							td.className = "unspecified_csv";
+							td.appendChild(document.createTextNode(row[j]));
+							tr.appendChild(td);
+						}
+						table.appendChild(tr);
+					}
+					table.className = "auto_table";
+					this.pid.csv_table_holder.replaceChild(table, this.pid.csv_table);
+					this.pid.csv_table = table;
+				}
+			}
+		};
+		file_reader.readAsText(file_slice);
+	}
+
+	tmp_td.appendChild(tmp);
+	tmp_tr.appendChild(tmp_td);
+	tmp_tbl.appendChild(tmp_tr);
+	tmp_tr = document.createElement("tr");
+	tmp_td = document.createElement("td");
+	tmp_td.appendChild(document.createTextNode("Data starts from row no:"));
+	tmp_tr.appendChild(tmp_td);
+	tmp_td = document.createElement("td");
+	this.csv_data_from_row = document.createElement("input");
+	this.csv_data_from_row.size = 5;
+	this.csv_data_from_row.value = 2;
+	tmp_td.appendChild(this.csv_data_from_row);
+	tmp_tr.appendChild(tmp_td);
+	tmp_tbl.appendChild(tmp_tr);
+
+	tmp_tr = document.createElement("tr");
+	tmp_td = document.createElement("td");
+	tmp_td.appendChild(document.createTextNode("Alternatives per question:"));
+	tmp_tr.appendChild(tmp_td);
+	tmp_td = document.createElement("td");
+	this.csv_data_alternatives_size = document.createElement("input");
+	this.csv_data_alternatives_size.size = 5;
+	tmp_td.appendChild(this.csv_data_alternatives_size);
+	tmp_tr.appendChild(tmp_td);
+	tmp_tbl.appendChild(tmp_tr);
+
+	td.appendChild(tmp_tbl);
+
+	td.appendChild(document.createElement("hr"));
+
+	this.csv_table_holder = document.createElement("div");
+	this.csv_table_holder.style.overflow = "auto";
+	// window.innerWidth + "px";
+	this.csv_table_holder.style.maxWidth = (0.95 * screen.width) + "px";
+	this.csv_table = document.createElement("table");
+	this.csv_table_holder.appendChild(this.csv_table);
+	td.appendChild(this.csv_table_holder);
+
+	td.appendChild(document.createElement("hr"));
+
+	this.help_vcgw_coefficients_metadata_content = new help_content_type("Step 3: Configure VCGW exploration characteristics", "help_vcgw_coefficients_metadata_content");
+	td.appendChild(this.help_vcgw_coefficients_metadata_content.gui);
+
+	var tmp_tbl = document.createElement("table");
+	tmp.className = "auto_table";
+	tmp_tr = document.createElement("tr");
+	tmp_td = document.createElement("td");
+
+	tmp_td.appendChild(document.createTextNode("Max-coefficients-@once complexity size:"));
+	tmp_tr.appendChild(tmp_td);
+
+	tmp_td = document.createElement("td");
+	tmp_td.appendChild(this.coeffs_atonce);
+	tmp_tr.appendChild(tmp_td);
+	tmp_tbl.appendChild(tmp_tr);
+
+	tmp_tr = document.createElement("tr");
+	tmp_td = document.createElement("td");
+	tmp_td.appendChild(document.createTextNode("Number of additional complexity settings:"));
+	tmp_tr.appendChild(tmp_td);
+
+	tmp_td = document.createElement("td");
+	this.subsequent_complexities_size = document.createElement("input");
+	this.subsequent_complexities_size.type = "number";
+	this.subsequent_complexities_size.size = 5;
+	this.subsequent_complexities_size.pid = this;
+	this.subsequent_complexities_size.onchange = function() 
+	{
+		if (isNaN(parseInt(this.value)) == false) {
+			var newdivx = document.createElement("div");
+			this.pid.subsequent_complexities = [];
+			for (var i = 0; i < this.value; ++i) {
+				(this.pid.subsequent_complexities[i] = new subsequent_complexity_type(this.pid)).populate(newdivx);
+			}
+			this.pid.initial_complexity_table_holder.replaceChild(newdivx, this.pid.subsequent_complexity_tables_holder);
+			this.pid.subsequent_complexity_tables_holder = newdivx;
+		}
+	}
+	tmp_td.appendChild(this.subsequent_complexities_size);
+	tmp_tr.appendChild(tmp_td);
+	tmp_tbl.appendChild(tmp_tr);
+
+	td.appendChild(tmp_tbl);
+
+	td.appendChild(document.createElement("hr"));
+
+	this.all_complexity_tables_holder = td;
+	this.initial_complexity_table_holder = document.createElement("div");
+	this.subsequent_complexity_tables_holder = document.createElement("div");
+	this.initial_complexity_table_holder.appendChild(this.initial_complexity_table);
+	this.initial_complexity_table_holder.appendChild(this.subsequent_complexity_tables_holder);
+
+	td.appendChild(this.initial_complexity_table_holder);
+
+	td.appendChild(document.createElement("hr"));
+	this.help_vcgw_misc_content = new help_content_type("Step 4: Finish configuring VCGW", "help_vcgw_misc_content");
+	td.appendChild(this.help_vcgw_misc_content.gui);
+
+	tmp_tbl = document.createElement("table");
+
+	tmp_tr = document.createElement("tr");
+	tmp_td = document.createElement("td");
+	tmp_td.appendChild(document.createTextNode("Max. evaluations in any complexity:"));
+	tmp_tr.appendChild(tmp_td);
+	tmp_td = document.createElement("td");
+	this.complexity_size = document.createElement("input");
+	this.complexity_size.type = "number";
+	this.complexity_size.size = 10;
+	this.complexity_size.value = 88800000;
+	tmp_td.appendChild(this.complexity_size);
+	tmp_tr.appendChild(tmp_td);
+	tmp_tbl.appendChild(tmp_tr);
+
+	tmp_tr = document.createElement("tr");
+	tmp_td = document.createElement("td");
+	tmp_td.appendChild(document.createTextNode("Number of draws:"));
+	tmp_tr.appendChild(tmp_td);
+	tmp_td = document.createElement("td");
+	this.repeats = document.createElement("input");
+	this.repeats.type = "number";
+	this.repeats.size = 10;
+	this.repeats.value = 1000;
+	tmp_td.appendChild(this.repeats);
+	tmp_tr.appendChild(tmp_td);
+	tmp_tbl.appendChild(tmp_tr);
+
+	tmp_tr = document.createElement("tr");
+	tmp_td = document.createElement("td");
+	tmp_td.appendChild(document.createTextNode("Number of drawn sets:"));
+	tmp_tr.appendChild(tmp_td);
+	tmp_td = document.createElement("td");
+	this.draws_sets_size = document.createElement("input");
+	this.draws_sets_size.type = "number";
+	this.draws_sets_size.size = 10;
+	this.draws_sets_size.value = 1;
+	tmp_td.appendChild(this.draws_sets_size);
+	tmp_tr.appendChild(tmp_td);
+	tmp_tbl.appendChild(tmp_tr);
+
+	tmp_tr = document.createElement("tr");
+	tmp_td = document.createElement("td");
+	tmp_td.appendChild(document.createTextNode("Zoom-in slowdown:"));
+	tmp_tr.appendChild(tmp_td);
+	tmp_td = document.createElement("td");
+	this.shrink_slowdown = document.createElement("input");
+	this.shrink_slowdown.type = "number";
+	this.shrink_slowdown.size = 10;
+	this.shrink_slowdown.value = 0.3;
+	tmp_td.appendChild(this.shrink_slowdown);
+	tmp_tr.appendChild(tmp_td);
+	tmp_tbl.appendChild(tmp_tr);
+
+	tmp_tr = document.createElement("tr");
+	tmp_td = document.createElement("td");
+	tmp_td.appendChild(document.createTextNode("Min. improvement ratio:"));
+	tmp_tr.appendChild(tmp_td);
+	tmp_td = document.createElement("td");
+	this.minimpr = document.createElement("input");
+	this.minimpr.type = "number";
+	this.minimpr.size = 10;
+	this.minimpr.value = 1.0000001;
+	tmp_td.appendChild(this.minimpr);
+	tmp_tr.appendChild(tmp_td);
+	tmp_tbl.appendChild(tmp_tr);
+
+	tmp_tr = document.createElement("tr");
+	tmp_td = document.createElement("td");
+	tmp_td.appendChild(document.createTextNode("Floating-point res:"));
+	tmp_tr.appendChild(tmp_td);
+	tmp_td = document.createElement("td");
+	this.floating_point_resolution = document.createElement("select");
+	this.floating_point_resolution.size = 1;
+
+	var tmp_option;
+	tmp_option = document.createElement("option");
+	tmp_option.value = 0;
+	tmp_option.appendChild(document.createTextNode("not set"));
+	this.floating_point_resolution.appendChild(tmp_option);
+
+	tmp_option = document.createElement("option");
+	tmp_option.value = 1;
+	tmp_option.selected = true;
+	tmp_option.appendChild(document.createTextNode("single (32-bit)"));
+	this.floating_point_resolution.appendChild(tmp_option);
+
+	tmp_option = document.createElement("option");
+	tmp_option.value = 2;
+	tmp_option.appendChild(document.createTextNode("double (64-bit)"));
+	this.floating_point_resolution.appendChild(tmp_option);
+
+	tmp_td.appendChild(this.floating_point_resolution);
+	tmp_tr.appendChild(tmp_td);
+
+	tmp_tbl.appendChild(tmp_tr);
+
+	tmp_tr = document.createElement("tr");
+	tmp_td = document.createElement("td");
+	tmp_td.appendChild(document.createTextNode("Extended floating-point res:"));
+	tmp_tr.appendChild(tmp_td);
+
+	tmp_td = document.createElement("td");
+	this.extended_floating_point_resolution = document.createElement("select");
+	this.extended_floating_point_resolution.size = 1;
+
+	var tmp_option;
+	tmp_option = document.createElement("option");
+	tmp_option.value = 0;
+	tmp_option.appendChild(document.createTextNode("not set"));
+	this.extended_floating_point_resolution.appendChild(tmp_option);
+
+	tmp_option = document.createElement("option");
+	tmp_option.value = 1;
+	tmp_option.appendChild(document.createTextNode("single (32-bit)"));
+	this.extended_floating_point_resolution.appendChild(tmp_option);
+
+	tmp_option = document.createElement("option");
+	tmp_option.value = 2;
+	tmp_option.selected = true;
+	tmp_option.appendChild(document.createTextNode("double (64-bit)"));
+	this.extended_floating_point_resolution.appendChild(tmp_option);
+
+	tmp_td.appendChild(this.extended_floating_point_resolution);
+	tmp_tr.appendChild(tmp_td);
+
+	tmp_tbl.appendChild(tmp_tr);
+
+	tmp_tr = document.createElement("tr");
+	tmp_td = document.createElement("td");
+	tmp_td.appendChild(document.createTextNode("Integer/memory-size res:"));
+	tmp_tr.appendChild(tmp_td);
+
+	tmp_td = document.createElement("td");
+	this.integer_resolution = document.createElement("select");
+	this.integer_resolution.size = 1;
+
+	var tmp_option;
+	tmp_option = document.createElement("option");
+	tmp_option.value = 0;
+	tmp_option.appendChild(document.createTextNode("not set"));
+	this.integer_resolution.appendChild(tmp_option);
+
+	tmp_option = document.createElement("option");
+	tmp_option.value = 1;
+	tmp_option.selected = true;
+	tmp_option.appendChild(document.createTextNode("32-bit"));
+	this.integer_resolution.appendChild(tmp_option);
+
+	tmp_option = document.createElement("option");
+	tmp_option.value = 2;
+	tmp_option.appendChild(document.createTextNode("64-bit"));
+	this.integer_resolution.appendChild(tmp_option);
+
+	tmp_td.appendChild(this.integer_resolution);
+	tmp_tr.appendChild(tmp_td);
+
+	tmp_tbl.appendChild(tmp_tr);
+
+
+
+	td.appendChild(tmp_tbl);
+
+	this.compose_cli_cm_gridres_args = function(x)
+	{
+		var compressed_grid_resolutions_length = x.length;
+		var ref_value = x[x.length - 1].value;
+		for (var j = x.length - 2; j  > -1; --j) {
+			if (ref_value == x[j].value)
+				--compressed_grid_resolutions_length;
+			else 
+				break;
+		}
+		var this_row = "";
+		for (var j = 0; j != compressed_grid_resolutions_length; ++j)
+			this_row += ':' + x[j].value;
+		return this_row;
+	}
+
+
+	td.appendChild(document.createElement("hr"));
+
+	this.to_server = document.createElement("pre"); 
+	// this.to_server.innerHTML = "";
+	this.to_server.className = "debug_log_to_server";
+	td.appendChild(this.to_server);
+	this.from_server = document.createElement("pre");
+	this.from_server.className = "debug_log_from_server";
+	td.appendChild(this.from_server);
+
+	tmp = document.createElement("button")
+	tmp.pid = this;
+	tmp.onclick = function() 
+	{
+
+		this.disabled = true;
+		var form = new FormData();
+
+		var alternatives_size = parseInt(this.pid.csv_data_alternatives_size.value);
+		var fromrow = parseInt(this.pid.csv_data_from_row.value);
+		var model = parseInt(this.pid.model.value);
+		var floating_point_resolution = parseInt(this.pid.floating_point_resolution.value);
+		var extended_floating_point_resolution = parseInt(this.pid.extended_floating_point_resolution.value);
+		var integer_resolution = parseInt(this.pid.integer_resolution.value);
+		var complexity_size = parseInt(this.pid.complexity_size.value);
+		var minimpr = parseFloat(this.pid.minimpr.value);
+		var draws_sets_size = parseInt(this.pid.draws_sets_size.value);
+		var shrink_slowdown = parseFloat(this.pid.shrink_slowdown.value);
+		var repeats = parseInt(this.pid.repeats.value);
+
+		var cli_string = "A SMART WAY TO SPECIFY THE ABOVE WOULD HAVE BEEN:\n";
+
+		cli_string += "--model " + model + ":offer\n";
+		cli_string += "--fromrow " + fromrow  + '\n';
+		cli_string += "--alts " + alternatives_size + '\n';
+
+		form.append("--model_id", model);
+		form.append("--fromrow", fromrow);
+		form.append("--alts", alternatives_size);
+
+		var attributes_size = 0;
+		var attributes = [];
+		var respondent_i = 0;
+		var choiceset_i = 0;
+		var alternative_i = 0;
+		var choice_i = 0; 
+		for (var i = 0; i != this.pid.csv_column_types.length; ++i) {
+			switch (this.pid.csv_column_types[i].gui.value) {
+				case '1':
+					respondent_i = i + 1;
+					break;
+				case '2':
+					choiceset_i = i + 1;
+					break;
+				case '3':
+					alternative_i = i + 1;
+					break;
+				case '4':
+					attributes[attributes_size] = i + 1;
+					attributes.length = ++attributes_size;
+					break;
+				case '5':
+					choice_i = i + 1;
+					break;
+			}
+		}
+
+		if (repeats < 1 || shrink_slowdown >= 1 || shrink_slowdown < 0 || draws_sets_size < 1 || minimpr < 1 || !floating_point_resolution || !extended_floating_point_resolution || !integer_resolution || !attributes.length || !model || !respondent_i || !choiceset_i || !choice_i || isNaN(fromrow) == true || fromrow < 1  || isNaN(alternatives_size) == true || alternatives_size < 2 || !this.pid.cli_coefficient_range_metadata.length) {
+			alert("Did not fill all of the values properly... naughty naughty...");
+			return; // TODO 
+		}
+
+		switch (integer_resolution) {
+			case 1:
+				cli_string += "--int_resolution 32\n";
+				form.append("--int_resolution", 32);
+				break;
+			case 2:
+				cli_string += "--int_resolution 64\n";
+				form.append("--int_resolution", 64);
+				break;
+		}
+		switch (floating_point_resolution) {
+			case 1:
+				cli_string += "--float_resolution single\n";
+				form.append("--float_resolution", "single");
+				break;
+			case 2:
+				cli_string += "--float_resolution double\n";
+				form.append("--float_resolution", "double");
+				break;
+		}
+		switch (extended_floating_point_resolution) {
+			case 1:
+				cli_string += "--extended_float_resolution single\n";
+				form.append("--extended_float_resolution", "single");
+				break;
+			case 2:
+				cli_string += "--extended_float_resolution double\n";
+				form.append("--extended_float_resolution", "double");
+				break;
+		}
+
+		cli_string += "--resp " + respondent_i + '\n';
+		form.append("--resp", respondent_i);
+
+		cli_string += "--repeats " + repeats + '\n';
+		form.append("--repeats", repeats);
+
+		cli_string += "--best " + choice_i + '\n';
+		form.append("--best", choice_i);
+
+		cli_string += "--complexity_size " + complexity_size + '\n';
+		form.append("--complexity_size", complexity_size);
+
+		cli_string += "--minimpr " + minimpr + '\n';
+		form.append("--minimpr", minimpr);
+
+		cli_string += "--draws_sets_size " + draws_sets_size + '\n';
+		form.append("--draws_sets_size", draws_sets_size);
+
+		cli_string += "--shrink_slowdown " + shrink_slowdown + '\n';
+		form.append("--shrink_slowdown", shrink_slowdown);
+
+		cli_string += "--dissect off\n--reduce_exp_complexity off\n";
+		form.append("--dissect", "off");
+		form.append("--reduce_exp_complexity", "off");
+
+		var sort_str = respondent_i + ',' + choiceset_i;
+		if (alternative_i != -1)
+			sort_str += ',' + alternative_i;
+		cli_string += "--sort " + sort_str + '\n';
+		form.append("--sort", sort_str);
+
+		var tmp_attribute_i = 0;
+		var x_str = attributes[0];
+		for (var i = 1, expected = attributes[0] + 1; i < attributes.length; ++i, ++expected) {
+			var diff = i - tmp_attribute_i;
+			if (expected != attributes[i]) {
+				if (diff > 2)
+					x_str += ':' + attributes[i - 1];
+				else if (diff > 1)
+					x_str += ',' + attributes[i - 1];
+				x_str += ',' + attributes[i];
+				expected = attributes[i];
+				tmp_attribute_i = i;
+			} else if (i == attributes.length - 1) {
+				if (diff > 1)
+					x_str += ':' + attributes[i];
+				else 
+					x_str += ',' + attributes[i];
+			}
+		}
+
+		cli_string += "--x " + x_str + '\n';
+		form.append("--x", x_str);
+
+		// main coefficients metadata stuff
+		cli_string += "--coeffs_atonce_size " + this.pid.coeffs_atonce.value + '\n';
+		form.append("--coeffs_atonce_size", this.pid.coeffs_atonce.value);
+
+		var last_row = "";
+		for (var i = 0; i != this.pid.cli_coefficient_range_metadata.length; ++i) {
+			var cli = this.pid.cli_coefficient_range_metadata[i];
+			if (cli.validate() == false)
+				return;
+			var this_row = cli.from.value + ':' + cli.to.value + ':' + cli.minstep.value + this.pid.compose_cli_cm_gridres_args(cli.grid_resolutions);
+			if (this_row != last_row) {
+				var cm_str = i + 1 + ':' + this_row;
+				cli_string += "--cm " + cm_str + '\n';
+				form.append("--cm", cm_str);
+			}
+			last_row = this_row;
+		}
+
+		// subsequent coefficients metadata stuff
+		for (var i = 0; i < this.pid.subsequent_complexities_size.value; ++i) {
+			var subsequent_complexity = this.pid.subsequent_complexities[i];
+			if (parseInt(subsequent_complexity.coeffs_atonce.value) < 1) {
+				alert("Subsequent compelxity table(=" + (i + 1) + ") does not have valid number of x-coefficients-@-once complexity.");
+			}
+			cli_string += "--coeffs_atonce_size " + subsequent_complexity.coeffs_atonce.value + '\n';
+			form.append("--coeffs_atonce_size", subsequent_complexity.coeffs_atonce.value);
+			last_row = "";
+			for (var j = 0; j != subsequent_complexity.coeffs_atonce.value; ++j) {
+				var cli = subsequent_complexity.cli_coefficient_range_metadata_x[j];
+				if (cli.validate() == false)
+					return;
+				var this_row = cli.threshold.value + this.pid.compose_cli_cm_gridres_args(cli.grid_resolutions);
+				if (this_row != last_row) {
+					var cm_str = j + 1 + ':' + this_row;
+					cli_string += "--cm " + cm_str + '\n';
+					form.append("--cm", cm_str);
+				}
+				last_row = this_row;
+			}
+		}
+
+		this.pid.to_server.innerHTML = cli_string;
+
+		// todo -- move it into new_task_type namespace... as sooo many other quick hacks :-)
+
+		this.pid.from_server.innerHTML = "Processing... please wait...";
+		// var form = new FormData(document.getElementById("aoeu"));
+		form.append("--filedata", file);
+		http_request = new XMLHttpRequest();
+		http_request.pid = this.pid;
+		http_request.btn = this;
+		http_request.withCredentials = true;
+		http_request.onreadystatechange = function()
+		{
+			if (this.readyState == 4) {
+				this.btn.disabled = false;
+				if (this.status == 200) {
+					//alert(this.responseText);
+					var obj = JSON.parse(this.responseText);
+					if (obj.echo) {
+						this.pid.from_server.innerHTML = "Server says OK: " + obj.echo;
+					} else if (obj.error) {
+						this.pid.from_server.innerHTML = "Server says BAD: " + obj.error;
+					}
+				} else {
+					this.pid.from_server.innerHTML = "Epic fail...";
+				}
+			}
+		}
+		http_request.open("POST", server_at + "new_task");
+		http_request.send(form);
+	}
+
+	tmp.className = "full_width";
+	tmp.appendChild(document.createTextNode("Send to server"));
+	td.appendChild(tmp);
+
+	td.appendChild(document.createElement("br"));
+	tmp = document.createElement("button");
+	tmp.className = "full_width";
+	tmp.appendChild(document.createTextNode("Main Menu"));
+	tmp.onclick = function () 
+	{
+		main_menu.show();
+	}
+	td.appendChild(tmp);
+
+
+	tr.appendChild(td);
+	this.gui.appendChild(tr);
+
+	this.show = function()
+	{
+		if (this.gui != last_div) {
+			document.body.replaceChild(this.gui, last_div);
+			last_div = this.gui;
+		}
+	}
+
+	this.fill_down_row = function(x)
+	{
+		var source = this.cli_coefficient_range_metadata[x];
+		for (var i = x + 1; i != this.cli_coefficient_range_metadata.length; ++i) {
+			this.cli_coefficient_range_metadata[i].from.value = source.from.value;
+			this.cli_coefficient_range_metadata[i].to.value = source.to.value;
+			this.cli_coefficient_range_metadata[i].minstep.value = source.minstep.value;
+			for (var j = 0; j != source.grid_resolutions.length; ++j)
+				this.cli_coefficient_range_metadata[i].grid_resolutions[j].value = source.grid_resolutions[j].value;
+		}
+	}
+
+	this.fill_down_column_from = function(x)
+	{
+		var value = this.cli_coefficient_range_metadata[x].from.value;
+		for (var i = x + 1; i != this.cli_coefficient_range_metadata.length; ++i)
+			this.cli_coefficient_range_metadata[i].from.value = value;
+	}
+
+	this.fill_down_column_to = function(x)
+	{
+		var value = this.cli_coefficient_range_metadata[x].to.value;
+		for (var i = x + 1; i != this.cli_coefficient_range_metadata.length; ++i)
+			this.cli_coefficient_range_metadata[i].to.value = value;
+	}
+
+	this.fill_down_column_minstep = function(x)
+	{
+		var value = this.cli_coefficient_range_metadata[x].minstep.value;
+		for (var i = x + 1; i != this.cli_coefficient_range_metadata.length; ++i)
+			this.cli_coefficient_range_metadata[i].minstep.value = value;
+	}
+
+	this.fill_down_column_grid_resolutions = function(x, y)
+	{
+		var value = this.cli_coefficient_range_metadata[x].grid_resolutions[y].value;
+		for (var i = x + 1; i != this.cli_coefficient_range_metadata.length; ++i)
+			this.cli_coefficient_range_metadata[i].grid_resolutions[y].value = value;
+	}
+
+	this.fill_right_row_grid_resolutions = function(x, y)
+	{
+		var value = this.cli_coefficient_range_metadata[x].grid_resolutions[y].value;
+		for (var i = y + 1; i != this.cli_coefficient_range_metadata[x].grid_resolutions.length; ++i)
+			this.cli_coefficient_range_metadata[x].grid_resolutions[i].value = value;
+	}
+
+	this.fill_to_corner = function(x, y)
+	{
+		var value = this.cli_coefficient_range_metadata[x].grid_resolutions[y].value;
+		for (var j = x; j != this.cli_coefficient_range_metadata.length; ++j) {
+			for (var i = y; i != this.cli_coefficient_range_metadata[j].grid_resolutions.length; ++i) {
+				this.cli_coefficient_range_metadata[j].grid_resolutions[i].value = value;
+			}
+		}
+	}
+}
+
+function batch_fill_context_menu_type()
+{
+	this.hidden = true;
+	this.show = function()
+	{
+		if (this.hidden == false)
+			this.hide();
+		this.cell_gui.className = "coeff_metadata_selected";
+		this.highlighted_cell_gui = this.cell_gui;
+		this.hidden = false;
+		this.gui.style.left = this.x + window.pageXOffset + "px";
+		this.gui.style.top = this.y  + window.pageYOffset+ "px";
+		document.body.appendChild(this.gui);
+
+		var right = this.gui.clientWidth + this.x;
+		if (right > document.body.clientWidth) {
+			this.x = this.x - right + document.body.clientWidth;
+			if (this.x < 0)
+				this.x = 0;
+			this.gui.style.left = this.x + window.pageXOffset + "px";
+		}
+		var bottom = this.gui.clientHeight + this.y;
+		if (bottom > document.body.clientHeight) {
+			this.y = this.y - bottom + document.body.clientHeight;
+			if (this.y < 0)
+				this.y = 0;
+			this.gui.style.top = this.y + window.pageYOffset + "px";
+		}
+	}
+	this.hide = function()
+	{
+		if (this.hidden == false) {
+			this.highlighted_cell_gui.className = "coeff_metadata";
+			document.body.removeChild(this.gui);
+			this.hidden = true;
+		}
+	}
+
+	this.gui = document.createElement("div");
+	this.gui.className = "contextmenu";
+
+	this.fill_right_row_button = document.createElement("button");
+	this.fill_right_row_button.className = "full_width";
+	this.fill_right_row_button.pid = this.pid;
+	this.fill_right_row_button.appendChild(document.createTextNode("Fill right"));
+	this.gui.appendChild(this.fill_right_row_button);
+
+	this.gui.appendChild(document.createElement("br"));
+	this.fill_down_row_button = document.createElement("button");
+	this.fill_down_row_button.className = "full_width";
+	this.fill_down_row_button.pid = this.pid;
+	this.fill_down_row_button.appendChild(document.createTextNode("Fill row down"));
+	this.gui.appendChild(this.fill_down_row_button);
+
+	this.gui.appendChild(document.createElement("br"));
+	this.fill_down_column_button = document.createElement("button");
+	this.fill_down_column_button.className = "full_width";
+	this.fill_down_column_button.pid = this.pid;
+	this.fill_down_column_button.appendChild(document.createTextNode("Fill column down"));
+	this.gui.appendChild(this.fill_down_column_button);
+
+	this.gui.appendChild(document.createElement("br"));
+	this.fill_to_corner_button = document.createElement("button");
+	this.fill_to_corner_button.className = "full_width";
+	this.fill_to_corner_button.pid = this.pid;
+	this.fill_to_corner_button.appendChild(document.createTextNode("Fill down and right"));
+	this.gui.appendChild(this.fill_to_corner_button);
+
+	this.gui.appendChild(document.createElement("br"));
+	var cancel_btn = document.createElement("button");
+	cancel_btn.className = "full_width";
+	cancel_btn.pid = this;
+	cancel_btn.appendChild(document.createTextNode("Cancel"));
+	cancel_btn.onclick = function() 
+	{
+		this.pid.hide();
+	}
+	this.gui.appendChild(cancel_btn);
+}
+
+var normals_i = 0;
+var normals = [];
+function draw_from_normal() 
+{
+	var x1;
+	var rad;
+	do {
+		var r1 = Math.random();
+		x1 = r1 + r1  - 1;
+		var r2 = Math.random();
+		var x2 = r2 + r2 - 1;
+		rad = x1 * x1 + x2 * x2
+	} while (rad > .999 || rad < 0.001);
+	return x1 * Math.sqrt(-2 * Math.log(rad) / rad);
+}
+
+function canvas_painter_type(canvas, coefficients, task_name, model_id, betas_size) 
+{
+	this.betas_size = betas_size
+	this.normal_trunc = 2;
+	this.model_id = parseInt(model_id);
+	this.task_name = task_name;
+	this.coefficients = coefficients;
+
+	this.max = -Number.MAX_VALUE;
+	this.min = Number.MAX_VALUE;
+
+	for (var i = 0; i != betas_size; ++i) {
+		if (coefficients[i].normalised_value > this.max)
+			this.max = coefficients[i].normalised_value;
+		if (coefficients[i].normalised_value < this.min)
+			this.min = coefficients[i].normalised_value;
+	}
+
+	this.range = (this.max += this.normal_trunc) - (this.min -= this.normal_trunc);
+
+	this.coefficient_circle_radius = Math.min(0.8 * window.innerHeight, 7 * 20) / 20;
+	this.coefficient_circle_padding = this.coefficient_circle_radius * 5;
+
+	canvas.width = (this.coefficient_circle_radius * 2 + this.coefficient_circle_padding) * this.coefficients.length - this.coefficient_circle_padding; 
+	canvas.height = this.coefficient_circle_radius * 50;
+	//canvas.style.border = "1px solid black";
+
+	this.width = canvas.width; 
+	this.height = canvas.height; 
+	this.ctx = canvas.getContext("2d"); 
+	this.zero_line_y = this.height * this.max / this.range;
+
+	this.height_over_range = this.height / this.range;
+
+	this.value_to_y_coord = function(value)
+	{
+		return this.height - (value - this.min) * this.height_over_range;
+	}
+
+	for (var i = 0; i != this.betas_size; ++i) {
+
+		var top = this.value_to_y_coord(this.coefficients[i].normalised_value + this.normal_trunc);
+		var bottom = this.value_to_y_coord(this.coefficients[i].normalised_value - this.normal_trunc);
+
+		var grd = this.ctx.createLinearGradient(0, top, 0, bottom);
+
+		var steps_size = 10; 
+		var color_stop_step = 1.0 / steps_size; 
+		var color_stop = 0.0;
+		while (color_stop <= 1.0) {
+			var distance = (color_stop * this.normal_trunc * 2 - this.normal_trunc) / this.coefficients[i + this.betas_size].normalised_value; 
+			grd.addColorStop(color_stop, "rgba(255, 0, 0, " + 
+					.88 * (Math.exp(distance * distance / -2)).toFixed(5) +
+					")"); 
+			color_stop += color_stop_step;
+		}
+
+		this.coefficients[i].render_top = top;
+		this.coefficients[i].render_bottom = bottom;
+		this.coefficients[i].render_gradient = grd;
+		this.coefficients[i].render_value_y = this.value_to_y_coord(this.coefficients[i].normalised_value);
+
+		this.coefficient_centre_stepsize = this.coefficient_circle_radius * 2 + this.coefficient_circle_padding;
+	}
+
+	this.repaint = function() 
+	{
+		//this.checked = false;
+		//ctx.translate(canvas.width / 2, canvas.height);
+		//ctx.rotate(Math.PI / -2);
+		//ctx.font="14pt mono";
+		//ctx.fillText("To do...",10,10);
+
+		this.ctx.clearRect(0, 0, this.width, this.height);
+
+		this.ctx.fillStyle = "#000000";
+		this.ctx.strokeStyle = "#000000";
+		this.ctx.lineWidth = 0.5;
+		this.ctx.beginPath();
+		this.ctx.moveTo(0, this.zero_line_y);
+		this.ctx.lineTo(this.width, this.zero_line_y);
+		this.ctx.stroke();
+
+		if (this.model_id != 1) {
+
+			this.ctx.fillStyle = "#aaaaff";
+			coefficient_centre = this.coefficient_circle_radius;
+			this.ctx.beginPath();
+			for (var i = 0; i != this.betas_size; ++i, coefficient_centre += this.coefficient_centre_stepsize) {
+				this.ctx.fillStyle = this.coefficients[i].render_gradient;
+				this.ctx.fillRect(coefficient_centre - this.coefficient_circle_radius, this.coefficients[i].render_top, this.coefficient_circle_radius * 2, this.coefficients[i].render_bottom - this.coefficients[i].render_top);
+				//this.ctx.closePath();
+			}
+
+		}
+
+		this.ctx.beginPath();
+		//this.ctx.fillStyle = "white";
+		this.ctx.strokeStyle = "white";
+		this.ctx.lineWidth = 2;
+		coefficient_centre = this.coefficient_circle_radius;
+		for (var i = 0; i != this.betas_size; ++i, coefficient_centre += this.coefficient_centre_stepsize) {
+			/*
+			this.ctx.beginPath();
+			this.ctx.arc(coefficient_centre, this.coefficients[i].render_value_y, this.coefficient_circle_radius * .33, 0, Math.PI * 2);
+			this.ctx.fill();
+			this.ctx.closePath();
+			*/
+			this.ctx.moveTo(coefficient_centre - this.coefficient_circle_radius, this.coefficients[i].render_value_y);
+			this.ctx.lineTo(coefficient_centre + this.coefficient_circle_radius, this.coefficients[i].render_value_y);
+		}
+		this.ctx.stroke();
+
+		this.ctx.strokeStyle = "black";
+		this.ctx.lineWidth = 0.8;
+		this.ctx.beginPath();
+		this.coefficients[0].tmp_y = this.value_to_y_coord(this.coefficients[0].normalised_value + normals[(normals_i * this.coefficients.length) %  normals.length] * this.coefficients[this.betas_size].normalised_value);
+		this.ctx.moveTo(this.coefficient_circle_radius, this.coefficients[0].tmp_y);
+		coefficient_centre = this.coefficient_circle_radius * 3 + this.coefficient_circle_padding;
+		for (var i = 1; i < this.betas_size; ++i, coefficient_centre += this.coefficient_centre_stepsize) {
+			var y = this.value_to_y_coord(this.coefficients[i].normalised_value + normals[(i + normals_i * this.coefficients.length) %  normals.length] * this.coefficients[i + this.betas_size].normalised_value);
+			this.coefficients[i].tmp_y = y;
+			this.ctx.lineTo(coefficient_centre, y);
+		}
+		this.ctx.stroke();
+		//this.ctx.closePath();
+
+		this.ctx.strokeStyle = "black";
+		this.ctx.lineWidth = 0.77;
+		var coefficient_centre = this.coefficient_circle_radius;
+		this.ctx.beginPath();
+		for (var i = 0; i != this.betas_size; ++i, coefficient_centre += this.coefficient_centre_stepsize) {
+
+			var y = this.coefficients[i].tmp_y;
+			var tmp = this.coefficient_circle_radius * .7;
+
+			this.ctx.moveTo(coefficient_centre - tmp, y - tmp);
+			this.ctx.lineTo(coefficient_centre + tmp, y + tmp);
+			this.ctx.moveTo(coefficient_centre + tmp, y - tmp);
+			this.ctx.lineTo(coefficient_centre - tmp, y + tmp);
+			/*
+			this.ctx.moveTo(coefficient_centre - this.coefficient_circle_radius, y);
+			this.ctx.lineTo(coefficient_centre + this.coefficient_circle_radius, y);
+			this.ctx.moveTo(coefficient_centre, y - this.coefficient_circle_radius);
+			this.ctx.lineTo(coefficient_centre, y + this.coefficient_circle_radius);
+			*/
+		}
+		this.ctx.stroke();
+		this.ctx.closePath();
+	}
+
+	this.repaint();
+}
+
+function tasks_list_type()
+{
+	this.gui = document.createElement("table");
+	this.gui.className = "centered_table";
+
+	tr = document.createElement("tr");
+	td = document.createElement("td");
+	td.className = "page_title_td";
+	td.appendChild(document.createTextNode("LIST OF EXISTING TASKS"));
+	tr.appendChild(td);
+	this.gui.appendChild(tr);
+
+	this.tableHolder = document.createElement("div");
+
+	var tr = document.createElement("tr");
+	this.tableHolder = document.createElement("td");
+	this.table = document.createElement("table");
+	this.tableHolder.appendChild(this.table);
+	tr.appendChild(this.tableHolder);
+	this.gui.appendChild(tr);
+
+	tr = document.createElement("tr");
+	td = document.createElement("td");
+
+	var refresh_button = document.createElement("button");
+	refresh_button.pid = this;
+	refresh_button.className = "full_width";
+	refresh_button.appendChild(document.createTextNode("Refresh/reload contents"));
+	refresh_button.onclick = function () 
+	{
+		this.pid.populate();
+	}
+	td.appendChild(refresh_button);
+
+	td.appendChild(document.createElement("br"));
+
+	var main_menu_button = document.createElement("button");
+	main_menu_button.className = "full_width";
+	main_menu_button.appendChild(document.createTextNode("Main Menu"));
+	main_menu_button.onclick = function () 
+	{
+		main_menu.show();
+	}
+	td.appendChild(main_menu_button);
+
+
+	tr.appendChild(td);
+	this.gui.appendChild(tr);
+
+	this.show = function()
+	{
+		if (this.gui != last_div) {
+			document.body.replaceChild(this.gui, last_div);
+			last_div = this.gui;
+			this.populate();
+		}
+	}
+
+	this.display_status = function(error)
+	{
+		var tbl = document.createElement("table");
+		tbl.className = "full_width";
+		var tr = document.createElement("tr");
+		var td = document.createElement("td");
+		td.innerHTML = error;
+		td.className = "debug_log_from_server";
+		tr.appendChild(td);
+		tbl.appendChild(tr);
+		this.tableHolder.replaceChild(tbl, this.table);
+		this.table = tbl;
+	}
+
+	this.blahblah = function(tasks)
+	{
+		var tbl = document.createElement("table");
+		tbl.className = "full_width";
+		var tr; 
+		var td;
+
+		tr = document.createElement("tr");
+		td = document.createElement("td");
+		td.colSpan = 5;
+		td.className = "task_order_column";
+		td.style.borderBottom = "0";
+		td.appendChild(document.createTextNode("(to change the list-position of a task: edit values in the 1st column, then press enter)"));
+		tr.appendChild(td);
+		tbl.appendChild(tr);
+
+		var inpt_size = tasks.length / 10 + 2;
+
+		var new_task_names_set = {};
+
+		for (var i = 0; i != tasks.length; ++i) {
+			new_task_names_set[tasks[i].name] = true;
+			tr = document.createElement("tr");
+
+			//{ task position/order control
+			td = document.createElement("td");
+			td.className = "task_order_column";
+			td.style.borderBottom = "0";
+			var inpt = document.createElement("input");
+			//inpt.type = "number";
+			inpt.size = inpt_size;
+			inpt.size = 3;
+			inpt.old_value = i + 1;
+			inpt.title = "To change task's position in the list -- enter new position number and press enter";
+			inpt.pid = this;
+			inpt.value = i + 1;
+			inpt.task_name = tasks[i].name;
+			if (tasks[i].state == "complete")
+				inpt.disabled = true;
+			inpt.onchange = function ()
+			{
+				this.disabled = true;
+				var steps_to_move_by = parseInt(this.value) - this.old_value;
+				var form = new FormData();
+				form.append("--task_name", this.task_name);
+				form.append("--steps_to_move_by", parseInt(this.value) - this.old_value);
+				http_request = new XMLHttpRequest();
+				http_request.pid = this.pid;
+				http_request.inpt = this;
+				http_request.withCredentials = true;
+				http_request.onreadystatechange = function()
+				{
+					if (this.readyState == 4) {
+						this.inpt.disabled = false;
+						if (this.status == 200) {
+							//alert(this.responseText);
+							var obj = JSON.parse(this.responseText);
+							if (obj.echo) {
+								this.pid.populate();
+							} else if (obj.error) {
+								this.pid.display_status("Server says hmmm: " + obj.error);
+							}
+						} else {
+							this.pid.display_status("Epic fail...");
+						}
+					}
+				}
+				http_request.open("POST", server_at + "move_task_in_list");
+				http_request.send(form);
+			}
+			td.appendChild(inpt);
+			tr.appendChild(td);
+			//}
+
+
+			td = document.createElement("td");
+			td.appendChild(document.createTextNode(tasks[i].name));
+			tr.appendChild(td);
+
+			//{ show details control
+			td = document.createElement("td");
+			var label = document.createElement("label");
+			label.className = "help_content_fieldname";
+			label.id = "task_list_expand_task" + i;
+			label.appendChild(document.createTextNode("show details"));
+			var checkbox = document.createElement("input");
+			checkbox.type = "checkbox";
+			if (this.existing_detail_showing_tasks[tasks[i].name])
+				checkbox.checked = true;
+			else
+				checkbox.checked = false;
+			checkbox.pid = this;
+			checkbox.id = "task_list_expand_task" + i;
+			if (tasks[i].coefficients)
+				checkbox.coefficients = tasks[i].coefficients;
+			checkbox.task_name = tasks[i].name;
+			checkbox.row = tr;
+			checkbox.table = tbl;
+			checkbox.model_id = tasks[i].name.split(/[_\-x]/g)[1];
+			checkbox.onchange = function()
+			{
+				if (this.checked == true) {
+					var tr = document.createElement("tr");
+					var td = document.createElement("td");
+					//td.className = "centered_td";
+					td.colSpan = 5;
+					if (this.coefficients) {
+
+						var calculate_scale = function(betas_size, coefficients)
+						{
+							var max = -Number.MAX_VALUE;
+							var min = Number.MAX_VALUE;
+							for (var i = 0; i != betas_size; ++i) {
+								if (coefficients[i].value > max)
+									max = coefficients[i].value;
+								if (coefficients[i].value < min)
+									min = coefficients[i].value;
+							}
+							return 1.0 / (max - min);
+						}
+						var process_normalised_values = function(betas_size, coefficients, inv_distance)
+						{
+							for (var i = 0; i != betas_size; ++i) {
+								coefficients[i].normalised_value = coefficients[i].value * inv_distance;
+								coefficients[i + betas_size].normalised_value = coefficients[i + betas_size].value * inv_distance;
+							}
+						}
+						var generate_headings = function(txt, tr_, betas_size) 
+						{
+							for (var i = 0; i != betas_size; ++i) {
+								td_ = document.createElement("td");
+								td.className = "help_content_title";
+								td_.innerHTML = "<sup>" + txt + "</sup><sub>" + (i + 1) + "</sub>";
+								tr_.appendChild(td_);
+							}
+						}
+
+						var tbl_ = document.createElement("table");
+						tbl_.className = "full_width";
+
+						var tr_ = document.createElement("tr");
+
+						var td_ = document.createElement("td");
+						tr_.appendChild(td_);
+
+						var betas_size = 0;
+						var inv_distance;
+						switch (parseInt(this.model_id)) {
+						case 1:
+							betas_size = this.coefficients.length;
+							inv_distance = calculate_scale(betas_size, this.coefficients);
+							process_normalised_values(betas_size, this.coefficients, inv_distance);
+							generate_headings("&beta;", tr_, betas_size);
+						break;
+						case 2:
+							betas_size = this.coefficients.length / 2;
+							inv_distance = calculate_scale(betas_size, this.coefficients);
+							process_normalised_values(betas_size, this.coefficients, inv_distance);
+							generate_headings("&beta;", tr_, betas_size);
+							generate_headings("&eta;", tr_, betas_size);
+						break;
+						case 3:
+							betas_size = (this.coefficients.length - 1) / 2;
+							inv_distance = calculate_scale(betas_size, this.coefficients);
+							process_normalised_values(betas_size, this.coefficients, inv_distance);
+							generate_headings("&beta;", tr_, betas_size);
+							generate_headings("&eta;", tr_, betas_size);
+							td_ = document.createElement("td");
+							td_.innerHTML = "&tau;";
+							tr_.appendChild(td_);
+						break;
+						case 4: {
+							betas_size = (this.coefficients.length - 2) / 2;
+							var phi = this.coefficients[this.coefficients.length - 1].value;
+							inv_distance = calculate_scale(betas_size, this.coefficients);
+							process_normalised_values(betas_size, this.coefficients, inv_distance);
+							for (var i = 0; i != betas_size; ++i)
+								this.coefficients[i].normalised_value -= phi * inv_distance;
+							generate_headings("&beta;", tr_, betas_size);
+							generate_headings("&eta;", tr_, betas_size);
+							td_ = document.createElement("td");
+							td_.innerHTML = "&tau;";
+							tr_.appendChild(td_);
+							td_ = document.createElement("td");
+							td_.innerHTML = "&phi;";
+							tr_.appendChild(td_);
+						}
+						break;
+						default:
+						break;
+						}
+						tbl_.appendChild(tr_);
+
+						tr_ = document.createElement("tr");
+						td_ = document.createElement("td");
+						td_.appendChild(document.createTextNode("Range"));
+						tr_.appendChild(td_);
+						for (var i = 0; i != this.coefficients.length; ++i) {
+							td_ = document.createElement("td");
+							td_.appendChild(document.createTextNode(this.coefficients[i].range));
+							tr_.appendChild(td_);
+						}
+						tbl_.appendChild(tr_);
+
+						tr_ = document.createElement("tr");
+						td_ = document.createElement("td");
+						td_.appendChild(document.createTextNode("Raw value"));
+						tr_.appendChild(td_);
+						for (var i = 0; i != this.coefficients.length; ++i) {
+							td_ = document.createElement("td");
+							td_.appendChild(document.createTextNode(this.coefficients[i].value));
+							tr_.appendChild(td_);
+						}
+						tbl_.appendChild(tr_);
+
+						tr_ = document.createElement("tr");
+						td_ = document.createElement("td");
+						td_.className = "normalised_value";
+						td_.appendChild(document.createTextNode("Normalised value"));
+						tr_.appendChild(td_);
+						for (var i = 0; i != this.coefficients.length; ++i) {
+							td_ = document.createElement("td");
+							if (this.coefficients[i]["normalised_value"] != null) {
+								td_.className = "normalised_value";
+								td_.appendChild(document.createTextNode(parseFloat(this.coefficients[i].normalised_value.toFixed(3))));
+							}
+							tr_.appendChild(td_);
+						}
+						tbl_.appendChild(tr_);
+
+						td.appendChild(tbl_);
+
+
+						var canvas = document.createElement("canvas");
+						canvas.painter = new canvas_painter_type(canvas, this.coefficients, this.task_name, this.model_id, betas_size);
+
+						if (repainting_timer == null)
+							repainting_timer = setInterval("timer_callback()", 700);
+						this.pid.existing_detail_showing_tasks[this.task_name] = canvas;
+
+						td.appendChild(document.createElement("br"));
+						td.appendChild(canvas);
+
+					} else {
+						td.className = "coefficients_not_ready";
+						td.appendChild(document.createTextNode("Nothing is ready as of yet (convergence has not proceeded enough)..."));
+						td.appendChild(document.createElement("br"));
+						td.appendChild(document.createTextNode("Try again in a few minutes."));
+						this.pid.existing_detail_showing_tasks[this.task_name] = {};
+					}
+					tr.appendChild(td);
+					this.table.insertBefore(tr, this.row.nextSibling);
+				} else {
+					delete this.pid.existing_detail_showing_tasks[this.task_name];
+					//alert("Not yet implemented");
+					this.table.removeChild(this.row.nextSibling);
+				}
+			}
+			label.appendChild(checkbox);
+			td.appendChild(label);
+			tr.appendChild(td);
+			//}
+
+			//{ status display
+			td = document.createElement("td");
+			if (!i && tasks[i].state == "pending") {
+				td.className = "active_task_label";
+				td.appendChild(document.createTextNode("active"));
+			} else {
+				td.appendChild(document.createTextNode(tasks[i].state));
+				if (tasks[i].state == "pending")
+					td.className = "pending_task_label";
+				else
+					td.className = "complete_task_label";
+			}
+			tr.appendChild(td);
+			//}
+
+			//{ delete button
+			td = document.createElement("td");
+			var btn = document.createElement("button");
+			btn.appendChild(document.createTextNode("delete"));
+			btn.pid = this;
+			btn.task_name = tasks[i].name;
+			btn.onclick = function ()
+			{
+				if (confirm("About to delete task \"" + this.task_name + "\"...\nDO YOU WANT TO PROCEED?") == true) {
+					this.disabled = true;
+					var form = new FormData();
+					form.append("--task_name", this.task_name);
+					http_request = new XMLHttpRequest();
+					http_request.pid = this.pid;
+					http_request.btn = this;
+					http_request.withCredentials = true;
+					http_request.onreadystatechange = function()
+					{
+						if (this.readyState == 4) {
+							this.btn.disabled = false;
+							if (this.status == 200) {
+								//alert(this.responseText);
+								var obj = JSON.parse(this.responseText);
+								if (obj.echo) {
+									this.pid.populate();
+								} else if (obj.error) {
+									this.pid.display_status("Server says hmmm: " + obj.error);
+								}
+							} else {
+								this.pid.display_status("Epic fail...");
+							}
+						}
+					}
+					http_request.open("POST", server_at + "delete_task");
+					http_request.send(form);
+				}
+			}
+			td.appendChild(btn);
+			tr.appendChild(td);
+			//}
+
+			tbl.appendChild(tr);
+
+			if (checkbox.checked == true)
+				checkbox.onchange();
+		}
+		this.tableHolder.replaceChild(tbl, this.table);
+		this.table = tbl;
+
+		// clean the existing set of 'detail-showing tasks'
+		var existing_detail_showing_tasks = Object.keys(this.existing_detail_showing_tasks);
+		for (var i = 0; i != existing_detail_showing_tasks.length; ++i)
+			if (new_task_names_set[existing_detail_showing_tasks[i]] != true)
+				delete this.existing_detail_showing_tasks[existing_detail_showing_tasks[i]];
+	}
+
+	this.existing_detail_showing_tasks = {};
+
+
+	this.populate = function()
+	{
+		this.display_status("Please wait, processing...");
+
+		/*
+		//{ offline testing
+		var tasks = [];
+		tasks.length = 8;
+		for (var i = 0; i != 5; ++i) {
+			tasks[i] = new function() {
+				this.name = i + "_3-1x2";
+				this.state = "pending";
+			}
+		}
+		for (var i = 5; i != 8; ++i) {
+			tasks[i] = new function() {
+				this.name = i + "_4-1x2";
+				this.state = "complete";
+				this.coefficients = [];
+				this.coefficients.length = 6;
+				//
+				//for (var j = 0; j != 5; ++j) {
+				//	this.coefficients[j] = new function() {
+				//		this.value = j;
+				//		this.from = -1;
+				//		this.range = j + 1;
+				//  }
+				//}
+				//
+				this.coefficients = [
+					{ value : 0.3 , from : 0.1 , range : 0.5 }, 
+					{ value : -0.7 , from : -0.8 , range : 0.2 }, 
+					{ value : 0.9 , from : 0.89 , range : 0.1 }, 
+					{ value : 0.1 , from : 0.1 , range : 0.1 }, 
+					{ value : -0.7 , from : -0.8 , range : 0.2 }, 
+					{ value : 0.7 , from : 0.65 , range : 0.1 }
+				];
+			}
+		}
+		this.blahblah(tasks);
+		return;
+		//}
+		*/
+
+		http_request = new XMLHttpRequest();
+		http_request.pid = this;
+		http_request.withCredentials = true;
+		http_request.onreadystatechange = function()
+		{
+			if (this.readyState == 4) {
+				if (this.status == 200) {
+					//alert(this.responseText);
+					var obj = JSON.parse(this.responseText);
+					if (obj.error) {
+						this.pid.display_status("Server says hmmm: " + obj.error);
+						return;
+					} else if (obj.tasks) {
+						this.pid.blahblah(obj.tasks);
+						return;
+					}
+				}
+				this.pid.display_status("Epic fail...");
+			}
+		}
+		http_request.open("GET", server_at + "get_tasks_list");
+		http_request.send();
+	}
+}
+
+function main_menu_type()
+{
+	this.gui = document.createElement("div");
+
+	var tbl = document.createElement("table");
+	tbl.className = "centered_table";
+	var tr
+	var td;
+
+	tr = document.createElement("tr");
+	td = document.createElement("td");
+	elem = document.createElement("button");
+	elem.className = "full_width";
+	elem.appendChild(document.createTextNode("Add a New Task"));
+	elem.onclick = function() 
+	{
+		new_task.show();
+	}
+	td.appendChild(elem);
+	tr.appendChild(td);
+	tbl.appendChild(tr);
+
+	tr = document.createElement("tr");
+	td = document.createElement("td");
+	elem = document.createElement("button");
+	elem.className = "full_width";
+	elem.appendChild(document.createTextNode("Show Existing Tasks"));
+	elem.onclick = function () 
+	{
+		tasks_list.show();
+	}
+	td.appendChild(elem);
+	tr.appendChild(td);
+	tbl.appendChild(tr);
+
+	this.gui.appendChild(tbl);
+
+	this.show = function()
+	{
+		if (this.gui != last_div) {
+			document.body.replaceChild(this.gui, last_div);
+			last_div = this.gui;
+		}
+	}
+}
+
+var loading_please_wait_title;
+function async_main()
+{
+		normals.length = 100000;
+		for (var i = 0; i != normals.length; ++i)
+			normals[i] = draw_from_normal();
+		document.body.removeChild(loading_please_wait_title);
+		batch_fill_context_menu = new batch_fill_context_menu_type();
+		tasks_list = new tasks_list_type();
+		new_task = new new_task_type(); 
+		main_menu = new main_menu_type();
+		last_div = main_menu.gui;
+		document.body.appendChild(last_div);
+}
+function main()
+{
+	var elem = document.createElement("canvas");
+	if (window["innerHeight"] != null && window["pageXOffset"] != null && setInterval && clearInterval && Blob && elem && elem["getContext"] != null && File && FileReader && XMLHttpRequest) {
+		var ctx = elem.getContext("2d");
+		var blob = new Blob;
+		if (ctx != null && ctx["createLinearGradient"] != null && blob.slice) {
+			loading_please_wait_title = document.createElement("div");
+			loading_please_wait_title.className = "loading_please_wait";
+			loading_please_wait_title.appendChild(document.createTextNode("Loading..."));
+			document.body.insertBefore(loading_please_wait_title, document.body.firstChild);
+			setTimeout("async_main()", 100);
+			return;
+		}
+	} 
+	document.body.innerHTML = "<div class='loading_please_wait'>Unsupported browser.<br>Try using the version of Firefox</div>";
+}
+
+var repainting_timer = null;
+function timer_callback()
+{
+	var keys = Object.keys(tasks_list.existing_detail_showing_tasks);
+	if (!keys.length || tasks_list.gui != last_div) {
+		clearInterval(repainting_timer);
+		repainting_timer = null;
+	} else for (var i = 0; i != keys.length; ++i) {
+		var canvas = tasks_list.existing_detail_showing_tasks[keys[i]];
+		if (canvas["painter"])
+			canvas.painter.repaint();
+	}
+	++normals_i;
+}
+
+</script>
+<!-- } -->
+
+</head>
+<!-- help-text { -->
+<body onload="main();" onclick="batch_fill_context_menu.hide();">
+<div class="help_content" id="help_model_content">
+<br>
+Available models: (<a href="http://en.wikipedia.org/wiki/Multinomial_logit" target="_blank">Logit</a>, <a href="http://en.wikipedia.org/wiki/Mixed_logit" target="_blank">Mixed logit</a>, <a href="www.censoc.uts.edu.au/researchoutput/wp09-002.pdf" target="_blank">GMNL-II</a>, <a href="https://github.com/downloads/CenSoC/leon_wip/GMNL2a.pdf" target="_blank">Gmnl2a</a>). Wherever applicable: 
+<ul>
+<li>Normal distribution is used for betas' variance and 
+</li>
+<li>Custom distribution (similar to lognormal of e^<sup>x</sup>, but not quite) is used for the scale parameter: 1 + x for x > 0 and 1 / (1 - x) for x < 0 where x is drawn from the normal distribution.
+</li>
+<li>
+From mathematical standpoint, &eta; symbols do not denote variance but rather standard deviation (normal distribution of variance value one is scaled (widenede/narrowed) by the value contained in corresponding &eta;. 
+</li>
+</ul>
+Additionally, Gmnl2a may not preserve the "ratio" between attributes, nor their relationship with the zero-crossing. Consequently, one may not necessarily benefit from survey analysis which aims at identifying certainty-vs-uncertainty of attributes or attributes' inter-proportional relationship (e.g. willingness to pay). What remains is simply a differential relationship (in a normalised, scaled to peak @ 1, form) -- how one attribute is more/less valued with respect to others. 
+<p>See relevant sections of the overall <a href="https://github.com/CenSoC/leon_wip" target="_blank">source-code</a> repository for more details.
+</div>
+<div class="help_content" id="help_dataset_content" >
+File must be in a .CSV (coma separated values) format. Layout requirements are:
+<ul>
+<li>
+All questions must have same number of alternatives (as per <span class="help_content_fieldname">Alternatives per question</span> configuration field below).
+</li>
+<li>
+Each alternative's data is a row.
+</li>
+<li>
+Attributes are stored in columns (a given attribute will be represented by a given column).
+</li>
+<li>
+There must be a <span class="help_content_fieldname">choice</span> column. It must contain 0 (zero) for those alternatives which were not chosen by a respondent, and a 1 (one) denoting the chosen alternative.
+</li>
+<li>
+There must be a <span class="help_content_fieldname">respondent</span> column (indicating which respondent any given row belongs to).
+</li>
+<li>
+There must be a <span class="help_content_fieldname">question</span> (a.k.a. observation or choice-set) column -- grouping relevant alternatives into a given choice set.
+</li>
+<li>
+There may be an <span class="help_content_fieldname">alternative</span> column (with values enumerating alternatives in any given choiceset).
+</li>
+</ul>
+<p>
+Many data files will have title row(s). <span class="help_content_fieldname">Data starts from row no</span> configuration field specifies the row number from which the actual data begins.
+</div>
+
+<div class="help_content" id="help_vcgw_coefficients_metadata_content">
+<br>
+This is an over-generalized (accuracy sacrificed for the sake of brevity) description. For more details consult the <a href="https://github.com/downloads/CenSoC/leon_wip/VCGW.pdf" target="_blank">VCGW paper</a> and then, if even more detail is needed, relevant sections of the <a href="https://github.com/CenSoC/leon_wip" target="_blank">source-code</a> repository.
+<p>
+Imagining the whole of the problem space as a multidimensional terrain where each coefficient is a dimension and the terrain's elevation is a likelihood-value produced by the chosen computational model, the algorithm may: 
+<ol>
+<li>Divide each dimension into an evenly-spaced grid of points between the boundaries (<span class="help_content_fieldname">to</span> and <span class="help_content_fieldname">from</span> configuration values). This is the overall exploration constraints of the terrain.</li>
+<li>Pick a starting (reference) sampling point -- combination of randomly chosen grid-point from every coefficient.</li>
+<li>
+Evaluate a bunch of <em>different</em> sampling points (looking for a better likelihood) by changing only <em>one</em> coefficient at a time w.r.t. the starting point:</li>
+<ul>
+<li>if no better likelihood was found, consider more sampling points but now by changing <em>two</em> coefficients at a time, and so on (three coefficients at once, four, five, etc.) -- until a certain limit ("complexity size" of <span class="help_content_fieldname">max-coefficients-@once</span>) has been reached</li>
+<li>if there a better likelihood was found, walk to the newly found location and make it a new point-of-reference and then repeat the whole process (e.g. starting with "fewer-coefficients-at-once" and progressing to "maximum-allowed-coefficients-at-once" complexity)</li>
+</ul>
+</li>
+<li>
+Eventually, even the <span class="help_content_fieldname">max-coefficients-@once</span> (i.e. nominated initial complexity size) will not produce a better likelihood. The algorithm then <em>shrinks</em> it's boundaries around the current point-of-reference and then repeats the whole process from the start (only now with a smaller from/to exploration range due to shrinkage). 
+</li>
+<li>
+Termination criteria is when shrunk boundaries are smaller than a chosen range (i.e. <span class="help_content_fieldname">Consider done @range</span> configuration field). When all of the coefficients are considered done then the whole convergence process is completed.
+</li>
+</ol>
+<p>
+As a matter of further computational efficiency the algorithm has an option to use <em>different</em> number of <span class="help_content_fieldname">Gridsteps for x-coefficients-@once modulations</span> (e.g. one may want to lower the number of grid-points when iterating through all possible combinatinos of a max-coefficients-at-once complexity -- this has a price of a coarser resolution but without sacrificing the "multidimensional-diagonality" capability of the exploration process).
+<p>
+Moreover, as the convergence process zooms in -- one may consider the possibility of terrain becoming <em>smoother</em> (e.g. with lesser traits of multidimensional diagonality). To this extent, the algorithm allows additional (alternative) complexities settings when the zoom-in process crosses certain thresholds. There could be any <span class="help_content_fieldname">Number of additional complexity settings</span>. 
+<br>A given additional complexity comes "into effect" when all of the coefficients' exploration ranges are below specified threshold (such threshold is individually-configurable for each of the coefficients via <span class="help_content_fieldname">Activate @range less than</span>).
+
+</div>
+
+<div class="help_content" id="help_vcgw_misc_content">
+Other algorithm-configuration values are as follows:
+<ul>
+<li>
+Specifying max-coefficients-@once above may result in an enormous number of likelihood evaluations (e.g. all possible combinations of any 5-coefficients-@once in a 20-coefficients model where each of the coefficients has 10 grid-points may implicitly yield a practically-infeasible amount of sampling points). This, naturally, depends on the underlying deployment infrastructure (how many computers deployed, their power, etc.) but the notion of providing a simple, one-figure control to limit the maximum number of evaluations still stands. 
+<br><span class="help_content_fieldname">Max. evaluations in any complexity</span> is such a control. If a given complexity setting yields total number of evaluations higher than in this field, the number of max-coefficients-@once will be reduced.
+</li>
+<li>
+<span class="help_content_fieldname">Number of draws</span> is the number of 'random' draws performed when calculating model's variance and/or scale distributions. In reality, the draws are not purely random... nor are they from a <a href="http://en.wikipedia.org/wiki/Halton_sequence" target="_blank">Halton sequence</a>. Instead a somewhat optimized approach to obtain even-coverage, yet uncorrelated progression, is used. Basically, in comparison to a Halton sequence, there is one more additional bit of information that can be leveraged in the convergence process: a priory-known number of draws. So the process is to create a set of evenly-distributed grid points, then randomly-shuffle it's contents. This is not 100% correct but more concise than a full <a href="https://github.com/CenSoC/leon_wip" target="_blank">source-code</a> listing).
+</li>
+<li>
+<span class="help_content_fieldname">Number of drawn sets</span> allows for some (or all) of the respondents to have <em>redrawn</em> values from the underlying distributions. The other fileld ("Number of draws") is used to generate <em>one set</em> of distributed numbers (i.e. explicit draws for each of the attributes' variances and the scaling distributions) -- for calculating <em>given</em> respondent's likelihood. If there is more than one set, different respondents will use different sets. The process is to loop-through/iterate the available sets whenever moving onto the next respondent's data. If there are less sets than respondents then some respondents will use the same set(s). Care must be taken when using large values in this field -- as invariably this shall cause larger memory requirements on every of the processing computers.
+</li>
+<li>
+<span class="help_content_fieldname">Zoom-in slowdown</span> an arbitrary control to slow-down the shrinkage (zooming-in). The values of zero means no slowdown (implying the new range will be made from two grid-points around the reference-point), the value of one is full slowdown.
+</li>
+<li>
+Some sampling points' likelihood calculations may result in values which are better than that of the reference-point but only by an "insignificant" amount. Such events can cause overly-frequent walking-and-resetting of the algorithm without yielding much improvement. 
+<span class="help_content_fieldname">Min. improvement ratio</span> 
+allows one to prevent the algorithm walking to the newly-found better likelihood coordinates if such a better value is below the ratio with respect to the currently-established point of reference. Explicit calculation is that P<sub>new</sub> / P<sub>old</sub> has to be &gt 
+<span class="help_content_fieldname">Min. improvement ratio</span>.
+<br><em>Note</em>:  the above description is not quite correct actually... Given that in reality most calculations are <em>log</em>-likelihood values, it would have been better to simply take a difference (not ratio) between the old and the new values... alas, for historical reasons, the ratio mechanism remains as is. It will be fixed later on. In the meantime it is an arbitrary value anyways, so something close to 1 should do.
+</li>
+<li>
+Some surveys may require extremely small (close to, but not quite, zero) or large values to be supported during the computation of likelihood (e.g. due to large number of respondents, large number of choice-observations, extreme boundaries of the exploration range for various coefficients, or simply the nature of the model's equation). On the other hand, other surveys may not need such an extreme-numbers support. The support for larger-range values comes at a price of slower calculations. The algorithm therefore allows one to specify the floating-point resolution for the model's calculations (e.g. 32-bit IEEE 'single' float resolution may provide much faster results). There are two controls for fine-tuning the aforementioned range-support:
+<ul>
+<li>
+The <span class="help_content_fieldname">Floating-point res</span> denotes resolution for the majority of real-number calculations (e.g. distribution draws, etc.) as well as the coefficient values, etc. 
+</li>
+<li>
+The <span class="help_content_fieldname">Extended floating-point res</span> is for sub-section of the model's calculations such as exponents and subsequent calculations using possibly extreme-range values.
+</li>
+</ul>
+</li>
+<li>
+<span class="help_content_fieldname">Integer/memory-size res</span> is similar to the floating-point resolution fields. It only applies to the integral aspects of task processing (count of draws, number of respondents, total number of rows in a dataset, total memory used by the model, etc.) 32-bit numbers can deal with figures under a 4 billion (4Gigabytes of memory) mark and so should be sufficient for many surveys. On the other hand, if one has a huge survey which in total (e.g. respondents * choices * alternatives * draws * 10 etc. is &lt 4 billion) then 64-bit integers can be chosen (at a price of a somewhat larger memory usage and slower(ish) execution).
+</li>
+</ul>
+</div>
+</body>
+</html>
+<!-- } -->

@@ -40,6 +40,10 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <string>
 
+#include <boost/tokenizer.hpp>
+#include <boost/iostreams/device/array.hpp>
+#include <boost/iostreams/stream.hpp>
+
 #include <censoc/lexicast.h>
 
 #include <censoc/spreadsheet/util.h>
@@ -68,6 +72,7 @@ struct composite_matrix_loader {
 	typedef typename netcpu::message::typepair<N>::wire size_type;
 	typedef typename censoc::param<size_type>::type size_paramtype;
 
+#if 0 
 	/*
 	Rethinking the whole row-major layout. Mainly because the composite matrix (z ~ x ~ y) appears to be used only '1 row at a time' anyway -- thus even a row-based matrix should not cause performance issues when it is only used to generate 'row views'.
 	*/
@@ -75,6 +80,7 @@ struct composite_matrix_loader {
 	//typedef ::Eigen::Matrix<int8_t, ::Eigen::Dynamic, ::Eigen::Dynamic, ::Eigen::RowMajor> int_matrix_rowmajor_type;
 	typedef ::Eigen::Matrix<float_type, ::Eigen::Dynamic, 1> vector_column;
 	typedef ::Eigen::Matrix<float_type, 1, ::Eigen::Dynamic> vector_row;
+#endif
 
 	typedef censoc::lexicast< ::std::string> xxx;
 
@@ -113,12 +119,12 @@ struct composite_matrix_loader {
 	}
 
 	void
-	cli_parse_columns(::std::list<size_type> & columns, ::std::set<size_type> & unique, char const * arg, char const * const text_id, ute_type & ute)
+	cli_parse_columns(::std::list<size_type> & columns, ::std::set<size_type> & unique, ::std::string const & arg, char const * const text_id, ute_type & ute)
 	{
-		assert(arg != NULL);
+		assert(arg.empty() == false);
 
 		bool next_is_range(false);
-		char const * tmp = arg;
+		char const * tmp = arg.c_str();
 		size_t tmp_size;
 		while ((tmp_size = ::strcspn(tmp, ",:"))) {
 
@@ -131,18 +137,18 @@ struct composite_matrix_loader {
 				assert(columns.size());
 
 				if (index <= columns.back())
-					throw ::std::runtime_error(xxx() << "incorrect column range ending with: [" << str << "] for " << text_id << ": [" << arg << "]");
+					throw netcpu::message::exception(xxx() << "incorrect column range ending with: [" << str << "] for " << text_id << ": [" << arg << "]");
 
 				for (size_type i(columns.back() + 1); i <= index; ++i) {
 					if (unique.find(i) != unique.end())
-						throw ::std::runtime_error(xxx() << "cannot imply duplicate column name: [" << ute.alpha_tofrom_numeric(i) << "] no: [" << i + 1 << "] for " << text_id << ": [" << arg << "]");
+						throw netcpu::message::exception(xxx() << "cannot imply duplicate column name: [" << ute.alpha_tofrom_numeric(i) << "] no: [" << i + 1 << "] for " << text_id << ": [" << arg << "]");
 					unique.insert(i);
 					columns.push_back(i);
 				}
 
 			} else  {
 				if (unique.find(index) != unique.end())
-					throw ::std::runtime_error(xxx() << "cannot imply duplicate column name: [" << str << "] for " << text_id << ": [" << arg << "]");
+					throw netcpu::message::exception(xxx() << "cannot imply duplicate column name: [" << str << "] for " << text_id << ": [" << arg << "]");
 				unique.insert(index);
 				columns.push_back(index);
 			}
@@ -150,7 +156,7 @@ struct composite_matrix_loader {
 			switch (tmp[tmp_size]) {
 				case ':' :
 					if (next_is_range == true)
-						throw ::std::runtime_error(xxx() << "syntax error, cannot specify range(s) like this: [" << arg << "] for " << text_id);
+						throw netcpu::message::exception(xxx() << "syntax error, cannot specify range(s) like this: [" << arg << "] for " << text_id);
 					next_is_range = true;
 				break;
 				case '\0' :
@@ -166,7 +172,7 @@ struct composite_matrix_loader {
 	cli_check_matrix_elements(::std::list< ::std::list<size_type> > const & attributes, ::std::string const & text_id, ute_type & ute)
 	{
 		if (attributes.empty() == true)
-			throw ::std::runtime_error(xxx() << "must supply some attributes for the " << text_id);
+			throw netcpu::message::exception(xxx() << "must supply some attributes for the " << text_id);
 
 		censoc::llog() << "Elements in " << text_id << ':';
 		size_type total_count(0);
@@ -226,6 +232,7 @@ struct composite_matrix_loader {
 
 	// CLI -- quick-n-dirty
 	::std::string filepath; 
+	::std::string filedata; 
 	//size_type sheet_i;
 	size_type respondent_i;
 	size_type row_start_i;
@@ -251,71 +258,76 @@ struct composite_matrix_loader {
 	}
 
 	bool
-	parse_arg(char const * const name, char const * const value, dataset_1::message::meta<N> & meta_msg, dataset_1::message::bulk & bulk_msg) 
+	parse_arg(::std::string const & name, ::std::string const & value, dataset_1::message::meta<N> & meta_msg, dataset_1::message::bulk & /* bulk_msg */ ) 
 	{
-		(void)bulk_msg; // no 'unused param' warning from the compiler thanks... ('bulk_msg' is passed as a matter of policy for the time being)
-		if (!::strcmp(name, "--file")) {
+		// (void)bulk_msg; // no 'unused param' warning from the compiler thanks... ('bulk_msg' is passed as a matter of policy for the time being)
+		if (name == "--filepath") {
 			filepath = value;
 			censoc::llog() << "Loading file: " << filepath << '\n';
 		//} else if (!::strcmp(name, "--sheet")) {
 		//	sheet_i = censoc::lexicast<size_type>(value);
 		//	censoc::llog() << "Loading sheet: " << sheet_i << '\n';
 		//	--sheet_i; // user talks in 1-based terms
-		} else if (!::strcmp(name, "--x")) {
+		} else if (name == "--filedata") {
+			filedata = value;
+			censoc::llog() << "received actual csv data: " << filedata.size() << " bytes\n";
+		} else if (name == "--x") {
 			x_elements.push_back(::std::list<size_type>());
 			cli_parse_columns(x_elements.back(), x_unique, value, "x submatrix", ute);
-		} else if (!::strcmp(name, "--sort")) {
+		} else if (name == "--sort") {
 			sortby.clear();
 			cli_parse_columns(sortby, sortby_unique, value, "sortby list of columns", ute);
-		} else if (!::strcmp(name, "--resp")) {
-			cli_parse_column_i(*value, value, ute, respondent_i);
+		} else if (name == "--resp") {
+			cli_parse_column_i(value[0], value, ute, respondent_i);
 			// quick-n-dirty
 			censoc::llog() << "Respondent id column: [" << ute.alpha_tofrom_numeric(respondent_i) << "] no: [" << respondent_i + 1 << "]\n";
-		} else if (!::strcmp(name, "--fromrow")) {
+		} else if (name == "--fromrow") {
 			row_start_i = censoc::lexicast<size_type>(value);
 			censoc::llog() << "Numeric data starts from row: [" << row_start_i << "]\n";
 			--row_start_i;
-		} else if (!::strcmp(name, "--alts")) {
+		} else if (name == "--alts") {
 			meta_msg.alternatives(censoc::lexicast<size_type>(value));
 			censoc::llog() << "Alternatives in a choice set: [" << meta_msg.alternatives() << "]\n";
-		} else if (!::strcmp(name, "--best")) { 
-			cli_parse_column_i(*value, value, ute, best_i);
+		} else if (name == "--best") { 
+			cli_parse_column_i(value[0], value, ute, best_i);
 			// quick-n-dirty
 			censoc::llog() << "Best column: [" << ute.alpha_tofrom_numeric(best_i) << "] no: [" << best_i + 1 << "]\n";
-		} else if (!::strcmp(name, "--del")) {
-			char const * rv(::strtok(const_cast<char*>(value), ":"));
-			if (rv == NULL)
-				throw ::std::runtime_error(xxx() << "incorrect --del value: [" << value << "] need 'column:op:value'");
+		} else if (name == "--del") {
+
+			typedef ::boost::tokenizer< ::boost::char_separator<char> > tokenizer_type;
+			tokenizer_type tokens(value, ::boost::char_separator<char>(":"));
+			tokenizer_type::const_iterator token_i(tokens.begin()); 
+
+			if (token_i == tokens.end())
+				throw netcpu::message::exception(xxx() << "incorrect --del value: [" << value << "] need 'column:op:value'");
 
 			size_type delby_i;
-			cli_parse_column_i(*rv, rv, ute, delby_i);
+			cli_parse_column_i((*token_i)[0], *token_i, ute, delby_i);
 
-			rv = ::strtok(NULL, ":");
-			if (rv == NULL)
-				throw ::std::runtime_error(xxx() << "incorrect --del value: [" << value << "] need 'column:op:value'");
+			if (++token_i == tokens.end())
+				throw netcpu::message::exception(xxx() << "incorrect --del value: [" << value << "] need 'column:op:value'");
 
-			::std::string delby_op_str(rv);
 			censoc::compared delby_op;
-			if (delby_op_str == "lt") {
+			::std::string const delby_op_string(*token_i);
+			if (delby_op_string == "lt") {
 				delby_op = censoc::lt;
-			} else if (delby_op_str == "le") {
+			} else if (delby_op_string == "le") {
 				delby_op = censoc::le;
-			} else if (delby_op_str == "eq") {
+			} else if (delby_op_string == "eq") {
 				delby_op = censoc::eq;
-			} else if (delby_op_str == "ge") {
+			} else if (delby_op_string == "ge") {
 				delby_op = censoc::ge;
-			} else if (delby_op_str == "gt") {
+			} else if (delby_op_string == "gt") {
 				delby_op = censoc::gt;
 			} else
-				throw ::std::runtime_error(xxx() << "incorrect --del value: [" << value << "] need 'column:op:value'");
+				throw netcpu::message::exception(xxx() << "incorrect --del value: [" << value << "] need 'column:op:value'");
 
-			rv = ::strtok(NULL, ":");
-			if (rv == NULL)
-				throw ::std::runtime_error(xxx() << "incorrect --del value: [" << value << "] need 'column:op:value'");
+			if (++token_i == tokens.end())
+				throw netcpu::message::exception(xxx() << "incorrect --del value: [" << value << "] need 'column:op:value'");
 
-			float_type const delby_value = censoc::lexicast<float_type>(rv);
+			float_type const delby_value = censoc::lexicast<float_type>(*token_i);
 
-			censoc::llog() << "Will delete rows based on values from column: [" << ute.alpha_tofrom_numeric(delby_i) << "] no: [" << delby_i + 1 << "]. The comparison for deletion criteria: [" << delby_op_str << "]. The scalar value: [" << delby_value << "]\n";
+			censoc::llog() << "Will delete rows based on values from column: [" << ute.alpha_tofrom_numeric(delby_i) << "] no: [" << delby_i + 1 << "]. The comparison for deletion criteria: [" << delby_op_string << "]. The scalar value: [" << delby_value << "]\n";
 
 			delby.push_back(delby_metadata(delby_i, delby_op, delby_value));
 		} else 
@@ -323,51 +335,42 @@ struct composite_matrix_loader {
 		return true;
 	}
 
+private:
 	void
-	verify_args(dataset_1::message::meta<N> & meta_msg, dataset_1::message::bulk & bulk_msg)
+	verify_args_sub(rawgrid_type & grid_obj, dataset_1::message::meta<N> & meta_msg, dataset_1::message::bulk & bulk_msg) 
 	{
-		cli_check_matrix_elements(x_elements, "x submatrix", ute);
-
-		if (filepath.empty() == true)
-			throw ::std::runtime_error("must supply the filepath for the excel file");
-
 		//if (sheet_i == static_cast<size_type>(-1))
-		//	throw ::std::runtime_error("must supply which sheet in the excel file contains relevant data");
+		//	throw netcpu::message::exception("must supply which sheet in the excel file contains relevant data");
 
 		if (respondent_i == static_cast<size_type>(-1))
-			throw ::std::runtime_error("must supply colmun for the respondent's id");
+			throw netcpu::message::exception("must supply colmun for the respondent's id");
 
 		if (best_i == static_cast<size_type>(-1))
-			throw ::std::runtime_error("must supply colmun for the best (whatever that means :-)");
+			throw netcpu::message::exception("must supply colmun for the best (whatever that means :-)");
 
 		if (row_start_i == static_cast<size_type>(-1))
-			throw ::std::runtime_error("must supply starting row for the numeric data");
+			throw netcpu::message::exception("must supply starting row for the numeric data");
 
 		if (meta_msg.alternatives() == static_cast<typename netcpu::message::typepair<N>::wire>(-1))
-			throw ::std::runtime_error("must supply number of alternatives in a choice set");
+			throw netcpu::message::exception("must supply number of alternatives in a choice set");
 
 		if (x_unique.empty() == true)
-			throw ::std::runtime_error("Must supply at least one --x option");
+			throw netcpu::message::exception("Must supply at least one --x option");
 
 		meta_msg.x_size(x_unique.size());
 
 		censoc::llog() << "Availability column in this model is ALWAYS presumed to be a ficticious column containing only values of '1'\n";
 
 		if (sortby.empty() == true)
-			throw ::std::runtime_error("must supply sortby columns");
+			throw netcpu::message::exception("must supply sortby columns");
 
 		censoc::llog() << "Sorting by columns: ";
 		for (typename ::std::list<size_type>::iterator i(sortby.begin()); i != sortby.end(); ++i) 
 			censoc::llog() << *i + 1 << '(' << ute.alpha_tofrom_numeric(*i) << ") ";
 		censoc::llog() << '\n';
 
-		// load the raw grid
-		// xls_debug = 1;
-		//rawgrid_type grid_obj(filepath.c_str(), "ASCII", sheet_i, typename grid_base::ctor(ute));
-		rawgrid_type grid_obj(filepath.c_str(), typename grid_base::ctor(ute));
-
 		if (grid_obj.rows() <= row_start_i)
-			throw ::std::runtime_error(xxx() << "not enough rows in spreadsheet: [" << grid_obj.rows() << "] given the starting row: [" << row_start_i + 1 << "]");
+			throw netcpu::message::exception(xxx() << "not enough rows in spreadsheet: [" << grid_obj.rows() << "] given the starting row: [" << row_start_i + 1 << "]");
 
 		censoc::llog() << "Total rows in the spreadsheet: [" << grid_obj.rows() << "]\n";
 
@@ -407,7 +410,7 @@ struct composite_matrix_loader {
 				++excluded;
 		}
 		if (sorted.empty() == true)
-			throw ::std::runtime_error("no data is left after culling the rows");
+			throw netcpu::message::exception("no data is left after culling the rows");
 
 		censoc::llog() << "Total deleted rows: [" << excluded << "], remainin rows (before turning alternatives into columns): [" << sorted.size() << "]\n";
 
@@ -441,7 +444,7 @@ struct composite_matrix_loader {
 				size_type const respondent_id_tmp_new(grid_obj.template column<size_type>(respondent_i));
 				if (respondent_id_tmp != respondent_id_tmp_new) {
 					if (respondents_choice_sets.back() % meta_msg.alternatives())
-						throw ::std::runtime_error(xxx() << "Can't calculate exact number of choice-sets per respondent as the number is not completely divisible by alternatives. Respondent: [" << respondent_id_tmp << "], total responses: [" << respondents_choice_sets.back() << "]");
+						throw netcpu::message::exception(xxx() << "Can't calculate exact number of choice-sets per respondent as the number is not completely divisible by alternatives. Respondent: [" << respondent_id_tmp << "], total responses: [" << respondents_choice_sets.back() << "]");
 					respondent_id_tmp = respondent_id_tmp_new;
 					respondents_choice_sets.back() /= meta_msg.alternatives();
 					respondents_choice_sets.push_back(1);
@@ -457,7 +460,7 @@ struct composite_matrix_loader {
 				assert(best_i_value == 0 || best_i_value == 1);
 				if (best_i_value) {
 					if (matrix_composite(r, matrix_composite.cols() - 1) != static_cast<uint8_t>(-1))
-						throw ::std::runtime_error("design is not excepted to have multiple 'choices' present for a given choiceset -- only one alternative can be indicated as chosen");
+						throw netcpu::message::exception("design is not excepted to have multiple 'choices' present for a given choiceset -- only one alternative can be indicated as chosen");
 					matrix_composite(r, matrix_composite.cols() - 1) = i;
 				}
 
@@ -465,7 +468,7 @@ struct composite_matrix_loader {
 #if 1
 				// currently not emulating gauss in wraparound mode when reshaping... see below (else) for commented-out code if emulating gauss...
 				if (sorted_i++ == sorted.end()) 
-					throw ::std::runtime_error("design is not excepted to hit the case of gauss-like behavior of re-reading matrix from start during the 'reshaping' process");
+					throw netcpu::message::exception("design is not excepted to hit the case of gauss-like behavior of re-reading matrix from start during the 'reshaping' process");
 #else
 				// emulate gauss (TODO -- may not needed it as 'matrix_composite_rows' is already INTEGRALLY divided by 'altrenatives')
 				// warnning -- if enabling -- must recode respondents-counting code!!!
@@ -474,12 +477,12 @@ struct composite_matrix_loader {
 #endif
 			}
 			if (matrix_composite(r, matrix_composite.cols() - 1) == static_cast<uint8_t>(-1))
-				throw ::std::runtime_error("validity-check failed: after sorting, the y vector value exceeds number of alternatives which would blow the array-index access");
+				throw netcpu::message::exception("validity-check failed: after sorting, the y vector value exceeds number of alternatives which would blow the array-index access");
 
 		}
 
 		if (respondents_choice_sets.back() % meta_msg.alternatives())
-			throw ::std::runtime_error(xxx() << "Can't calculate exact number of choice-sets per respondent as the number is not completely divisible by alternatives. Respondent: [" << respondent_id_tmp << "], total responses: [" << respondents_choice_sets.back() << "]");
+			throw netcpu::message::exception(xxx() << "Can't calculate exact number of choice-sets per respondent as the number is not completely divisible by alternatives. Respondent: [" << respondent_id_tmp << "], total responses: [" << respondents_choice_sets.back() << "]");
 		respondents_choice_sets.back() /= meta_msg.alternatives();
 
 		censoc::llog() << "Individual respondents: [" << respondents_choice_sets.size() << "]\n";
@@ -503,13 +506,31 @@ struct composite_matrix_loader {
 		// calculate y vec ... 
 		matrix_composite.col(matrix_composite.cols() - 1) = (vector_y_tmp_m * vector_y_tmp_v).cwise() - 1; // - 1 is because yvec's values are used for accessing another matrix columns -- so are 0 based
 		if ((matrix_composite.col(matrix_composite.cols() - 1).cwise() > meta_msg.alternatives() - 1).any() == true || (matrix_composite.col(matrix_composite.cols() - 1).cwise() < 0).any() == true)
-			throw ::std::runtime_error("validity-check failed: after sorting, the y vector value exceeds number of alternatives which would blow the array-index access");
+			throw netcpu::message::exception("validity-check failed: after sorting, the y vector value exceeds number of alternatives which would blow the array-index access");
 #endif
 
-
 		//censoc::llog() << "Composite matrix:\n" << matrix_composite << '\n';
+	}
 
-
+public:
+	void
+	verify_args(dataset_1::message::meta<N> & meta_msg, dataset_1::message::bulk & bulk_msg)
+	{
+		cli_check_matrix_elements(x_elements, "x submatrix", ute);
+		if (filepath.empty() == false) {
+			// xls_debug = 1;
+			//rawgrid_type grid_obj(filepath.c_str(), "ASCII", sheet_i, typename grid_base::ctor(ute));
+			::std::ifstream is(filepath);
+			if (!is.good())
+				throw netcpu::message::exception(xxx() << "Failed to open csv file(=" << filepath << ")");
+			rawgrid_type grid_obj(is, typename grid_base::ctor(ute));
+			verify_args_sub(grid_obj, meta_msg, bulk_msg);
+		} else if (filedata.empty() == false) {
+			::boost::iostreams::stream< ::boost::iostreams::array_source> data(filedata.data(), filedata.size());
+			rawgrid_type grid_obj(data, typename grid_base::ctor(ute));
+			verify_args_sub(grid_obj, meta_msg, bulk_msg);
+		} else if ((filepath.empty() == false && filedata.empty() == false) || (filepath.empty() == true && filedata.empty() == true))
+			throw netcpu::message::exception("must either supply the filepath for the csv file or the filedata itself");
 	}
 };
 
