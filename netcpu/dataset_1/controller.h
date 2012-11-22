@@ -361,20 +361,20 @@ private:
 
 		censoc::llog() << "Availability column in this model is ALWAYS presumed to be a ficticious column containing only values of '1'\n";
 
-		if (sortby.empty() == true)
-			throw netcpu::message::exception("must supply sortby columns");
-
-		censoc::llog() << "Sorting by columns: ";
-		for (typename ::std::list<size_type>::iterator i(sortby.begin()); i != sortby.end(); ++i) 
-			censoc::llog() << *i + 1 << '(' << ute.alpha_tofrom_numeric(*i) << ") ";
-		censoc::llog() << '\n';
+		if (sortby.empty() == false) {
+			censoc::llog() << "Sorting by columns: ";
+			for (typename ::std::list<size_type>::iterator i(sortby.begin()); i != sortby.end(); ++i) 
+				censoc::llog() << *i + 1 << '(' << ute.alpha_tofrom_numeric(*i) << ") ";
+			censoc::llog() << '\n';
+		} else
+			censoc::llog() << "Not performing any sorting/reordering of rows in the supplied dataset";
 
 		if (grid_obj.rows() <= row_start_i)
 			throw netcpu::message::exception(xxx() << "not enough rows in spreadsheet: [" << grid_obj.rows() << "] given the starting row: [" << row_start_i + 1 << "]");
 
 		censoc::llog() << "Total rows in the spreadsheet: [" << grid_obj.rows() << "]\n";
 
-		// sorting index
+		// load sorting index whilst culling any to-be-deleted rows
 		size_type excluded(0);
 		for (size_type i(row_start_i); i != grid_obj.rows(); ++i) {
 
@@ -414,7 +414,8 @@ private:
 
 		censoc::llog() << "Total deleted rows: [" << excluded << "], remainin rows (before turning alternatives into columns): [" << sorted.size() << "]\n";
 
-		sorted.sort(grid_sorter(sortby, grid_obj));
+		if (sortby.empty() == false)
+			sorted.sort(grid_sorter(sortby, grid_obj));
 
 		meta_msg.matrix_composite_rows(sorted.size() / meta_msg.alternatives());
 		meta_msg.matrix_composite_columns(meta_msg.x_size() * meta_msg.alternatives() + 1); // 'alternatives + 1' is for y vector horizontal concatenation
