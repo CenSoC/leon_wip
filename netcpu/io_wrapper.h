@@ -49,15 +49,11 @@ class io_wrapper {
 protected:
 	io_wrapper(AsyncDriver & io) throw()
 	: io_(io) {
+		io.reset_callbacks();
 		io_wrapper const * const other(io.user_key.release());
 		io.user_key.reset(this);
 		delete other;
 		censoc::llog() << "io_wrapper ctor: " << this << "\n";
-#if 0
-#ifndef NDEBUG
-		io.reset_callbacks();
-#endif
-#endif
 	}
 public:
 	virtual 

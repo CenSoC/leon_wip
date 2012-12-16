@@ -67,9 +67,9 @@ struct scoped_membership_iterator : T {
 
 	~scoped_membership_iterator()
 	{
-		if (i != iterator_type())
-			T::container().erase(i);
+		reset();
 	}
+
 	void
 	operator = (iterator_paramtype i) throw()
 	{
@@ -91,9 +91,10 @@ struct scoped_membership_iterator : T {
 	void
 	reset()
 	{
-		assert(i != iterator_type());
-		T::container().erase(i);
-		i = iterator_type();
+		if (i != iterator_type()) {
+			T::container().erase(i);
+			i = iterator_type();
+		}
 	}
 
 	bool 

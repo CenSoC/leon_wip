@@ -42,7 +42,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 //{ includes...
 
-
 #include <censoc/type_traits.h>
 #include <censoc/lexicast.h>
 #include <censoc/rand.h>
@@ -54,7 +53,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <netcpu/converger_1/processor.h>
 
-#include <netcpu/dataset_1/composite_matrix.h>
 #include <netcpu/converger_1/message/bulk.h>
 
 #include "message/meta.h"
@@ -115,18 +113,19 @@ private:
 	float_type * nonsigma_;
 };
 
-template <typename N, typename F, typename EF>
-struct task_processor {
+template <typename N, typename F, typename EF, bool approximate_exponents>
+struct task_processor : censoc::exp_lookup::exponent_evaluation_choice<EF, typename netcpu::message::typepair<N>::ram, approximate_exponents> {
 
 	BOOST_STATIC_ASSERT(censoc::DefaultAlign >= sizeof(F));
 	BOOST_STATIC_ASSERT(!(censoc::DefaultAlign % sizeof(F)));
 	BOOST_STATIC_ASSERT(censoc::DefaultAlign >= sizeof(EF));
 	BOOST_STATIC_ASSERT(!(censoc::DefaultAlign % sizeof(EF)));
+	BOOST_STATIC_ASSERT(sizeof(EF) >= sizeof(F));
 
 	//{ typedefs...
 
 	typedef netcpu::converger_1::message::meta<N, F, mixed_logit::message::meta<N> > meta_msg_type;
-	typedef netcpu::converger_1::message::bulk<N, F, mixed_logit::message::bulk> bulk_msg_type;
+	typedef netcpu::converger_1::message::bulk<N, F, mixed_logit::message::bulk<N> > bulk_msg_type;
 
 	typedef F float_type;
 	typedef typename censoc::param<float_type>::type float_paramtype;
@@ -136,25 +135,24 @@ struct task_processor {
 	typedef typename netcpu::message::typepair<N>::ram size_type;
 	typedef typename censoc::param<size_type>::type size_paramtype;
 
-
 	typedef censoc::lexicast< ::std::string> xxx;
 
 
 	typedef censoc::rnd_mirror_grid<size_type, float_type, halton_matrix_provider<N, F> > haltons_type;
 	//typedef censoc::halton<size_type, float_type, halton_matrix_provider<N, F> > haltons_type;
+
+	typedef censoc::exp_lookup::exponent_evaluation_choice<EF, size_type, approximate_exponents> exponent_evaluation_choice_base;
   
 	//}
 
 	//{ data members
 
-	size_type const alternatives;
+	size_type const max_alternatives;
 	size_type const repetitions;
 	extended_float_type const repetitions_inv;
 	size_type float_repetitions_column_stride_size;
 	size_type extended_float_repetitions_column_stride_size;
 
-	size_type const matrix_composite_rows; 
-	size_type const matrix_composite_columns; 
 	size_type const x_size;
 	::std::vector<size_type> respondents_choice_sets;
 	size_type const draws_sets_size;
@@ -162,8 +160,13 @@ struct task_processor {
 	censoc::aligned_alloc<uint8_t> raw_data;
 
 
+#ifndef NDEBUG
+	uint8_t * debug_choice_sets_alternatives_end;
+	int8_t * debug_matrix_composite_end;
+#endif
+	::boost::scoped_array<uint8_t> choice_sets_alternatives;
+	::boost::scoped_array<int8_t> matrix_composite; 
 
-	netcpu::dataset_1::composite_matrix<size_type, int> matrix_composite; 
 
 
 	float_type * matrix_haltons_nonsigma;
@@ -181,15 +184,12 @@ struct task_processor {
 
 	bool reduce_exp_complexity;
 
-	censoc::exp_lookup::linear_interpolation_linear_spacing<EF, size_type, 100> my_exp;
-
 	//}
 
 	// TODO -- later deprecate message.h typedef size_type and pass it via the template arg!!!
 	task_processor(meta_msg_type const & meta_msg)	
-	: alternatives(meta_msg.model.dataset.alternatives()), repetitions(meta_msg.model.repetitions()), repetitions_inv(1 / static_cast<extended_float_type>(repetitions)),  matrix_composite_rows(meta_msg.model.dataset.matrix_composite_rows()), matrix_composite_columns(meta_msg.model.dataset.matrix_composite_columns()), x_size(meta_msg.model.dataset.x_size()), draws_sets_size(meta_msg.model.draws_sets_size()), 
-	reduce_exp_complexity(meta_msg.model.reduce_exp_complexity()),
-	my_exp(1)// .99999)
+	: max_alternatives(meta_msg.model.dataset.max_alternatives()), repetitions(meta_msg.model.repetitions()), repetitions_inv(1 / static_cast<extended_float_type>(repetitions)), x_size(meta_msg.model.dataset.x_size()), draws_sets_size(meta_msg.model.draws_sets_size()), 
+	reduce_exp_complexity(meta_msg.model.reduce_exp_complexity())
 	{
 		// default stride for majority of float_type vectorized data access
 		size_type const float_stride_align_by((censoc::DefaultAlign / sizeof(float_type)));
@@ -211,11 +211,6 @@ struct task_processor {
 		else
 			extended_float_repetitions_column_stride_size = repetitions;
 
-		size_type const respondents_size(meta_msg.model.dataset.respondents_choice_sets.size());
-		respondents_choice_sets.reserve(respondents_size);
-		for (unsigned i(0); i != respondents_size; ++i)
-			respondents_choice_sets.push_back(meta_msg.model.dataset.respondents_choice_sets(i));
-
 		// MUST note -- was_fpu_ok has, currently, respondent_probability_cache is, eventually (below), passed in many cases. this is because: 
 		// a) the contiguous memory layout of the necessary data/caches. 
 		// b) the explicit '__restrict' pointers are copied from respondent_probability_cache (i.e. it, in itself, is still declared as non __strict)
@@ -229,7 +224,7 @@ struct task_processor {
 	
 		eta_cache = eta_cache_x + float_repetitions_column_stride_size * draws_sets_size * x_size;
 		ev_cache_tmp_or_censor_cache_tmp = eta_cache + float_repetitions_column_stride_size * draws_sets_size * x_size;
-		set_pointer(ev_cache, ev_cache_tmp_or_censor_cache_tmp + float_repetitions_column_stride_size * alternatives);
+		set_pointer(ev_cache, ev_cache_tmp_or_censor_cache_tmp + float_repetitions_column_stride_size * max_alternatives);
 		set_pointer(matrix_haltons_nonsigma, ev_cache + extended_float_repetitions_column_stride_size);
 		composite_equation_tau_cached = matrix_haltons_nonsigma + float_repetitions_column_stride_size * x_size * draws_sets_size - (float_repetitions_column_stride_size_modulo ? repetitions_column_stride_size_extend_by : 0);
 
@@ -305,7 +300,35 @@ public:
 	on_bulk_read(bulk_msg_type const & bulk_msg)
 	{
 		assert(bulk_msg.coeffs.size() == get_coefficients_size());
-		matrix_composite.cast(bulk_msg.model.dataset.matrix_composite.data(), matrix_composite_rows, matrix_composite_columns);
+
+		size_type const respondents_size(bulk_msg.model.dataset.respondents_choice_sets.size());
+		respondents_choice_sets.reserve(respondents_size);
+		for (unsigned i(0); i != respondents_size; ++i)
+			respondents_choice_sets.push_back(bulk_msg.model.dataset.respondents_choice_sets(i));
+
+		size_type const choice_sets_alternatives_size(bulk_msg.model.dataset.choice_sets_alternatives.size());
+		choice_sets_alternatives.reset(new uint8_t[choice_sets_alternatives_size]);
+		::memcpy(choice_sets_alternatives.get(), bulk_msg.model.dataset.choice_sets_alternatives.data(), choice_sets_alternatives_size);
+
+		size_type const matrix_composite_size(bulk_msg.model.dataset.matrix_composite.size());
+		matrix_composite.reset(new int8_t[matrix_composite_size]);
+		for (size_type i(0); i != matrix_composite_size; ++i)
+			matrix_composite[i] = netcpu::message::deserialise_from_unsigned_to_signed_integral(bulk_msg.model.dataset.matrix_composite(i));
+
+#ifndef NDEBUG
+		{
+		debug_choice_sets_alternatives_end = choice_sets_alternatives.get() + choice_sets_alternatives_size;
+		assert(debug_choice_sets_alternatives_end > choice_sets_alternatives.get());
+		debug_matrix_composite_end = matrix_composite.get() + matrix_composite_size;
+		assert(debug_matrix_composite_end > matrix_composite.get());
+		size_type total_choicesets_from_respondents_choice_sets(0);
+		for (size_type i(0); i != respondents_size; total_choicesets_from_respondents_choice_sets += respondents_choice_sets[i++]);
+		assert(total_choicesets_from_respondents_choice_sets == choice_sets_alternatives_size);
+		size_type total_alternatives_count(0);
+		for (uint8_t * i(choice_sets_alternatives.get()); i != debug_choice_sets_alternatives_end; total_alternatives_count += *i, ++i);
+		assert(total_alternatives_count * x_size + choice_sets_alternatives_size == matrix_composite_size);
+		}
+#endif
 	}
 
 
@@ -326,7 +349,6 @@ public:
 
 		assert(censoc::was_fpu_ok(&censoc::init_fpu_check_anchor));
 
-
 		assert(result.is_valid() == false);
 
 
@@ -334,11 +356,12 @@ public:
 
 		float_type accumulated_probability(0); 
 
-		size_type matrix_composite_row_i(0);
+		uint8_t const * __restrict choice_sets_alternatives_ptr(choice_sets_alternatives.get());
+		int8_t const * __restrict matrix_composite_ptr(matrix_composite.get());
 
 		coefficient_metadata_type const * const etavar(coefficients + x_size);
 
-		/* // NOTE -- reason for caches being recalculated on every loop iteration
+		/* { NOTE -- reason for caches being recalculated on every loop iteration
 		 TODO -- once again, a lot of the following caches could be allocated to take care of ALL respondents at once (thus not having to recalculate it at all). This way the only time recalculation would take place is when relevant coefficient is changed. YET -- I am not doing this a the moment (not for the vast majority of caches anyway). 
 		 
 		 This is mainly due to considerations for memory consumption -- having 1000 repsondents (not impossible thing to have), one would increase memory consumption also by a huuuuuuge factor indeed... and then there are 15 or so choicesets... 
@@ -352,7 +375,7 @@ public:
 		The above statement is not really true -- the computations are re-used but only within a given loop iteration (i.e. not saved for future log_likelihood iterations).
 
 		ALSO -- must consider effects of larger memory amounts being shuffled to/from RAM (not just cache) and speed-implications for that
-		*/
+		} */
 
 		for (size_type i(0); i != respondents_choice_sets.size(); ++i) {
 
@@ -367,7 +390,6 @@ public:
 
 			for (size_type set_ones_i(0); set_ones_i != repetitions; ++set_ones_i)
 				respondent_probability_cache[set_ones_i] = 1;
-
 
 			// TODO -- ideally, in addition to this 'cumulative formula' caching, could *also* cache at a finer level (etavar, betas -- separately). (albeit this would blow-out the memory requirements)
 			// TODO -- ALSO ABOUT MAIN VS TMP CACHES THEN...  (once again -- will need to think about memory usage).
@@ -414,20 +436,22 @@ public:
 				}
 			}
 
+			for (size_type t(0); t != respondents_choice_sets[i]; ++t) {
 
-			for (size_type t(0); t != respondents_choice_sets[i]; ++t, ++matrix_composite_row_i) {
-
-				size_type const matrix_composite_thisrow_last_col_i(matrix_composite(matrix_composite_row_i, matrix_composite.cols() - 1));
-
-				// setting first pass explicitly as opposed to additional call to setZero initially and then += ones...
-				//ev_cache_tmp_or_censor_cache_tmp.setZero();
+				assert(choice_sets_alternatives_ptr < debug_choice_sets_alternatives_end);
+				uint8_t const alternatives(*choice_sets_alternatives_ptr++);
+				assert(alternatives <= max_alternatives);
 				assert(x_size);
+#ifndef NDEBUG
+				int8_t const * const debug_end_of_row_in_composite_matrix(matrix_composite_ptr + alternatives * x_size + 1);
+				assert(debug_end_of_row_in_composite_matrix <= debug_matrix_composite_end);
+#endif
 				// x == 0 (first pass)
 				for (size_type a(0); a != alternatives; ++a) {
-					int const control(matrix_composite(matrix_composite_row_i, a));
+					assert(matrix_composite_ptr < debug_end_of_row_in_composite_matrix);
+					int const control(*matrix_composite_ptr++);
 					float_type * const __restrict dst(ev_cache_tmp_or_censor_cache_tmp + a * float_repetitions_column_stride_size);
 					float_type const * const __restrict src(eta_cache + eta_cache_respondent_column_begin * float_repetitions_column_stride_size);
-					//assert(control == 0 || control == -1 || control == 1);
 					switch (control) {
 					case 0:
 					for (size_type tmp_i(0); tmp_i != repetitions; ++tmp_i) 
@@ -449,11 +473,9 @@ public:
 
 				// now to the rest of passes ( 1 <= x < x_size)
 				for (size_type x(1); x != x_size; ++x) {
-					// todo refactor to alternatives_columns_begin(alternatives) in loop init, then ++alternatives_columns_begin, then no need to control(matrix_composite(matrix_composite_row_i, alternatives_columns_begin + a)), but just 'alternatives_columns_begin'
-					size_type const alternatives_columns_begin(x * alternatives); // equiv to 'alternatives + x * alternatives'
-					// TODO -- convert to the new eigen col- row-wise arithmetic and compare the performances
 					for (size_type a(0); a != alternatives; ++a) {
-						int const control(matrix_composite(matrix_composite_row_i, alternatives_columns_begin + a));
+					assert(matrix_composite_ptr < debug_end_of_row_in_composite_matrix);
+					int const control(*matrix_composite_ptr++);
 						float_type * const __restrict dst(ev_cache_tmp_or_censor_cache_tmp + a * float_repetitions_column_stride_size);
 						float_type const * const __restrict src(eta_cache + (eta_cache_respondent_column_begin + x) * float_repetitions_column_stride_size);
 						//assert(control == 0 || control == -1 || control == 1);
@@ -479,6 +501,11 @@ public:
 						assert(::std::isfinite(ev_cache_tmp_or_censor_cache_tmp[a * float_repetitions_column_stride_size + r]));
 #endif
 
+				// move to the last column in row -- a chosen alternative
+				assert(matrix_composite_ptr < debug_end_of_row_in_composite_matrix);
+				size_type const chosen_alternative(*matrix_composite_ptr++);
+				assert(chosen_alternative < alternatives);
+				// todo some sanity-checking assertions
 
 				{
 					if (reduce_exp_complexity == false) {
@@ -491,12 +518,9 @@ public:
 						extended_float_type * const __restrict dst(ev_cache);
 						float_type const * const __restrict src(ev_cache_tmp_or_censor_cache_tmp);
 						for (size_type r(0); r != repetitions; ++r) {
-							extended_float_type const tmp(
-								my_exp.eval(src[r])
-								//::std::exp(src[r])
-							);
+							extended_float_type const tmp(exponent_evaluation_choice_base::eval(src[r]));
 							accum[r] = tmp;
-							if (!matrix_composite_thisrow_last_col_i)
+							if (!chosen_alternative)
 								dst[r] = tmp; 
 						}
 						}
@@ -504,12 +528,9 @@ public:
 							extended_float_type * const __restrict dst(ev_cache);
 							float_type const * const __restrict src(ev_cache_tmp_or_censor_cache_tmp + a * float_repetitions_column_stride_size);
 							for (size_type r(0); r != repetitions; ++r) {
-								extended_float_type const tmp(
-									my_exp.eval(src[r])
-									//::std::exp(src[r])
-								);
+								extended_float_type const tmp(exponent_evaluation_choice_base::eval(src[r]));
 								accum[r] += tmp;
-								if (a == matrix_composite_thisrow_last_col_i)
+								if (a == chosen_alternative)
 									dst[r] = tmp;
 							}
 						}
@@ -525,26 +546,22 @@ public:
 
 						extended_float_type * const __restrict accum(repetitions_cache_rowwise_tmp);
 						{ // a =0, first alternative
-							if (matrix_composite_thisrow_last_col_i) {
+							if (chosen_alternative) {
 								float_type const * const __restrict src_a(ev_cache_tmp_or_censor_cache_tmp);
-								float_type const * const __restrict src_b(ev_cache_tmp_or_censor_cache_tmp + matrix_composite_thisrow_last_col_i * float_repetitions_column_stride_size);
+								float_type const * const __restrict src_b(ev_cache_tmp_or_censor_cache_tmp + chosen_alternative * float_repetitions_column_stride_size);
 								for (size_type r(0); r != repetitions; ++r)
-									accum[r] = 
-										my_exp.eval(src_a[r] - src_b[r]); 
-										//::std::exp(src_a[r] - src_b[r]);
+									accum[r] = exponent_evaluation_choice_base::eval(src_a[r] - src_b[r]); 
 							} else for (size_type r(0); r != repetitions; ++r)
 								accum[r] = 
 									//dst[r] = 
 									1;
 						}
 						for (size_type a(1); a != alternatives; ++a) {
-							if (a != matrix_composite_thisrow_last_col_i) {
+							if (a != chosen_alternative) {
 								float_type const * const __restrict src_a(ev_cache_tmp_or_censor_cache_tmp + a * float_repetitions_column_stride_size);
-								float_type const * const __restrict src_b(ev_cache_tmp_or_censor_cache_tmp + matrix_composite_thisrow_last_col_i * float_repetitions_column_stride_size);
+								float_type const * const __restrict src_b(ev_cache_tmp_or_censor_cache_tmp + chosen_alternative * float_repetitions_column_stride_size);
 								for (size_type r(0); r != repetitions; ++r)
-									accum[r] += 
-										my_exp.eval(src_a[r] - src_b[r]); 
-										//::std::exp(src_a[r] - src_b[r]);
+									accum[r] += exponent_evaluation_choice_base::eval(src_a[r] - src_b[r]); 
 							} else for (size_type r(0); r != repetitions; ++r)
 								accum[r] += 1;
 						}
@@ -592,32 +609,29 @@ public:
 
 		// todo verify meta parameters here (if processing size is too larg for RAM on this peer, then write 'bad' msg and issue 'read' -- the server should send 'end_process' when it feels like it, then can call in this prog 'delete this' and the underlying processor.h (peer_connection) in this prog will write a new 'ready to process' msg)
 
-		size_type const alternatives(meta_msg.model.dataset.alternatives());
+		size_type const max_alternatives(meta_msg.model.dataset.max_alternatives());
 		size_type const repetitions(meta_msg.model.repetitions());
-		uint_fast64_t const matrix_composite_rows(meta_msg.model.dataset.matrix_composite_rows()); 
-		uint_fast64_t const matrix_composite_columns(meta_msg.model.dataset.matrix_composite_columns()); 
+		uint_fast64_t const matrix_composite_elements(meta_msg.model.dataset.matrix_composite_elements()); 
 		uint_fast64_t const x_size(meta_msg.model.dataset.x_size()); 
 		uint_fast64_t const draws_sets_size(meta_msg.model.draws_sets_size());
 
 		// todo -- make a proper calculations (currently not taking into account the stride alignment effects... but that should not be too much...)
 		uint_fast64_t anticipated_ram_utilization(
 			sizeof(float_type) * (
-
-				+ matrix_composite_rows *  matrix_composite_columns // matrix_composite
-	
 				+ repetitions * x_size * draws_sets_size // non sigma haltons 
 				+ draws_sets_size // composite_equation_tau_cached
 				+ x_size * draws_sets_size // etavars_cache
 				+ x_size * draws_sets_size // betavars_cache
 				+ 2 * repetitions * draws_sets_size // sigma_cache {main, tmp}
 				+ 2 * repetitions * x_size * draws_sets_size // eta_cache and eta_cache_x
-				+ repetitions * alternatives // ev_cache_tmp_or_censor_cache_tmp
+				+ repetitions * max_alternatives // ev_cache_tmp_or_censor_cache_tmp
 			) 
 			+ sizeof(extended_float_type) * (
 				+ repetitions // ev_cache
 				+ repetitions // respondent_probability_cache
 				+ repetitions // repetitions_cache_rowwise_tmp
 			)
+			+ matrix_composite_elements // matrix_composite
 		); 
 
 		// todo -- define the guard for app and it's mem structs more correctly as opposed to this ugly hack

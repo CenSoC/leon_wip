@@ -46,9 +46,10 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 namespace censoc { namespace netcpu { namespace gmnl_2 { namespace message {
 
+template <typename N>
 struct bulk  {
 
-	netcpu::dataset_1::message::bulk dataset;
+	netcpu::dataset_1::message::bulk<N> dataset;
 
 	// hack indeed
 	void print() { }

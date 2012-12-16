@@ -1,4 +1,4 @@
-#!/bin/sh -x
+#!/bin/sh
 
 #
 # Written and contributed by Leonid Zadorin at the Centre for the Study of Choice
@@ -38,35 +38,9 @@
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
 #
 
-#SERVER_AT="netcpu.zapto.org:8070"
-SERVER_AT="localhost:8081"
+TARGETS="\
+ 00:23:aa:bb:77:7e \
+ 00:23:aa:bb:77:78 \
+"
+wakeonlan -i 192.168.21.255 ${TARGETS}
 
-CMDLINE=" --server_cert certificate.pem --client_cert client_certificate.pem --client_key client_key.pem --server_at ${SERVER_AT} \
---model 1:offer \
-	--filepath ../simul_data_logit.csv --x 5:6 --respondent 1 --choice_set 2 --alternative 3 --fromrow 2 --sort 1,2,3 --best 4 \
-	--int_resolution 32 --float_resolution double --extended_float_resolution double --approximate_exponents true --complexity_size 88800000 --minimpr 1.00000001 --shrink_slowdown 0.47 --dissect off --reduce_exp_complexity off \
-	--coeffs_atonce_size 2 \
-		--cm 1:-35:35:.003:25 \
-	--coeffs_atonce_size 2 \
-		--cm 1:.35:3 \
-	--coeffs_atonce_size 2 \
-		--cm 1:.05:2 \
-" 
-
-# GDB this is for normal sh (not bash) 
-echo "catch throw" > controller.gdb
-echo "run  ${CMDLINE}" >> controller.gdb 
-gdb controller.exe -x controller.gdb
-rm controller.gdb
-
-CMDLINE=" --server_cert certificate.pem --client_cert client_certificate.pem --client_key client_key.pem --server_at ${SERVER_AT} \
---model 1:offer \
-	--file ../attic/results/logit/test_noscale_novariance_xxx.csv --x 5:8 --resp 1 --fromrow 1 --sort 1,2,3 --alts 2 --best 4 \
-	--int_resolution 32 --float_resolution double --extended_float_resolution double --complexity_size 88800000 --minimpr 1.00000001 --shrink_slowdown 0.47 --dissect off --reduce_exp_complexity off \
-	--coeffs_atonce_size 4 \
-		--cm 1:-15:15:.003:9 \
-	--coeffs_atonce_size 3 \
-		--cm 1:.35:3 \
-	--coeffs_atonce_size 2 \
-		--cm 1:.05:2 \
-" 

@@ -47,8 +47,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 // includes }
 
-#ifndef CENSOC_NETCPU_SCALED_OFFSET_MIXED_LOGIT_SERVER_H
-#define CENSOC_NETCPU_SCALED_OFFSET_MIXED_LOGIT_SERVER_H
+#ifndef CENSOC_NETCPU_GMNL_2a_SERVER_H
+#define CENSOC_NETCPU_GMNL_2a_SERVER_H
 
 //{ for the time-being model_factory_interface will be automatically declared, no need to include explicitly...}
 
@@ -57,7 +57,7 @@ namespace censoc { namespace netcpu { namespace gmnl_2a {
 template <typename N, typename F>
 struct model_traits {
 	typedef netcpu::converger_1::message::meta<N, F, gmnl_2::message::meta<N> > meta_msg_type;
-	typedef netcpu::converger_1::message::bulk<N, F, gmnl_2::message::bulk> bulk_msg_type;
+	typedef netcpu::converger_1::message::bulk<N, F, gmnl_2::message::bulk<N> > bulk_msg_type;
 };
 
 netcpu::converger_1::model_factory<gmnl_2a::model_traits, netcpu::models_ids::gmnl_2a> static factory;

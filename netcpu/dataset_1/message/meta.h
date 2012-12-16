@@ -49,28 +49,21 @@ template <typename N>
 struct meta  {
 
 	typedef netcpu::message::scalar<typename netcpu::message::typepair<N>::wire> size_type;
-	typedef netcpu::message::array<typename netcpu::message::typepair<N>::wire> array_type;
-	//typedef netcpu::message::decomposed_floating float_type; 
 
-	size_type alternatives;
-	size_type matrix_composite_rows; 
-	size_type matrix_composite_columns; 
+	netcpu::message::scalar<uint8_t> max_alternatives;
+	size_type matrix_composite_elements; 
 	size_type x_size;
-	array_type respondents_choice_sets;
 
 	meta()
-	: alternatives(-1), matrix_composite_rows(-1), matrix_composite_columns(-1), x_size(0) {
+	: max_alternatives(-1), matrix_composite_elements(-1), x_size(-1) {
 	}
 
 	void
 	print() 
 	{
-		// a hack indeed...
-		censoc::llog() << "alternatives: " << alternatives() << ::std::endl;
-		censoc::llog() << "rows: " << matrix_composite_rows() << ::std::endl; 
-		censoc::llog() << "columns: " << matrix_composite_columns() << ::std::endl; 
-		censoc::llog() << "x_size: " << x_size() << ::std::endl; 
-		censoc::llog() << "respondents: " << respondents_choice_sets.size() << ::std::endl; 
+		censoc::llog() << "total dataset matrix elements: " << matrix_composite_elements() << ::std::endl; 
+		censoc::llog() << "highest number of alternatives in any choice set: " << max_alternatives() << ::std::endl;
+		censoc::llog() << "attributes: " << x_size() << ::std::endl; 
 	}
 };
 

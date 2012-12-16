@@ -46,6 +46,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <boost/numeric/conversion/bounds.hpp>
 #include <boost/scoped_ptr.hpp>
+#include <boost/scoped_array.hpp>
 #include <boost/filesystem.hpp>
 
 #include <Eigen/Core>
@@ -389,6 +390,7 @@ struct end_process_writer : netcpu::io_wrapper<netcpu::message::async_driver> {
 
 	end_process_writer(netcpu::message::async_driver & io_driver)
 	: netcpu::io_wrapper<netcpu::message::async_driver>(io_driver), stale_message_seen(false) {
+		io().read_callback(&end_process_writer::on_read, this);
 		if (io().is_write_pending() == false) 
 			io().write(netcpu::message::end_process(), &end_process_writer::on_write, this);
 		else
@@ -558,6 +560,10 @@ struct task_processor : ::boost::noncopyable {
 			am_bootstrapping = convergence_state_msg.am_bootstrapping() ? true : false;
 			//assert(e_min != censoc::largish<float_type>());
 			coefficients_rand_range_ended_wait = convergence_state_msg.coefficients_rand_range_ended_wait();
+
+			if (!coefficients_rand_range_ended_wait)
+				throw ::std::runtime_error(xxx() << "Sanity-check for the sysadmin of the server's integrity failed. Task which should have been complete is being actively processed. Remaining coefficients to wait for should be zero, yet the value is: [" << coefficients_rand_range_ended_wait << "]");
+
 			intended_coeffs_at_once = convergence_state_msg.intended_coeffs_at_once();
 		} else {
 			e_min = censoc::largish<float_type>();
@@ -634,6 +640,7 @@ struct task_processor : ::boost::noncopyable {
 			current_complexity_level = combos_modem.metadata().begin();
 			censoc::netcpu::range_utils::add(remaining_complexities, ::std::pair<size_type, size_type>(0, current_complexity_level->first));
 		} else {
+			assert(convergence_state_msg.current_complexity_level_first());
 			current_complexity_level = combos_modem.metadata().find(convergence_state_msg.current_complexity_level_first());
 			assert(current_complexity_level != combos_modem.metadata().end());
 			::std::list< ::std::pair<size_type, size_type> > tmp_container;
@@ -1264,26 +1271,33 @@ struct task_processor : ::boost::noncopyable {
 		convergence_state_msg.am_bootstrapping(am_bootstrapping == true ? 1 : 0);
 		convergence_state_msg.intended_coeffs_at_once(intended_coeffs_at_once);
 		convergence_state_msg.coefficients_rand_range_ended_wait(coefficients_rand_range_ended_wait);
-		assert(current_complexity_level != combos_modem.metadata().end());
-		convergence_state_msg.current_complexity_level_first(current_complexity_level->first);
-		convergence_state_msg.complexities.resize(remaining_complexities.size());
-		size_type j(0);
-		for (typename complexities_type::const_iterator i(remaining_complexities.begin()); i != remaining_complexities.end(); ++i) {
-			converger_1::message::complexitywise_element<N> & wire(convergence_state_msg.complexities(j++));
-			wire.complexity_begin(i->first);
-			wire.complexity_size(i->second);
-		}
 
-		convergence_state_msg.visited_places.resize(visited_places.size());
-		j = 0;
-		for (typename ::std::map<netcpu::big_uint<size_type>, size_type>::const_iterator i(visited_places.begin()); i != visited_places.end(); ++i) {
-			converger_1::message::visited_place<N> & wire(convergence_state_msg.visited_places(j++));
-			//assert(i->first.size());
-			wire.begin.resize(i->first.size());
-			if (wire.begin.size())
-				i->first.store(wire.begin.data());
-			wire.size(i->second);
+		if (coefficients_rand_range_ended_wait) {
+			assert(current_complexity_level != combos_modem.metadata().end());
+			convergence_state_msg.current_complexity_level_first(current_complexity_level->first);
+			convergence_state_msg.complexities.resize(remaining_complexities.size());
+			size_type j(0);
+			for (typename complexities_type::const_iterator i(remaining_complexities.begin()); i != remaining_complexities.end(); ++i) {
+				converger_1::message::complexitywise_element<N> & wire(convergence_state_msg.complexities(j++));
+				wire.complexity_begin(i->first);
+				wire.complexity_size(i->second);
+			}
+
+			convergence_state_msg.visited_places.resize(visited_places.size());
+			j = 0;
+			for (typename ::std::map<netcpu::big_uint<size_type>, size_type>::const_iterator i(visited_places.begin()); i != visited_places.end(); ++i) {
+				converger_1::message::visited_place<N> & wire(convergence_state_msg.visited_places(j++));
+				//assert(i->first.size());
+				wire.begin.resize(i->first.size());
+				if (wire.begin.size())
+					i->first.store(wire.begin.data());
+				wire.size(i->second);
+			}
 		}
+#ifndef NDEBUG
+		if (!coefficients_rand_range_ended_wait)
+			convergence_state_msg.current_complexity_level_first(0);
+#endif
 
 		// serialise
 		::std::string const convergence_state_filepath(netcpu::root_path + netcpu::pending_tasks.front()->name() + "/convergence_state.msg");
@@ -1361,6 +1375,9 @@ struct processing_peer : netcpu::io_wrapper<netcpu::message::async_driver> {
 	typedef ::std::map<size_type, size_type> complexities_type;
 	//
 
+	enum {stale_io_limit = 8192}; // todo -- make parametric
+	BOOST_STATIC_ASSERT(::boost::integer_traits<key_type>::const_max > stale_io_limit); // to allow robustness against key_type wraparound (unlikely but this safety is compile-time -- free)
+
 
 	struct scoped_peers_iterator_traits {
 
@@ -1416,10 +1433,17 @@ struct processing_peer : netcpu::io_wrapper<netcpu::message::async_driver> {
 		, do_assert_processing_peers_i(false) 
 #endif
 	{
+		io().error_callback(&processing_peer::on_error, this);
 		netcpu::message::task_offer msg;
 		msg.task_id(ModelId);
 		io().write(msg, &processing_peer::on_write, this);
 		censoc::llog() << "processing_peer ctor is done\n";
+	}
+
+	void
+	on_error(::std::string const &) 
+	{
+		delete this;
 	}
 
 	void
@@ -1433,7 +1457,7 @@ struct processing_peer : netcpu::io_wrapper<netcpu::message::async_driver> {
 	sync_peer_to_server(T & msg) throw() // danger... for the time-being
 	{
 		assert(do_assert_processing_peers_i == true && processing_peers_i.nulled() == false || !0);
-		if (io().is_write_pending() == false) {
+		if (io().is_write_pending() == false && processor.io_key - io_key_echo_ < stale_io_limit) {
 			msg.complexities.resize(remaining_complexities.size());
 			size_type j(0);
 			for (typename complexities_type::const_iterator i(remaining_complexities.begin()); i != remaining_complexities.end(); ++i) {
@@ -1449,6 +1473,7 @@ struct processing_peer : netcpu::io_wrapper<netcpu::message::async_driver> {
 	void
 	on_late_write_sync_peer_to_server()
 	{
+		assert(io().is_write_pending() == false);
 		io().write_callback(&processing_peer::on_write_sync_peer_to_server, this);
 		assert(processing_peers_i.nulled() == false);
 		censoc::llog() << "cathing up a peer to the latest state of the server (due to faster writes than network communication or client processing of messages)" << ::std::endl;
@@ -1460,27 +1485,31 @@ struct processing_peer : netcpu::io_wrapper<netcpu::message::async_driver> {
 	{
 		assert(processing_peers_i.nulled() == false);
 
-		enum {stale_limit = 8192}; // todo -- make parametric
-		BOOST_STATIC_ASSERT(::boost::integer_traits<key_type>::const_max > stale_limit); // to allow robustness against key_type wraparound (unlikely but this safety is compile-time -- free)
-
-		if (processor.io_key - io_key_echo_ > stale_limit) 
-			throw ::std::runtime_error(xxx("stale peer (not echoing fast enough): [") << io().socket.lowest_layer().remote_endpoint(netcpu::ec) << ']'); 
+#if 0
+		if (processor.io_key - io_key_echo_ > stale_io_limit) 
+			throw netcpu::message::exception(xxx("stale peer (not echoing fast enough): [") << io().socket.lowest_layer().remote_endpoint(netcpu::ec) << ']'); 
+#endif
 	}
 
 	void 
 	on_read() // for peer-reporting 
 	{
+		bool io_was_stale(processor.io_key - io_key_echo_ >= stale_io_limit ? true : false); 
 		if (converger_1::message::bootstrapping_peer_report<N, F>::myid == io().read_raw.id()) {
 			processor.bootstrapping_peer_report_msg.from_wire(io().read_raw);
 			io_key_echo_ = processor.bootstrapping_peer_report_msg.echo_status_key();
 			if (processor.io_key == io_key_echo_) 
 				processor.on_bootstrapping_peer_report();
+			else if (io_was_stale == true)
+				sync_peer_to_server(processor.server_state_sync_msg);	
 		} else if (converger_1::message::peer_report<N, F>::myid == io().read_raw.id()) {
 			processor.peer_report_msg.from_wire(io().read_raw);
 			io_key_echo_ = processor.peer_report_msg.echo_status_key();
 			censoc::llog() << "received on_read in processing peer, my key: [" << processor.io_key << "], peer key: [" << io_key_echo_ << "]\n";
 			if (processor.io_key == io_key_echo_) 
 				processor.on_peer_report(*this);
+			else if (io_was_stale == true)
+				sync_peer_to_server(processor.server_state_sync_msg);	
 		} else {
 			io().cancel();
 			return;
@@ -1573,12 +1602,13 @@ struct processing_peer : netcpu::io_wrapper<netcpu::message::async_driver> {
 	void
 	on_read_meta_response()
 	{
-		if (netcpu::message::good::myid != io().read_raw.id()) 
-			io().read(); // will 'pause' in limbo state until end_process_writer shoots the message
-		else {
+		if (netcpu::message::good::myid == io().read_raw.id()) {
 			io().write(processor.bulk_msg_wire, &processing_peer::on_write_bulk, this);
 			censoc::llog() << "issued write bulk message command\n";
-		}
+		} else if (netcpu::converger_1::message::skip_bulk::myid == io().read_raw.id()) 
+			on_write_bulk();
+		else
+			io().read(); // will 'pause' in limbo state until end_process_writer shoots the message
 	}
 
 	void
@@ -1707,14 +1737,22 @@ struct task : netcpu::task {
 template <typename N, typename F, typename Model, netcpu::models_ids::val ModelId>
 struct task_loader_detail : netcpu::io_wrapper<netcpu::message::async_driver> {
 	typedef censoc::lexicast< ::std::string> xxx;
+	typedef typename netcpu::message::typepair<N>::ram size_type;
 
-	converger_1::task<N, F, Model, ModelId> * t;
+	::std::unique_ptr<converger_1::task<N, F, Model, ModelId> > t;
 
 	task_loader_detail(netcpu::message::async_driver & io_driver)
 	: netcpu::io_wrapper<netcpu::message::async_driver>(io_driver), 
 	// generating name in a form "COUNTER_MODELID-INTRESxFLOATRES" e.g. "1_1-0x1" (TODO -- make it more elegant)
-	t(new converger_1::task<N, F, Model, ModelId>(netcpu::generate_taskdir(::std::string(xxx(int(ModelId))) + '-' + ::std::string(xxx(int(converger_1::message::int_res<N>::value))) + 'x' + ::std::string(xxx(int(converger_1::message::float_res<F>::value)))))) {
+	t(
+		(io().error_callback(&task_loader_detail::on_error, this), // installing it here, before newing up of others so that if others throw netcpu exception, the error callback will be evoked... an alternative design would be to revert to older code where 'on_error' et al were virtual (and implicitly assigned in the base class)... but that normally causes more implicit confusion w.r.t. behaviour in the majority of cases.
+		new converger_1::task<N, F, Model, ModelId>(netcpu::generate_taskdir(::std::string(xxx(int(ModelId))) + '-' + ::std::string(xxx(int(converger_1::message::int_res<N>::value))) + 'x' + ::std::string(xxx(int(converger_1::message::float_res<F>::value)))))
+		)
+	) {
+
 		assert(t != NULL);
+
+		assert(converger_1::message::res::myid == io().read_raw.id());
 
 		::std::string const res_filepath(netcpu::root_path + t->name() + "/res.msg");
 		{
@@ -1725,17 +1763,35 @@ struct task_loader_detail : netcpu::io_wrapper<netcpu::message::async_driver> {
 		}
 		::rename((res_filepath + ".tmp").c_str(), res_filepath.c_str());
 
+		converger_1::message::res msg(io().read_raw);
+		if (
+			msg.float_res() == converger_1::message::float_res<float>::value && msg.extended_float_res() == converger_1::message::float_res<float>::value
+				|| // lower precedence than &&	
+			msg.float_res() == converger_1::message::float_res<double>::value && msg.extended_float_res() == converger_1::message::float_res<double>::value
+				|| // lower precedence than &&	
+			msg.float_res() == converger_1::message::float_res<float>::value && msg.extended_float_res() == converger_1::message::float_res<double>::value
+		) ; else 
+			throw netcpu::message::exception(xxx("unsupported floating resolutions: [") << msg.float_res() << "], [" << msg.extended_float_res() << ']');
+
 		::std::cerr << "ctor task loader detail\n";
 		io().read(&task_loader_detail::on_read, this);
 	}
 
 	void
+	on_error(::std::string const &)
+	{
+		delete this;
+	}
+
+	typedef typename Model::meta_msg_type meta_msg_type;
+	meta_msg_type meta_msg;
+
+	void
 	on_read()
 	{
-		typedef typename Model::meta_msg_type meta_msg_type;
 
 		if (meta_msg_type::myid != io().read_raw.id()) 
-			throw ::std::runtime_error(xxx("wrong message: [") << io().read_raw.id() << "] want meta id: [" << static_cast<netcpu::message::id_type>(meta_msg_type::myid) << ']');
+			throw netcpu::message::exception(xxx("wrong message: [") << io().read_raw.id() << "] want meta id: [" << static_cast<netcpu::message::id_type>(meta_msg_type::myid) << ']');
 
 		// todo verify file and meta msg here
 
@@ -1750,6 +1806,11 @@ struct task_loader_detail : netcpu::io_wrapper<netcpu::message::async_driver> {
 		}
 		::rename((meta_filepath + ".tmp").c_str(), meta_filepath .c_str());
 
+		meta_msg.from_wire(io().read_raw);
+
+		if (meta_msg.model.dataset.max_alternatives() >= ::boost::integer_traits<uint8_t>::const_max)
+			throw netcpu::message::exception(xxx("too many alternatives(=") << meta_msg.model.dataset.max_alternatives() << ") in the supplied dataset for the new task");
+
 		io().write(netcpu::message::good(), &task_loader_detail::on_meta_reply_write, this);
 	}
 
@@ -1760,16 +1821,17 @@ struct task_loader_detail : netcpu::io_wrapper<netcpu::message::async_driver> {
 		io().read(&task_loader_detail::on_bulk_read, this);
 	}
 
+	typedef typename Model::bulk_msg_type bulk_msg_type;
+	bulk_msg_type bulk_msg;
+
 	void
 	on_bulk_read()
 	{
-
 		censoc::llog() << "on_bulk_read\n";
 		assert(t != NULL);
 
-		typedef typename Model::bulk_msg_type bulk_msg_type;
 		if (bulk_msg_type::myid != io().read_raw.id()) 
-			throw ::std::runtime_error(xxx("wrong message: [") << io().read_raw.id() << "] want bulk id: [" << static_cast<netcpu::message::id_type>(bulk_msg_type::myid) << ']');
+			throw netcpu::message::exception(xxx("wrong message: [") << io().read_raw.id() << "] want bulk id: [" << static_cast<netcpu::message::id_type>(bulk_msg_type::myid) << ']');
 
 #if 0
 		bulk_msg_type blah;
@@ -1788,9 +1850,67 @@ struct task_loader_detail : netcpu::io_wrapper<netcpu::message::async_driver> {
 		}
 		::rename((bulk_filepath + ".tmp").c_str(), bulk_filepath.c_str());
 
+		bulk_msg.from_wire(io().read_raw);
+
+		// verify all of the supplied tasks data (mainly so that processors will not crash out)
+		size_type max_alternatives(meta_msg.model.dataset.max_alternatives());
+		size_type matrix_composite_elements(meta_msg.model.dataset.matrix_composite_elements()); 
+		size_type x_size(meta_msg.model.dataset.x_size());
+
+		::boost::scoped_array<uint8_t> choice_sets_alternatives;
+		size_type const choice_sets_alternatives_size(bulk_msg.model.dataset.choice_sets_alternatives.size());
+		choice_sets_alternatives.reset(new uint8_t[choice_sets_alternatives_size]);
+		::memcpy(choice_sets_alternatives.get(), bulk_msg.model.dataset.choice_sets_alternatives.data(), choice_sets_alternatives_size);
+
+		::boost::scoped_array<int8_t> matrix_composite; 
+		size_type const matrix_composite_size(bulk_msg.model.dataset.matrix_composite.size());
+		if (matrix_composite_size != matrix_composite_elements)
+			throw netcpu::message::exception(xxx("new task has invalid messages. composite matrix size from meta message (=") << matrix_composite_elements << "), vs the actual size of composite matrix size in bulk message (=" << matrix_composite_size << ')');
+		matrix_composite.reset(new int8_t[matrix_composite_size]);
+		for (size_type i(0); i != matrix_composite_size; ++i)
+			matrix_composite[i] = netcpu::message::deserialise_from_unsigned_to_signed_integral(bulk_msg.model.dataset.matrix_composite(i));
+
+		uint8_t * choice_sets_alternatives_end;
+		int8_t * matrix_composite_end;
+
+		choice_sets_alternatives_end = choice_sets_alternatives.get() + choice_sets_alternatives_size;
+		assert(choice_sets_alternatives_end > choice_sets_alternatives.get());
+
+		matrix_composite_end = matrix_composite.get() + matrix_composite_size;
+		assert(matrix_composite_end > matrix_composite.get());
+
+		::std::vector<size_type> respondents_choice_sets;
+		size_type const respondents_size(bulk_msg.model.dataset.respondents_choice_sets.size());
+		respondents_choice_sets.reserve(respondents_size);
+		for (unsigned i(0); i != respondents_size; ++i)
+			respondents_choice_sets.push_back(bulk_msg.model.dataset.respondents_choice_sets(i));
+
+		size_type total_choicesets_from_respondents_choice_sets(0);
+		for (size_type i(0); i != respondents_size; total_choicesets_from_respondents_choice_sets += respondents_choice_sets[i++]);
+		if (total_choicesets_from_respondents_choice_sets != choice_sets_alternatives_size)
+			throw netcpu::message::exception(xxx("new task has invalid dataset. choicesets count from 'respondents_choice_sets' (=") << total_choicesets_from_respondents_choice_sets << "), vs choicesets count from choice_sets_alternatives' (=" << choice_sets_alternatives_size << ')');
+
+		size_type total_alternatives_count(0);
+		int8_t * matrix_composite_i(matrix_composite.get());
+		for (uint8_t * i(choice_sets_alternatives.get()); i != choice_sets_alternatives_end; total_alternatives_count += *i, ++i) {
+			if (*i > max_alternatives)
+				throw netcpu::message::exception("new task has invalid dataset -- max_alternatives from meta_msg does not agree with alternatives-count values in bulk_msg");
+			if (*i == ::boost::integer_traits<uint8_t>::const_max)
+				throw netcpu::message::exception("new task has invalid dataset -- too many alternatives");
+			int8_t * chosen_alternative_ptr(matrix_composite_i + *i * x_size);
+			if (chosen_alternative_ptr <= matrix_composite_i)
+				throw netcpu::message::exception("new task has invalid dataset -- chosen alternative in composite matrix is past valid array bounds");
+			if (*chosen_alternative_ptr < 0 || *chosen_alternative_ptr > *i)
+				throw netcpu::message::exception("new task has invalid dataset -- chosen alternative is not of valid value");
+			matrix_composite_i = chosen_alternative_ptr + 1;
+			if (matrix_composite_i < chosen_alternative_ptr || matrix_composite_i > matrix_composite_end)
+				throw netcpu::message::exception("new task has invalid dataset -- next choice set is past valid array bounds");
+		}
+		if (total_alternatives_count * x_size + choice_sets_alternatives_size != matrix_composite_size || matrix_composite_i != matrix_composite_end)
+			throw netcpu::message::exception("new task has invalid dataset -- overall composite matrix size does not agree with other thingies");
+
 		netcpu::message::new_taskname msg(t->name());
 		io().write(msg, &task_loader_detail::on_bulk_response_write, this);
-
 	}
 
 	void
@@ -1799,6 +1919,7 @@ struct task_loader_detail : netcpu::io_wrapper<netcpu::message::async_driver> {
 		assert(io().is_read_pending() == false);
 		t->markpending();
 		censoc::llog() << "task stored -- the model-specific loader is done with this task\n";
+		t.release();
 		new netcpu::peer_connection(io());
 	}
 
@@ -1817,11 +1938,18 @@ struct task_loader : netcpu::io_wrapper<netcpu::message::async_driver> {
 	task_loader(netcpu::message::async_driver & io_driver)
 	: netcpu::io_wrapper<netcpu::message::async_driver>(io_driver) {
 		io().write(netcpu::message::good(), &task_loader::on_write, this);
+		io().error_callback(&task_loader::on_error, this);
 		censoc::llog() << "ctor in task_loader in converger_1: " << this << ::std::endl;
 	}
 	~task_loader() throw()
 	{
 		censoc::llog() << "dtor of task_loader in converger_1: " << this << ::std::endl;
+	}
+
+	void
+	on_error(::std::string const &)
+	{
+		delete this;
 	}
 
 	void
@@ -1838,7 +1966,7 @@ struct task_loader : netcpu::io_wrapper<netcpu::message::async_driver> {
 		censoc::llog() << "read some...\n";
 		if (converger_1::message::res::myid != io().read_raw.id()) 
 			//delete this;
-			throw ::std::runtime_error(xxx("wrong message: [") << io().read_raw.id() << "] want res id: [" << static_cast<netcpu::message::id_type>(converger_1::message::res::myid) << ']');
+			throw netcpu::message::exception(xxx("wrong message: [") << io().read_raw.id() << "] want res id: [" << static_cast<netcpu::message::id_type>(converger_1::message::res::myid) << ']');
 
 		converger_1::message::res msg(io().read_raw);
 		censoc::llog() << "received res message\n";
@@ -1864,7 +1992,7 @@ struct task_loader : netcpu::io_wrapper<netcpu::message::async_driver> {
 		else if (msg.float_res() == converger_1::message::float_res<double>::value)
 			new task_loader_detail<IntRes, double, Model<IntRes, double>, ModelId >(io());
 		else // TODO -- may be as per 'on_read' -- write a bad message to client (more verbose)
-			throw ::std::runtime_error(xxx("unsupported floating resolution: [") << msg.float_res() << ']');
+			throw netcpu::message::exception(xxx("unsupported floating resolution: [") << msg.float_res() << ']');
 	}
 	void
 	on_bad_write()

@@ -45,12 +45,12 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 namespace censoc { namespace netcpu { namespace dataset_1 { namespace message {
 
+template <typename N>
 struct bulk  {
-	
-	netcpu::message::array<uint8_t> matrix_composite;
+	netcpu::message::array<typename netcpu::message::typepair<N>::wire> respondents_choice_sets;
+	netcpu::message::array<uint8_t> choice_sets_alternatives;
 
-	// hack indeed
-	void print() { }
+	netcpu::message::array<uint8_t> matrix_composite;
 };
 
 }}}}

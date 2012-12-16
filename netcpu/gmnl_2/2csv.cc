@@ -45,7 +45,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <netcpu/converger_1/message/res.h>
 #include <netcpu/converger_1/message/meta.h>
 #include <netcpu/converger_1/message/bulk.h>
-#include <netcpu/dataset_1/composite_matrix.h>
 #include "message/meta.h"
 #include "message/bulk.h"
 
@@ -66,7 +65,7 @@ extract()
 	typedef typename censoc::param<size_type>::type size_paramtype;
 
 	typedef netcpu::converger_1::message::meta<N, F, gmnl_2::message::meta<N> > meta_msg_type;
-	typedef netcpu::converger_1::message::bulk<N, F, gmnl_2::message::bulk> bulk_msg_type;
+	typedef netcpu::converger_1::message::bulk<N, F, gmnl_2::message::bulk<N> > bulk_msg_type;
 
 	netcpu::message::read_wrapper msg_wire;
 
@@ -76,16 +75,7 @@ extract()
 	netcpu::message::fstream_to_wrapper(meta_msg_file, msg_wire);
 	meta_msg_type meta_msg;
 	meta_msg.from_wire(msg_wire);
-	meta_msg.print();
-
-	size_type const alternatives(meta_msg.model.dataset.alternatives());
-	size_type const matrix_composite_rows(meta_msg.model.dataset.matrix_composite_rows()); 
-	size_type const matrix_composite_columns(meta_msg.model.dataset.matrix_composite_columns()); 
-	size_type const x_size(meta_msg.model.dataset.x_size()); 
-	::std::vector<size_type> respondents_choice_sets;
-	respondents_choice_sets.reserve(static_cast< ::std::size_t>(meta_msg.model.dataset.respondents_choice_sets.size()));
-	for (size_type i(0); i != meta_msg.model.dataset.respondents_choice_sets.size(); ++i) 
-		respondents_choice_sets.push_back(meta_msg.model.dataset.respondents_choice_sets(i));
+	//meta_msg.print();
 
 	::std::ifstream bulk_msg_file("bulk.msg", ::std::ios::binary);
 	if (bulk_msg_file == false)
@@ -94,29 +84,42 @@ extract()
 	bulk_msg_type bulk_msg;
 	bulk_msg.from_wire(msg_wire);
 
-	netcpu::dataset_1::composite_matrix<size_type, int> matrix_composite; 
-	matrix_composite.cast(bulk_msg.model.dataset.matrix_composite.data(), matrix_composite_rows, matrix_composite_columns);
+	::std::vector<uint8_t> choice_sets_alternatives(bulk_msg.model.dataset.choice_sets_alternatives.size());
+	::memcpy(choice_sets_alternatives.data(), bulk_msg.model.dataset.choice_sets_alternatives.data(), choice_sets_alternatives.size());
+	uint8_t * choice_sets_alternatives_ptr(choice_sets_alternatives.data());
 
+	::std::vector<int8_t> matrix_composite(bulk_msg.model.dataset.matrix_composite.size());
+	for (size_type i(0); i != matrix_composite.size(); ++i)
+		matrix_composite[i] = netcpu::message::deserialise_from_unsigned_to_signed_integral(bulk_msg.model.dataset.matrix_composite(i));
+	int8_t * matrix_composite_ptr(matrix_composite.data());
+
+	size_type const x_size(meta_msg.model.dataset.x_size()); 
 	assert(x_size);
+	::std::vector<size_type> respondents_choice_sets;
+	respondents_choice_sets.reserve(static_cast< ::std::size_t>(bulk_msg.model.dataset.respondents_choice_sets.size()));
+	for (size_type i(0); i != bulk_msg.model.dataset.respondents_choice_sets.size(); ++i) 
+		respondents_choice_sets.push_back(bulk_msg.model.dataset.respondents_choice_sets(i));
 
-	::std::cout << "resp" << separator << "obs" << separator << "alt" << separator << "choice";
-	for (size_type i(0); i != 4; ++i)
-		::std::cout << separator << "atr" << i + 1;
+	::std::cout << "respondent" << separator << "choice_set" << separator << "alternative" << separator << "choice";
+	for (size_type i(0); i != x_size; ++i)
+		::std::cout << separator << "attribute" << i + 1;
 	::std::cout << '\n';
 
-	for (size_type i(0), matrix_composite_row_i(0); i != respondents_choice_sets.size(); ++i) {
-		for (size_type t(0); t != respondents_choice_sets[i]; ++t, ++matrix_composite_row_i) {
-			size_type const choice(matrix_composite(matrix_composite_row_i, matrix_composite.cols() - 1));
-			for (size_type a(0); a != alternatives; ++a) {
+	for (size_type i(0); i != respondents_choice_sets.size(); ++i) {
+		for (size_type t(0); t != respondents_choice_sets[i]; ++t) {
+			uint8_t const alternatives(*choice_sets_alternatives_ptr++);
+			int8_t const choice(matrix_composite_ptr[alternatives * x_size]);
+			for (uint8_t a(0); a != alternatives; ++a) {
 				::std::cout << i + 1 << separator << t + 1 << separator << a + 1 << separator;
 				if (a == choice)
 					::std::cout << 1;
 				else
 					::std::cout << 0;
 				for (size_type x(0); x != x_size; ++x)
-					::std::cout << separator << matrix_composite(matrix_composite_row_i, x * alternatives + a);
+					::std::cout << separator << static_cast<int>(matrix_composite_ptr[x * alternatives + a]);
 				::std::cout << '\n';
 			}
+			matrix_composite_ptr += alternatives *  x_size + 1;
 		}
 	} 
 }

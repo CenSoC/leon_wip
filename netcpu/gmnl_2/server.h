@@ -57,7 +57,7 @@ namespace censoc { namespace netcpu { namespace gmnl_2 {
 template <typename N, typename F>
 struct model_traits {
 	typedef netcpu::converger_1::message::meta<N, F, gmnl_2::message::meta<N> > meta_msg_type;
-	typedef netcpu::converger_1::message::bulk<N, F, gmnl_2::message::bulk> bulk_msg_type;
+	typedef netcpu::converger_1::message::bulk<N, F, gmnl_2::message::bulk<N> > bulk_msg_type;
 };
 
 netcpu::converger_1::model_factory<gmnl_2::model_traits, netcpu::models_ids::gmnl_2> static factory;

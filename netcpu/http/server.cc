@@ -836,7 +836,7 @@ struct get_tasks_list : io_wrapper<http_adapter_driver> {
 					+ "\",\"range\":\"" + 
 					::boost::lexical_cast< ::std::string>(netcpu::message::deserialise_from_decomposed_floating<double>(task.coefficients[i].range))
 					+ "\"}"; 
-				if (i < task.coefficients.size())
+				if (i < task.coefficients.size() - 1)
 					rv += ',';
 			}
 			rv += ']';
@@ -1246,5 +1246,11 @@ main(int argc, char * * argv)
 }
 
 #include "../gmnl_2a/controller.h"
-::censoc::netcpu::converger_1::model_factory< ::censoc::netcpu::http_adapter_driver, ::censoc::netcpu::gmnl_2a::model_traits, ::censoc::netcpu::models_ids::gmnl_2a> static gmnl_2a_factory;
+#include "../gmnl_2/controller.h"
+#include "../mixed_logit/controller.h"
+#include "../logit/controller.h"
 
+::censoc::netcpu::converger_1::model_factory< ::censoc::netcpu::http_adapter_driver, ::censoc::netcpu::gmnl_2a::model_traits, ::censoc::netcpu::models_ids::gmnl_2a> static gmnl_2a_factory;
+::censoc::netcpu::converger_1::model_factory< ::censoc::netcpu::http_adapter_driver, ::censoc::netcpu::gmnl_2::model_traits, ::censoc::netcpu::models_ids::gmnl_2> static gmnl2_factory;
+::censoc::netcpu::converger_1::model_factory< ::censoc::netcpu::http_adapter_driver, ::censoc::netcpu::mixed_logit::model_traits, ::censoc::netcpu::models_ids::mixed_logit> static mixed_logit_factory;
+::censoc::netcpu::converger_1::model_factory< ::censoc::netcpu::http_adapter_driver, ::censoc::netcpu::logit::model_traits, ::censoc::netcpu::models_ids::logit> static logit_factory;

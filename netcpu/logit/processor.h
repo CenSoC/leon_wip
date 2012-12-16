@@ -50,7 +50,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <netcpu/converger_1/processor.h>
 
-#include <netcpu/dataset_1/composite_matrix.h>
 #include <netcpu/converger_1/message/bulk.h>
 
 #include "message/meta.h"
@@ -63,13 +62,13 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 // for the time-being model_factory_interface will be automatically declared, no need to include explicitly...
 namespace censoc { namespace netcpu { namespace logit { 
 
-template <typename N, typename F, typename EF>
-struct task_processor {
+template <typename N, typename F, typename EF, bool approximate_exponents>
+struct task_processor : censoc::exp_lookup::exponent_evaluation_choice<EF, typename netcpu::message::typepair<N>::ram, approximate_exponents> {
 
 	//{ typedefs...
 
 	typedef netcpu::converger_1::message::meta<N, F, logit::message::meta<N> > meta_msg_type;
-	typedef netcpu::converger_1::message::bulk<N, F, logit::message::bulk> bulk_msg_type;
+	typedef netcpu::converger_1::message::bulk<N, F, logit::message::bulk<N> > bulk_msg_type;
 
 	typedef F float_type;
 	typedef typename censoc::param<float_type>::type float_paramtype;
@@ -86,38 +85,40 @@ struct task_processor {
 	typedef censoc::array<coefficient_metadata_type, size_type> coefficients_metadata_type;
 	typedef typename censoc::param<coefficients_metadata_type>::type coefficients_metadata_paramtype;
 
+	typedef censoc::exp_lookup::exponent_evaluation_choice<EF, size_type, approximate_exponents> exponent_evaluation_choice_base;
+
 	//}
 
 	//{ data members
 
-	size_type const alternatives;
-
-	size_type const matrix_composite_rows; 
-	size_type const matrix_composite_columns; 
+#ifndef NDEBUG
+	size_type const max_alternatives;
+#endif
 	size_type const x_size;
 	::std::vector<size_type> respondents_choice_sets;
 	::std::vector<float_type> betas_mult_choice;
 
-	netcpu::dataset_1::composite_matrix<size_type, int> matrix_composite; 
+#ifndef NDEBUG
+	uint8_t * debug_choice_sets_alternatives_end;
+	int8_t * debug_matrix_composite_end;
+#endif
+	::boost::scoped_array<uint8_t> choice_sets_alternatives;
+	::boost::scoped_array<int8_t> matrix_composite; 
 
 	bool reduce_exp_complexity;
-
-	censoc::exp_lookup::linear_interpolation_linear_spacing<EF, size_type, 100> my_exp;
 
 	//}
 
 	// TODO -- later deprecate message.h typedef size_type and pass it via the template arg!!!
 	task_processor(meta_msg_type const & meta_msg)	
-	: alternatives(meta_msg.model.dataset.alternatives()), matrix_composite_rows(meta_msg.model.dataset.matrix_composite_rows()), matrix_composite_columns(meta_msg.model.dataset.matrix_composite_columns()), x_size(meta_msg.model.dataset.x_size()), 
-	betas_mult_choice(alternatives),
-	reduce_exp_complexity(meta_msg.model.reduce_exp_complexity()),
-	my_exp(1)// .99999)
+	: 
+#ifndef NDEBUG
+	max_alternatives(meta_msg.model.dataset.max_alternatives()),  
+#endif
+	x_size(meta_msg.model.dataset.x_size()), 
+	betas_mult_choice(meta_msg.model.dataset.max_alternatives()),
+	reduce_exp_complexity(meta_msg.model.reduce_exp_complexity())
 	{
-		size_type const respondents_size(meta_msg.model.dataset.respondents_choice_sets.size());
-		respondents_choice_sets.reserve(respondents_size);
-		for (unsigned i(0); i != respondents_size; ++i)
-			respondents_choice_sets.push_back(meta_msg.model.dataset.respondents_choice_sets(i));
-
 		censoc::llog() << "ctor in logit::task_processor\n";
 	}
 
@@ -133,7 +134,35 @@ public:
 	on_bulk_read(bulk_msg_type const & bulk_msg)
 	{
 		assert(bulk_msg.coeffs.size() == get_coefficients_size());
-		matrix_composite.cast(bulk_msg.model.dataset.matrix_composite.data(), matrix_composite_rows, matrix_composite_columns);
+
+		size_type const respondents_size(bulk_msg.model.dataset.respondents_choice_sets.size());
+		respondents_choice_sets.reserve(respondents_size);
+		for (unsigned i(0); i != respondents_size; ++i)
+			respondents_choice_sets.push_back(bulk_msg.model.dataset.respondents_choice_sets(i));
+
+		size_type const choice_sets_alternatives_size(bulk_msg.model.dataset.choice_sets_alternatives.size());
+		choice_sets_alternatives.reset(new uint8_t[choice_sets_alternatives_size]);
+		::memcpy(choice_sets_alternatives.get(), bulk_msg.model.dataset.choice_sets_alternatives.data(), choice_sets_alternatives_size);
+
+		size_type const matrix_composite_size(bulk_msg.model.dataset.matrix_composite.size());
+		matrix_composite.reset(new int8_t[matrix_composite_size]);
+		for (size_type i(0); i != matrix_composite_size; ++i)
+			matrix_composite[i] = netcpu::message::deserialise_from_unsigned_to_signed_integral(bulk_msg.model.dataset.matrix_composite(i));
+
+#ifndef NDEBUG
+		{
+		debug_choice_sets_alternatives_end = choice_sets_alternatives.get() + choice_sets_alternatives_size;
+		assert(debug_choice_sets_alternatives_end > choice_sets_alternatives.get());
+		debug_matrix_composite_end = matrix_composite.get() + matrix_composite_size;
+		assert(debug_matrix_composite_end > matrix_composite.get());
+		size_type total_choicesets_from_respondents_choice_sets(0);
+		for (size_type i(0); i != respondents_size; total_choicesets_from_respondents_choice_sets += respondents_choice_sets[i++]);
+		assert(total_choicesets_from_respondents_choice_sets == choice_sets_alternatives_size);
+		size_type total_alternatives_count(0);
+		for (uint8_t * i(choice_sets_alternatives.get()); i != debug_choice_sets_alternatives_end; total_alternatives_count += *i, ++i);
+		assert(total_alternatives_count * x_size + choice_sets_alternatives_size == matrix_composite_size);
+		}
+#endif
 	}
 
 	/** @note slightly verbose (thus not so optimised) implementation for the time-being
@@ -150,7 +179,10 @@ public:
 
 		float_type accumulated_probability(0); 
 
-		for (size_type i(0), matrix_composite_row_i(0); i != respondents_choice_sets.size(); ++i) {
+		uint8_t const * __restrict choice_sets_alternatives_ptr(choice_sets_alternatives.get());
+		int8_t const * __restrict matrix_composite_ptr(matrix_composite.get());
+
+		for (size_type i(0); i != respondents_choice_sets.size(); ++i) {
 
 #ifdef __WIN32__
 			if (!(i % 100) && netcpu::should_i_sleep == true) 
@@ -159,15 +191,21 @@ public:
 
 			extended_float_type respondent_probability(1);
 
-			for (size_type t(0); t != respondents_choice_sets[i]; ++t, ++matrix_composite_row_i) {
+			for (size_type t(0); t != respondents_choice_sets[i]; ++t) {
 
-				size_type const matrix_composite_thisrow_last_col_i(matrix_composite(matrix_composite_row_i, matrix_composite.cols() - 1));
-
+				assert(choice_sets_alternatives_ptr < debug_choice_sets_alternatives_end);
+				uint8_t const alternatives(*choice_sets_alternatives_ptr++);
+				assert(alternatives <= max_alternatives);
 				// setting first pass explicitly as opposed to additional call to 'set to zero' initially and then += ones...
 				assert(x_size);
+#ifndef NDEBUG
+				int8_t const * const debug_end_of_row_in_composite_matrix(matrix_composite_ptr + alternatives * x_size + 1);
+				assert(debug_end_of_row_in_composite_matrix <= debug_matrix_composite_end);
+#endif
 				// x == 0 (first pass)
 				for (size_type a(0); a != alternatives; ++a) {
-					int const control(matrix_composite(matrix_composite_row_i, a));
+					assert(matrix_composite_ptr < debug_end_of_row_in_composite_matrix);
+					int const control(*matrix_composite_ptr++);
 					switch (control) {
 					case 0: 
 						betas_mult_choice[a] = 0;
@@ -185,7 +223,8 @@ public:
 				// now to the rest of passes ( 1 <= x < x_size)
 				for (size_type x(1), alternatives_columns_begin(alternatives); x != x_size; ++x) {
 					for (size_type a(0); a != alternatives; ++a, ++alternatives_columns_begin) {
-						int const control(matrix_composite(matrix_composite_row_i, alternatives_columns_begin));
+					assert(matrix_composite_ptr < debug_end_of_row_in_composite_matrix);
+					int const control(*matrix_composite_ptr++);
 						switch (control) {
 						case 1:
 							betas_mult_choice[a] += coefficients[x].value();
@@ -198,7 +237,11 @@ public:
 						}
 					}
 				}
-
+				// move to the last column in row -- a chosen alternative
+				assert(matrix_composite_ptr < debug_end_of_row_in_composite_matrix);
+				size_type const chosen_alternative(*matrix_composite_ptr++);
+				assert(chosen_alternative < alternatives);
+				// todo some sanity-checking assertions
 
 				{
 					extended_float_type accum;
@@ -209,19 +252,14 @@ public:
 
 						// calculate 'exp' and aggregate across rows/alternatives
 						{ // a = 0, first alternative
-							accum =  
-								//my_exp.eval(betas_mult_choice[0]); 
-								::std::exp(betas_mult_choice[0]);
-							if (!matrix_composite_thisrow_last_col_i)
+							accum = exponent_evaluation_choice_base::eval(betas_mult_choice[0]);
+							if (!chosen_alternative)
 								exp_alts = accum;
 						}
 						for (size_type a(1); a != alternatives; ++a) {
-							extended_float_type const tmp(
-								//my_exp.eval(betas_mult_choice[a])
-								::std::exp(betas_mult_choice[a])
-							);
+							extended_float_type const tmp(exponent_evaluation_choice_base::eval(betas_mult_choice[a]));
 							accum += tmp;
-							if (a == matrix_composite_thisrow_last_col_i)
+							if (a == chosen_alternative)
 								exp_alts = tmp;
 						}
 						respondent_probability *=  exp_alts / accum;
@@ -230,18 +268,14 @@ public:
 					} else {
 
 						{ // a =0, first alternative
-							if (matrix_composite_thisrow_last_col_i) {
-								accum = 
-									//my_exp.eval(betas_mult_choice[0] - betas_mult_choice[matrix_composite_thisrow_last_col_i]); 
-									::std::exp(betas_mult_choice[0] - betas_mult_choice[matrix_composite_thisrow_last_col_i]);
+							if (chosen_alternative) {
+								accum = exponent_evaluation_choice_base::eval(betas_mult_choice[0] - betas_mult_choice[chosen_alternative]);
 							} else 
 								accum = 1;
 						}
 						for (size_type a(1); a != alternatives; ++a) {
-							if (a != matrix_composite_thisrow_last_col_i) {
-									accum += 
-										//my_exp.eval(betas_mult_choice[a] - betas_mult_choice[matrix_composite_thisrow_last_col_i]); 
-										::std::exp(betas_mult_choice[a] - betas_mult_choice[matrix_composite_thisrow_last_col_i]);
+							if (a != chosen_alternative) {
+									accum += exponent_evaluation_choice_base::eval(betas_mult_choice[a] - betas_mult_choice[chosen_alternative]);
 							} else
 								accum += 1;
 						}
@@ -279,13 +313,10 @@ public:
 
 		// todo verify meta parameters here (if processing size is too larg for RAM on this peer, then write 'bad' msg and issue 'read' -- the server should send 'end_process' when it feels like it, then can call in this prog 'delete this' and the underlying processor.h (peer_connection) in this prog will write a new 'ready to process' msg)
 
-		uint_fast64_t const matrix_composite_rows(meta_msg.model.dataset.matrix_composite_rows()); 
-		uint_fast64_t const matrix_composite_columns(meta_msg.model.dataset.matrix_composite_columns()); 
+		uint_fast64_t const matrix_composite_elements(meta_msg.model.dataset.matrix_composite_elements()); 
 
 		uint_fast64_t anticipated_ram_utilization(
-			sizeof(int) * (
-				matrix_composite_rows * matrix_composite_columns
-			)
+			matrix_composite_elements
 		); 
 
 		// todo -- define the guard for app and it's mem structs more correctly as opposed to this ugly hack

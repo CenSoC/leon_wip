@@ -43,9 +43,9 @@ SERVER_AT="localhost:8081"
 
 CMDLINE=" --server_cert certificate.pem --client_cert client_certificate.pem --client_key client_key.pem --server_at ${SERVER_AT} \
 --model 3:offer \
-	--filepath ../simul_data_gmnl.csv --x 5:6 --resp 1 --fromrow 2 --sort 1,2,3 --alts 2 --best 4 \
+	--filepath ../simul_data_gmnl.csv --x 5:6 --respondent 1 --choice_set 2 --alternative 3 --fromrow 2 --sort 1,2,3 --best 4 \
 	--repeats 1000 \
-	--int_resolution 32 --float_resolution single --extended_float_resolution double --complexity_size 88800000 --minimpr 1.0000001 --draws_sets_size 200 --shrink_slowdown 0.3 --dissect off --reduce_exp_complexity off \
+	--int_resolution 32 --float_resolution single --extended_float_resolution double --approximate_exponents true --complexity_size 88800000 --minimpr 1.0000001 --draws_sets_size 200 --shrink_slowdown 0.3 --dissect off --reduce_exp_complexity off \
 	--coeffs_atonce_size 4 \
 		--cm 1:-4:4:.003:4 \
 		--cm 3:0:4:.003:4 \

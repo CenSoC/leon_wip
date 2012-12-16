@@ -111,6 +111,7 @@ public:
 				}
 			}
 
+			assert(complexity_index);
 			::std::pair<typename ::std::map<size_type, ::std::vector<size_type> >::iterator, bool> combos_metadata_i(
 				combos_metadata.insert(::std::make_pair(complexity_index, ::std::vector<size_type>()))
 			);

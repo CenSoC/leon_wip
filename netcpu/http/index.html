@@ -2,6 +2,43 @@
 <html>
 <head>
 <meta content="text/html; charset=UTF-8" http-equiv="Content-Type" />
+<!--
+Written and contributed by Leonid Zadorin at the Centre for the Study of Choice
+(CenSoC), the University of Technology Sydney (UTS).
+
+Copyright (c) 2012 The University of Technology Sydney (UTS), Australia
+<www.uts.edu.au>
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+1. Redistributions of source code must retain the above copyright notice,
+this list of conditions and the following disclaimer.
+2. Redistributions in binary form must reproduce the above copyright notice,
+this list of conditions and the following disclaimer in the documentation
+and/or other materials provided with the distribution.
+3. All products which use or are derived from this software must display the
+following acknowledgement:
+  This product includes software developed by the Centre for the Study of
+  Choice (CenSoC) at The University of Technology Sydney (UTS) and its
+  contributors.
+4. Neither the name of The University of Technology Sydney (UTS) nor the names
+of the Centre for the Study of Choice (CenSoC) and contributors may be used to
+endorse or promote products which use or are derived from this software without
+specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE CENTRE FOR THE STUDY OF CHOICE (CENSOC) AT THE
+UNIVERSITY OF TECHNOLOGY SYDNEY (UTS) AND CONTRIBUTORS ``AS IS'' AND ANY 
+EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED 
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE 
+DISCLAIMED. IN NO EVENT SHALL THE CENTRE FOR THE STUDY OF CHOICE (CENSOC) OR
+THE UNIVERSITY OF TECHNOLOGY SYDNEY (UTS) OR CONTRIBUTORS BE LIABLE FOR ANY 
+DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES 
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; 
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON 
+ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT 
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS 
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+-->
 <title>WebNetCPU</title>
 
 <!-- style { -->
@@ -12,6 +49,7 @@ li {
 }
 
 .debug_log_to_server {
+	color: grey;
 	font-size:10pt;
 	font-family: mono;
 }
@@ -22,21 +60,44 @@ li {
 	font-family: mono;
 }
 
+div.beta {
+	background-color: yellow;
+	font-size:12pt;
+	text-align:center;
+	font-style:italic;
+	font-family: sans;
+	padding : 0.777em;
+}
+
 div.loading_please_wait {
 	background-color: yellow;
 	font-size:48pt;
 	text-align:center;
 }
 
-td.normalised_value {
+td.incomplete_value {
+	background-color: yellow;
+	color: black;
+}
+
+td.incomplete_normalised_value {
 	background-color: white;
 	color: black;
+}
+
+td.normalised_value {
+	background-color: green;
+	color: white;
 }
 
 body {
 	background-color: #eeeeff;
 	font-family: serif;
 	font-size:12pt;
+}
+
+.extra_option_text {
+	font-size:11pt;
 }
 
 .coefficients_not_ready, .task_order_column, .hinting_text {
@@ -175,8 +236,12 @@ td.left_td {
 
 input {
 	padding: 1pt;
-	background-color: #ddddee;
+	/* background-color: #ddddee; */
+	background-color: white;
 	text-align:right;
+}
+input:disabled {
+	background-color: #dfdfdf;
 }
 
 table, th, td {
@@ -207,7 +272,8 @@ input.number {
 <script type="text/javascript">
 
 // TODO -- later on will have a whole array of possible servers whilst being able to determine which one to use (ala partial remedy/mitigation w.r.t. denial of service attacks where load-balancing is also actively done at the client/browser end)
-var server_at = "https://localhost:8055/";
+//var server_at = "https://localhost:8055/";
+var server_at = "https://localhost:8081/";
 //"https://webnetcpu.zapto.org:443/"
 
 var http_request;
@@ -710,7 +776,7 @@ function select_csv_column_type(pid, i)
 
 	tmp = document.createElement("option");
 	tmp.value = 2;
-	tmp.appendChild(document.createTextNode("Observation"));
+	tmp.appendChild(document.createTextNode("Choice-Set"));
 	this.gui.appendChild(tmp);
 
 	tmp = document.createElement("option");
@@ -798,14 +864,12 @@ function help_content_type(title, source_id)
 	title_span.appendChild(document.createTextNode(title));
 	this.gui.appendChild(title_span);
 	var label = document.createElement("label");
-	label.id = "help_context_type_span_show" + source_id;
 	label.className = "help_content_title";
 	label.appendChild(document.createTextNode(" (show help"));
 	this.checkbox = document.createElement("input");
 	this.checkbox.type = "checkbox";
 	this.checkbox.checked = false;
 	this.checkbox.pid = this;
-	this.checkbox.id = "help_context_type_span_show" + source_id;
 	this.checkbox.onchange = function ()
 	{
 		if (this.checked == true)
@@ -1143,14 +1207,52 @@ function new_task_type()
 	tmp_tbl.appendChild(tmp_tr);
 
 	tmp_tr = document.createElement("tr");
+
 	tmp_td = document.createElement("td");
-	tmp_td.appendChild(document.createTextNode("Alternatives per question:"));
+	var label = document.createElement("label");
+	label.appendChild(document.createTextNode("Exclude rows where any attribute-value is:"));
+	label.className = "extra_option_text"
+	label.htmlFor = "csv_data_wildcard_delete_rows_value";
+
+	tmp_td.appendChild(label);
 	tmp_tr.appendChild(tmp_td);
+
 	tmp_td = document.createElement("td");
-	this.csv_data_alternatives_size = document.createElement("input");
-	this.csv_data_alternatives_size.size = 5;
-	tmp_td.appendChild(this.csv_data_alternatives_size);
+	this.csv_data_wildcard_delete_rows_value = document.createElement("input");
+	this.csv_data_wildcard_delete_rows_value.disabled = true;
+	var checkbox = document.createElement("input");
+	checkbox.type = "checkbox";
+	checkbox.checked = false;
+	checkbox.wildcard_value = this.csv_data_wildcard_delete_rows_value;
+	checkbox.id = "csv_data_wildcard_delete_rows_value";
+	checkbox.onchange = function()
+	{
+		if (this.checked == true)
+			this.wildcard_value.disabled = false;
+		else
+			this.wildcard_value.disabled = true;
+	}
+	this.csv_data_wildcard_delete_rows_value.size = 5;
+	tmp_td.appendChild(this.csv_data_wildcard_delete_rows_value);
+	tmp_td.appendChild(checkbox);
 	tmp_tr.appendChild(tmp_td);
+
+	tmp_tbl.appendChild(tmp_tr);
+
+	tmp_tr = document.createElement("tr");
+
+	tmp_td = document.createElement("td");
+	tmp_td.colSpan = 2;
+	var label = document.createElement("label");
+	label.appendChild(document.createTextNode("Perform sorting of dataset "));
+	label.className = "extra_option_text"
+	this.csv_data_sort = document.createElement("input");
+	this.csv_data_sort.type = "checkbox";
+	this.csv_data_sort.checked = false;
+	label.appendChild(this.csv_data_sort);
+	tmp_td.appendChild(label);
+	tmp_tr.appendChild(tmp_td);
+
 	tmp_tbl.appendChild(tmp_tr);
 
 	td.appendChild(tmp_tbl);
@@ -1301,10 +1403,12 @@ function new_task_type()
 	this.floating_point_resolution.size = 1;
 
 	var tmp_option;
+	/*
 	tmp_option = document.createElement("option");
 	tmp_option.value = 0;
 	tmp_option.appendChild(document.createTextNode("not set"));
 	this.floating_point_resolution.appendChild(tmp_option);
+	*/
 
 	tmp_option = document.createElement("option");
 	tmp_option.value = 1;
@@ -1332,10 +1436,12 @@ function new_task_type()
 	this.extended_floating_point_resolution.size = 1;
 
 	var tmp_option;
+	/*
 	tmp_option = document.createElement("option");
 	tmp_option.value = 0;
 	tmp_option.appendChild(document.createTextNode("not set"));
 	this.extended_floating_point_resolution.appendChild(tmp_option);
+	*/
 
 	tmp_option = document.createElement("option");
 	tmp_option.value = 1;
@@ -1363,10 +1469,12 @@ function new_task_type()
 	this.integer_resolution.size = 1;
 
 	var tmp_option;
+	/*
 	tmp_option = document.createElement("option");
 	tmp_option.value = 0;
 	tmp_option.appendChild(document.createTextNode("not set"));
 	this.integer_resolution.appendChild(tmp_option);
+	*/
 
 	tmp_option = document.createElement("option");
 	tmp_option.value = 1;
@@ -1384,7 +1492,32 @@ function new_task_type()
 
 	tmp_tbl.appendChild(tmp_tr);
 
+	tmp_tr = document.createElement("tr");
+	tmp_td = document.createElement("td");
+	tmp_td.appendChild(document.createTextNode("Approximate exponents:"));
+	tmp_tr.appendChild(tmp_td);
 
+	tmp_td = document.createElement("td");
+	this.approximate_exponents = document.createElement("select");
+	this.approximate_exponents.size = 1;
+
+	var tmp_option;
+
+	tmp_option = document.createElement("option");
+	tmp_option.value = 1;
+	tmp_option.selected = true;
+	tmp_option.appendChild(document.createTextNode("ON"));
+	this.approximate_exponents.appendChild(tmp_option);
+
+	tmp_option = document.createElement("option");
+	tmp_option.value = 0;
+	tmp_option.appendChild(document.createTextNode("Off"));
+	this.approximate_exponents.appendChild(tmp_option);
+
+	tmp_td.appendChild(this.approximate_exponents);
+	tmp_tr.appendChild(tmp_td);
+
+	tmp_tbl.appendChild(tmp_tr);
 
 	td.appendChild(tmp_tbl);
 
@@ -1410,45 +1543,48 @@ function new_task_type()
 	this.to_server = document.createElement("pre"); 
 	// this.to_server.innerHTML = "";
 	this.to_server.className = "debug_log_to_server";
-	td.appendChild(this.to_server);
+
 	this.from_server = document.createElement("pre");
 	this.from_server.className = "debug_log_from_server";
 	td.appendChild(this.from_server);
 
 	tmp = document.createElement("button")
 	tmp.pid = this;
+	tmp.bail_on_wrong_user_values = function(text)
+	{
+		alert(text);
+		this.disabled = false;
+	}
 	tmp.onclick = function() 
 	{
 
 		this.disabled = true;
 		var form = new FormData();
 
-		var alternatives_size = parseInt(this.pid.csv_data_alternatives_size.value);
 		var fromrow = parseInt(this.pid.csv_data_from_row.value);
 		var model = parseInt(this.pid.model.value);
 		var floating_point_resolution = parseInt(this.pid.floating_point_resolution.value);
 		var extended_floating_point_resolution = parseInt(this.pid.extended_floating_point_resolution.value);
 		var integer_resolution = parseInt(this.pid.integer_resolution.value);
+		var approximate_exponents = parseInt(this.pid.approximate_exponents.value);
 		var complexity_size = parseInt(this.pid.complexity_size.value);
 		var minimpr = parseFloat(this.pid.minimpr.value);
 		var draws_sets_size = parseInt(this.pid.draws_sets_size.value);
 		var shrink_slowdown = parseFloat(this.pid.shrink_slowdown.value);
 		var repeats = parseInt(this.pid.repeats.value);
 
-		var cli_string = "A SMART WAY TO SPECIFY THE ABOVE WOULD HAVE BEEN:\n";
+		var cli_string = "some debug/CLI info:\n";
 
 		cli_string += "--model " + model + ":offer\n";
 		cli_string += "--fromrow " + fromrow  + '\n';
-		cli_string += "--alts " + alternatives_size + '\n';
 
 		form.append("--model_id", model);
 		form.append("--fromrow", fromrow);
-		form.append("--alts", alternatives_size);
 
 		var attributes_size = 0;
 		var attributes = [];
 		var respondent_i = 0;
-		var choiceset_i = 0;
+		var choice_set_i = 0;
 		var alternative_i = 0;
 		var choice_i = 0; 
 		for (var i = 0; i != this.pid.csv_column_types.length; ++i) {
@@ -1457,7 +1593,7 @@ function new_task_type()
 					respondent_i = i + 1;
 					break;
 				case '2':
-					choiceset_i = i + 1;
+					choice_set_i = i + 1;
 					break;
 				case '3':
 					alternative_i = i + 1;
@@ -1472,10 +1608,8 @@ function new_task_type()
 			}
 		}
 
-		if (repeats < 1 || shrink_slowdown >= 1 || shrink_slowdown < 0 || draws_sets_size < 1 || minimpr < 1 || !floating_point_resolution || !extended_floating_point_resolution || !integer_resolution || !attributes.length || !model || !respondent_i || !choiceset_i || !choice_i || isNaN(fromrow) == true || fromrow < 1  || isNaN(alternatives_size) == true || alternatives_size < 2 || !this.pid.cli_coefficient_range_metadata.length) {
-			alert("Did not fill all of the values properly... naughty naughty...");
-			return; // TODO 
-		}
+		if (repeats < 1 || shrink_slowdown >= 1 || shrink_slowdown < 0 || draws_sets_size < 1 || minimpr < 1 || !floating_point_resolution || !extended_floating_point_resolution || !integer_resolution || !attributes.length || !model || !respondent_i || !choice_set_i || !alternative_i || !choice_i || isNaN(fromrow) == true || fromrow < 1  || !this.pid.cli_coefficient_range_metadata.length) 
+			return this.bail_on_wrong_user_values("Did not fill all of the values properly... naughty naughty...");
 
 		switch (integer_resolution) {
 			case 1:
@@ -1486,6 +1620,13 @@ function new_task_type()
 				cli_string += "--int_resolution 64\n";
 				form.append("--int_resolution", 64);
 				break;
+		}
+		if (approximate_exponents) {
+			cli_string += "--approximate_exponents true\n";
+			form.append("--approximate_exponents", 'true');
+		} else {
+			cli_string += "--approximate_exponents false\n";
+			form.append("--approximate_exponents", 'false');
 		}
 		switch (floating_point_resolution) {
 			case 1:
@@ -1508,8 +1649,14 @@ function new_task_type()
 				break;
 		}
 
-		cli_string += "--resp " + respondent_i + '\n';
-		form.append("--resp", respondent_i);
+		cli_string += "--respondent " + respondent_i + '\n';
+		form.append("--respondent", respondent_i);
+
+		cli_string += "--choice_set " + choice_set_i + '\n';
+		form.append("--choice_set", choice_set_i);
+
+		cli_string += "--alternative " + alternative_i + '\n';
+		form.append("--alternative", alternative_i);
 
 		cli_string += "--repeats " + repeats + '\n';
 		form.append("--repeats", repeats);
@@ -1529,15 +1676,23 @@ function new_task_type()
 		cli_string += "--shrink_slowdown " + shrink_slowdown + '\n';
 		form.append("--shrink_slowdown", shrink_slowdown);
 
+		if (this.pid.csv_data_wildcard_delete_rows_value.disabled == false && this.pid.csv_data_wildcard_delete_rows_value.value.length) {
+			if (isNaN(this.pid.csv_data_wildcard_delete_rows_value.value))
+				return this.bail_on_wrong_user_values("\"Exclude rows where any attribute-value is\" must be a number.");
+			cli_string += "--del *:eq:" + this.pid.csv_data_wildcard_delete_rows_value.value + '\n';
+			form.append("--del", "*:eq:" + this.pid.csv_data_wildcard_delete_rows_value.value) + '\n';
+		}
+
 		cli_string += "--dissect off\n--reduce_exp_complexity off\n";
 		form.append("--dissect", "off");
 		form.append("--reduce_exp_complexity", "off");
 
-		var sort_str = respondent_i + ',' + choiceset_i;
-		if (alternative_i != -1)
+		if (this.pid.csv_data_sort.checked == true) {
+			var sort_str = respondent_i + ',' + choice_set_i;
 			sort_str += ',' + alternative_i;
-		cli_string += "--sort " + sort_str + '\n';
-		form.append("--sort", sort_str);
+			cli_string += "--sort " + sort_str + '\n';
+			form.append("--sort", sort_str);
+		}
 
 		var tmp_attribute_i = 0;
 		var x_str = attributes[0];
@@ -1583,9 +1738,8 @@ function new_task_type()
 		// subsequent coefficients metadata stuff
 		for (var i = 0; i < this.pid.subsequent_complexities_size.value; ++i) {
 			var subsequent_complexity = this.pid.subsequent_complexities[i];
-			if (parseInt(subsequent_complexity.coeffs_atonce.value) < 1) {
-				alert("Subsequent compelxity table(=" + (i + 1) + ") does not have valid number of x-coefficients-@-once complexity.");
-			}
+			if (parseInt(subsequent_complexity.coeffs_atonce.value) < 1)
+				return this.bail_on_wrong_user_values("Subsequent compelxity table(=" + (i + 1) + ") does not have valid number of x-coefficients-@-once complexity.");
 			cli_string += "--coeffs_atonce_size " + subsequent_complexity.coeffs_atonce.value + '\n';
 			form.append("--coeffs_atonce_size", subsequent_complexity.coeffs_atonce.value);
 			last_row = "";
@@ -1614,6 +1768,8 @@ function new_task_type()
 		http_request.pid = this.pid;
 		http_request.btn = this;
 		http_request.withCredentials = true;
+		http_request.form_to_send = form;
+		http_request.spurious_try_again_flag = true;
 		http_request.onreadystatechange = function()
 		{
 			if (this.readyState == 4) {
@@ -1626,9 +1782,15 @@ function new_task_type()
 					} else if (obj.error) {
 						this.pid.from_server.innerHTML = "Server says BAD: " + obj.error;
 					}
+				} else if (this.status != 0 || this.spurious_try_again_flag == false) {
+					this.pid.from_server.innerHTML = "Epic fail... [specifics are not yet diagnosed properly, the browser-communicated status code is " + this.status + ']';
 				} else {
-					this.pid.from_server.innerHTML = "Epic fail...";
+					this.spurious_try_again_flag = false;
+					this.open("POST", server_at + "new_task");
+					this.send(this.form_to_send);
 				}
+			} else if (this.readyState == 0) {
+				this.btn.disabled = false;
 			}
 		}
 		http_request.open("POST", server_at + "new_task");
@@ -1649,6 +1811,7 @@ function new_task_type()
 	}
 	td.appendChild(tmp);
 
+	td.appendChild(this.to_server);
 
 	tr.appendChild(td);
 	this.gui.appendChild(tr);
@@ -1729,24 +1892,29 @@ function batch_fill_context_menu_type()
 		this.cell_gui.className = "coeff_metadata_selected";
 		this.highlighted_cell_gui = this.cell_gui;
 		this.hidden = false;
-		this.gui.style.left = this.x + window.pageXOffset + "px";
-		this.gui.style.top = this.y  + window.pageYOffset+ "px";
+
+		var visible_dims = document.getElementById("visible_dims");
+		
+		this.gui.style.left = "0px";
+		this.gui.style.top = "0px";
 		document.body.appendChild(this.gui);
 
 		var right = this.gui.clientWidth + this.x;
-		if (right > document.body.clientWidth) {
-			this.x = this.x - right + document.body.clientWidth;
+		if (right > visible_dims.scrollWidth) {
+			this.x = this.x - right + visible_dims.scrollWidth;
 			if (this.x < 0)
 				this.x = 0;
 			this.gui.style.left = this.x + window.pageXOffset + "px";
-		}
+		} else
+			this.gui.style.left = this.x + window.pageXOffset + "px";
 		var bottom = this.gui.clientHeight + this.y;
-		if (bottom > document.body.clientHeight) {
-			this.y = this.y - bottom + document.body.clientHeight;
+		if (bottom > visible_dims.scrollHeight) {
+			this.y = this.y - bottom + visible_dims.scrollHeight;
 			if (this.y < 0)
 				this.y = 0;
 			this.gui.style.top = this.y + window.pageYOffset + "px";
-		}
+		} else
+			this.gui.style.top = this.y  + window.pageYOffset+ "px";
 	}
 	this.hide = function()
 	{
@@ -1893,10 +2061,14 @@ function canvas_painter_type(canvas, coefficients, task_name, model_id, betas_si
 		this.ctx.fillStyle = "#000000";
 		this.ctx.strokeStyle = "#000000";
 		this.ctx.lineWidth = 0.5;
+		/*
 		this.ctx.beginPath();
 		this.ctx.moveTo(0, this.zero_line_y);
 		this.ctx.lineTo(this.width, this.zero_line_y);
 		this.ctx.stroke();
+		*/
+
+		var coefficient_centre;
 
 		if (this.model_id != 1) {
 
@@ -1909,6 +2081,18 @@ function canvas_painter_type(canvas, coefficients, task_name, model_id, betas_si
 				//this.ctx.closePath();
 			}
 
+		}
+
+		this.ctx.fillStyle = "lightgrey";
+		coefficient_centre = this.coefficient_circle_radius;
+		this.ctx.beginPath();
+		for (var i = 0; i != this.betas_size; ++i, coefficient_centre += this.coefficient_centre_stepsize) {
+			var y = this.value_to_y_coord(this.coefficients[i].normalised_value + normals[(i + normals_i * this.coefficients.length) %  normals.length] * this.coefficients[i + this.betas_size].normalised_value);
+			this.coefficients[i].tmp_y = y;
+			this.ctx.beginPath();
+			this.ctx.arc(coefficient_centre, y, this.coefficient_circle_radius * .5, 0, Math.PI * 2);
+			this.ctx.fill();
+			this.ctx.closePath();
 		}
 
 		this.ctx.beginPath();
@@ -1935,16 +2119,14 @@ function canvas_painter_type(canvas, coefficients, task_name, model_id, betas_si
 		this.ctx.moveTo(this.coefficient_circle_radius, this.coefficients[0].tmp_y);
 		coefficient_centre = this.coefficient_circle_radius * 3 + this.coefficient_circle_padding;
 		for (var i = 1; i < this.betas_size; ++i, coefficient_centre += this.coefficient_centre_stepsize) {
-			var y = this.value_to_y_coord(this.coefficients[i].normalised_value + normals[(i + normals_i * this.coefficients.length) %  normals.length] * this.coefficients[i + this.betas_size].normalised_value);
-			this.coefficients[i].tmp_y = y;
-			this.ctx.lineTo(coefficient_centre, y);
+			this.ctx.lineTo(coefficient_centre, this.coefficients[i].tmp_y);
 		}
 		this.ctx.stroke();
 		//this.ctx.closePath();
 
 		this.ctx.strokeStyle = "black";
 		this.ctx.lineWidth = 0.77;
-		var coefficient_centre = this.coefficient_circle_radius;
+		coefficient_centre = this.coefficient_circle_radius;
 		this.ctx.beginPath();
 		for (var i = 0; i != this.betas_size; ++i, coefficient_centre += this.coefficient_centre_stepsize) {
 
@@ -2090,6 +2272,8 @@ function tasks_list_type()
 				http_request = new XMLHttpRequest();
 				http_request.pid = this.pid;
 				http_request.inpt = this;
+				http_request.spurious_try_again_flag = true;
+				http_request.form_to_send = form;
 				http_request.withCredentials = true;
 				http_request.onreadystatechange = function()
 				{
@@ -2103,9 +2287,15 @@ function tasks_list_type()
 							} else if (obj.error) {
 								this.pid.display_status("Server says hmmm: " + obj.error);
 							}
+						} else if (this.status != 0 || this.spurious_try_again_flag == false) {
+							this.pid.display_status("Epic fail... [specifics are not yet diagnosed properly, the browser-communicated status code is " + this.status + ']');
 						} else {
-							this.pid.display_status("Epic fail...");
+							this.spurious_try_again_flag = false;
+							http_request.open("POST", server_at + "move_task_in_list");
+							this.send(this.form_to_send);
 						}
+					} else if (this.readyState == 0) {
+						this.inpt.disabled = false;
 					}
 				}
 				http_request.open("POST", server_at + "move_task_in_list");
@@ -2124,7 +2314,6 @@ function tasks_list_type()
 			td = document.createElement("td");
 			var label = document.createElement("label");
 			label.className = "help_content_fieldname";
-			label.id = "task_list_expand_task" + i;
 			label.appendChild(document.createTextNode("show details"));
 			var checkbox = document.createElement("input");
 			checkbox.type = "checkbox";
@@ -2133,10 +2322,10 @@ function tasks_list_type()
 			else
 				checkbox.checked = false;
 			checkbox.pid = this;
-			checkbox.id = "task_list_expand_task" + i;
 			if (tasks[i].coefficients)
 				checkbox.coefficients = tasks[i].coefficients;
 			checkbox.task_name = tasks[i].name;
+			checkbox.task_complete = (tasks[i].state == "complete" ? true : false);
 			checkbox.row = tr;
 			checkbox.table = tbl;
 			checkbox.model_id = tasks[i].name.split(/[_\-x]/g)[1];
@@ -2236,11 +2425,15 @@ function tasks_list_type()
 
 						tr_ = document.createElement("tr");
 						td_ = document.createElement("td");
+						if (this.task_complete == false)
+							td_.className = "incomplete_value";
 						td_.appendChild(document.createTextNode("Range"));
 						tr_.appendChild(td_);
 						for (var i = 0; i != this.coefficients.length; ++i) {
 							td_ = document.createElement("td");
-							td_.appendChild(document.createTextNode(this.coefficients[i].range));
+							if (this.task_complete == false)
+								td_.className = "incomplete_value";
+							td_.appendChild(document.createTextNode(parseFloat(parseFloat(this.coefficients[i].range).toFixed(3))));
 							tr_.appendChild(td_);
 						}
 						tbl_.appendChild(tr_);
@@ -2251,20 +2444,26 @@ function tasks_list_type()
 						tr_.appendChild(td_);
 						for (var i = 0; i != this.coefficients.length; ++i) {
 							td_ = document.createElement("td");
-							td_.appendChild(document.createTextNode(this.coefficients[i].value));
+							td_.appendChild(document.createTextNode(parseFloat(parseFloat(this.coefficients[i].value).toFixed(3))));
 							tr_.appendChild(td_);
 						}
 						tbl_.appendChild(tr_);
 
 						tr_ = document.createElement("tr");
 						td_ = document.createElement("td");
-						td_.className = "normalised_value";
+						if (this.task_complete == true)
+							td_.className = "normalised_value";
+						else
+							td_.className = "incomplete_normalised_value";
 						td_.appendChild(document.createTextNode("Normalised value"));
 						tr_.appendChild(td_);
 						for (var i = 0; i != this.coefficients.length; ++i) {
 							td_ = document.createElement("td");
 							if (this.coefficients[i]["normalised_value"] != null) {
-								td_.className = "normalised_value";
+								if (this.task_complete == true)
+									td_.className = "normalised_value";
+								else
+									td_.className = "incomplete_normalised_value";
 								td_.appendChild(document.createTextNode(parseFloat(this.coefficients[i].normalised_value.toFixed(3))));
 							}
 							tr_.appendChild(td_);
@@ -2334,6 +2533,8 @@ function tasks_list_type()
 					http_request = new XMLHttpRequest();
 					http_request.pid = this.pid;
 					http_request.btn = this;
+					http_request.spurious_try_again_flag = true;
+					http_request.form_to_send = form;
 					http_request.withCredentials = true;
 					http_request.onreadystatechange = function()
 					{
@@ -2347,9 +2548,15 @@ function tasks_list_type()
 								} else if (obj.error) {
 									this.pid.display_status("Server says hmmm: " + obj.error);
 								}
+							} else if (this.status != 0 || this.spurious_try_again_flag == false) {
+								this.pid.display_status("Epic fail... [specifics are not yet diagnosed properly, the browser-communicated status code is " + this.status + ']');
 							} else {
-								this.pid.display_status("Epic fail...");
+								this.spurious_try_again_flag = false;
+								http_request.open("POST", server_at + "delete_task");
+								this.send(this.form_to_send);
 							}
+						} else if (this.readyState == 0) {
+							this.btn.disabled = false;
 						}
 					}
 					http_request.open("POST", server_at + "delete_task");
@@ -2390,6 +2597,13 @@ function tasks_list_type()
 			tasks[i] = new function() {
 				this.name = i + "_3-1x2";
 				this.state = "pending";
+				this.coefficients = [
+					{ value : 0.3 , from : 0.1 , range : 0.5 }, 
+					{ value : -0.7 , from : -0.8 , range : 0.2 }, 
+					{ value : 0.9 , from : 0.89 , range : 0.1 }, 
+					{ value : 0.1 , from : 0.1 , range : 0.1 }, 
+					{ value : -0.7 , from : -0.8 , range : 0.2 }, 
+				];
 			}
 		}
 		for (var i = 5; i != 8; ++i) {
@@ -2424,6 +2638,7 @@ function tasks_list_type()
 
 		http_request = new XMLHttpRequest();
 		http_request.pid = this;
+		http_request.spurious_try_again_flag = true;
 		http_request.withCredentials = true;
 		http_request.onreadystatechange = function()
 		{
@@ -2438,9 +2653,14 @@ function tasks_list_type()
 						this.pid.blahblah(obj.tasks);
 						return;
 					}
+				} else if (this.status != 0 || this.spurious_try_again_flag == false) {
+					this.pid.display_status("Epic fail... [specifics are not yet diagnosed properly, the browser-communicated status code is " + this.status + ']');
+				} else {
+					this.spurious_try_again_flag = false;
+					http_request.open("GET", server_at + "get_tasks_list");
+					this.send();
 				}
-				this.pid.display_status("Epic fail...");
-			}
+			} 		
 		}
 		http_request.open("GET", server_at + "get_tasks_list");
 		http_request.send();
@@ -2450,6 +2670,10 @@ function tasks_list_type()
 function main_menu_type()
 {
 	this.gui = document.createElement("div");
+	var beta_div = document.createElement("div");
+	beta_div.className = "beta";
+	beta_div.appendChild(document.createTextNode("Pease note: this software is pre-BETA. Expect multitude of bugs and nasty surprises."));
+	this.gui.appendChild(beta_div);
 
 	var tbl = document.createElement("table");
 	tbl.className = "centered_table";
@@ -2548,11 +2772,16 @@ function timer_callback()
 <body onload="main();" onclick="batch_fill_context_menu.hide();">
 <div class="help_content" id="help_model_content">
 <br>
-Available models: (<a href="http://en.wikipedia.org/wiki/Multinomial_logit" target="_blank">Logit</a>, <a href="http://en.wikipedia.org/wiki/Mixed_logit" target="_blank">Mixed logit</a>, <a href="www.censoc.uts.edu.au/researchoutput/wp09-002.pdf" target="_blank">GMNL-II</a>, <a href="https://github.com/downloads/CenSoC/leon_wip/GMNL2a.pdf" target="_blank">Gmnl2a</a>). Wherever applicable: 
+Available models: (<a href="http://en.wikipedia.org/wiki/Multinomial_logit" target="_blank">Logit</a>, <a href="http://en.wikipedia.org/wiki/Mixed_logit" target="_blank">Mixed logit</a>, <a href="http://www.censoc.uts.edu.au/researchoutput/wp09-002.pdf" target="_blank">GMNL-II</a>, <a href="https://github.com/downloads/CenSoC/leon_wip/GMNL2a.pdf" target="_blank">Gmnl2a</a>). <br>Wherever applicable: 
 <ul>
-<li>Normal distribution is used for betas' variance and 
+<li>Normal distribution is used for &beta; variances. 
 </li>
-<li>Custom distribution (similar to lognormal of e^<sup>x</sup>, but not quite) is used for the scale parameter: 1 + x for x > 0 and 1 / (1 - x) for x < 0 where x is drawn from the normal distribution.
+<li>Custom distribution (similar to lognormal of e^<sup>x</sup>, but not quite) is used for the scale parameter: 
+<ul>
+<li>1 + x for x &gt; 0 and</li>
+<li>1 / (1 - x) for x &lt; 0</li> 
+</ul>
+where x is drawn from the normal distribution.
 </li>
 <li>
 From mathematical standpoint, &eta; symbols do not denote variance but rather standard deviation (normal distribution of variance value one is scaled (widenede/narrowed) by the value contained in corresponding &eta;. 
@@ -2564,9 +2793,6 @@ Additionally, Gmnl2a may not preserve the "ratio" between attributes, nor their 
 <div class="help_content" id="help_dataset_content" >
 File must be in a .CSV (coma separated values) format. Layout requirements are:
 <ul>
-<li>
-All questions must have same number of alternatives (as per <span class="help_content_fieldname">Alternatives per question</span> configuration field below).
-</li>
 <li>
 Each alternative's data is a row.
 </li>
@@ -2583,11 +2809,18 @@ There must be a <span class="help_content_fieldname">respondent</span> column (i
 There must be a <span class="help_content_fieldname">question</span> (a.k.a. observation or choice-set) column -- grouping relevant alternatives into a given choice set.
 </li>
 <li>
-There may be an <span class="help_content_fieldname">alternative</span> column (with values enumerating alternatives in any given choiceset).
+There must be an <span class="help_content_fieldname">alternative</span> column (with values enumerating alternatives in any given choice set).
 </li>
 </ul>
 <p>
+Different respondents may have different number of choice sets. Different choice sets may have different numebr of alternatives. All rows, however, must have the same attributes.
+<p>
 Many data files will have title row(s). <span class="help_content_fieldname">Data starts from row no</span> configuration field specifies the row number from which the actual data begins.
+<p>
+Some data files may be produced by some clumsy software which is too lazy to delete irrelevant rows from the dataset. Temporarily (and without setting precedence of any kind) this mechanisms is allowed to be done from this interface -- any attribute (in any given row) whose value is equal to that specified in
+<span class="help_content_fieldname">Exclude rows where any attribute-value is</span> field will be excluded from computation (i.e. deleted when it is sent to the server for processing). Such an approach may be deprecated in future as it may lead to an over-clutter of different buttons/options/features for a wide variety of different data-producing software packages. This will result in a mess -- a lot of buttons, etc. where only a few are relevant to any given user. Instead, in future, an approach may be adopted where additional utilities are used to prepare the dataset separately from this interface and then being able to upload such a 'federated standard' data file to the server via this interface. The deployment of any given preparation utility will be the responsibilty of the user who had chosen to use whichever lazy/clumsy dataset-producing software in the first place.
+<p> 
+Some data files may not be pre-grouped/ordered by respondent/choice set/alternative columns. Selecting the <span class="help_content_fieldname">Perform sorting of dataset</span> option will request the processing server to sort the uploaded .csv file by the aforementioned columns. This may add to the time taken to add a task, so don't tick the checkbox if the supplied dataset is already sorted. Once again, this feature may be deprecated in the near future (instead execting the users to take care of their dataset prior to using this interface).
 </div>
 
 <div class="help_content" id="help_vcgw_coefficients_metadata_content">
@@ -2657,8 +2890,12 @@ The <span class="help_content_fieldname">Extended floating-point res</span> is f
 <li>
 <span class="help_content_fieldname">Integer/memory-size res</span> is similar to the floating-point resolution fields. It only applies to the integral aspects of task processing (count of draws, number of respondents, total number of rows in a dataset, total memory used by the model, etc.) 32-bit numbers can deal with figures under a 4 billion (4Gigabytes of memory) mark and so should be sufficient for many surveys. On the other hand, if one has a huge survey which in total (e.g. respondents * choices * alternatives * draws * 10 etc. is &lt 4 billion) then 64-bit integers can be chosen (at a price of a somewhat larger memory usage and slower(ish) execution).
 </li>
+<li>
+<span class="help_content_fieldname">Approximate exponents</span> allows one to use an oversamlped, linearly-interpolated approximation of the exponents. In other words, instead of evaluating '::std::exp(x)' or other similar math library routines everytime an exponent value is needed, a pre-sampled table of exponents is made (with input values separated by small steps-size) and then such a table is linearly interpolated depending on where the given 'x' value is positioned with respect to the pre-sampled steps. A number of empirical tests had shown no tangible/differentiating-practical-outcome changes as compared to the non-approximating option. The approximation option, however, may show improvements in computational speed. Given that any successful convergence process will invariably involve multiple <em>complete</em> convergence runs it is envisaged that the option may indeed be delpoyed in a time-saving fashion. 
+</li>
 </ul>
 </div>
+<div id="visible_dims" style="width:100%;height:100%;position:fixed;left:0;top:0;visibility:hidden;z-index:-1"></div>
 </body>
 </html>
 <!-- } -->

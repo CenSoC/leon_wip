@@ -68,7 +68,7 @@ template <typename N, typename F>
 struct model_traits {
 
 	typedef netcpu::converger_1::message::meta<N, F, logit::message::meta<N> > meta_msg_type;
-	typedef netcpu::converger_1::message::bulk<N, F, logit::message::bulk> bulk_msg_type;
+	typedef netcpu::converger_1::message::bulk<N, F, logit::message::bulk<N> > bulk_msg_type;
 
 	typedef typename netcpu::message::typepair<N>::wire size_type;
 	typedef typename censoc::param<size_type>::type size_paramtype;

@@ -41,6 +41,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <map>
 
 #include "message.h"
+#include "models_ids.h"
 
 
 #ifndef CENSOC_NETCPU_MAIN_MODELS_H
@@ -48,19 +49,10 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 namespace censoc { namespace netcpu { 
 
-struct models_ids {
-	enum val {
-		logit = 1,
-		mixed_logit = 2,
-		gmnl_2 = 3,
-		gmnl_2a = 4
-	};
-};
-
 typedef ::std::map<unsigned, model_factory_interface *> models_type;
 models_type static models;
 
-template <models_ids::val Id>
+template <netcpu::models_ids::val Id>
 struct model_factory_base : model_factory_interface {
 	model_factory_base()
 	{

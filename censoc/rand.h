@@ -40,6 +40,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <assert.h>
 #include <boost/static_assert.hpp>
+#include <boost/type_traits.hpp>
 
 #include <boost/random/mersenne_twister.hpp>
 #ifdef HAVE_MT19937INT_C
@@ -151,6 +152,7 @@ struct rand_full : Rng {
 	R
 	eval(R range_high) noexcept
 	{
+		BOOST_STATIC_ASSERT(::boost::is_floating_point<R>::value == true);
 		assert((range_high + range_high) / Rng::max() != 0);
 		return Rng::eval() * ((range_high + range_high) / Rng::max()) - range_high;
 		//return (::arc4random() & 1) * (range_high + range_high) - range_high;
@@ -173,6 +175,7 @@ struct rand_half : Rng {
 	R
 	eval(R range) noexcept
 	{
+		BOOST_STATIC_ASSERT(::boost::is_floating_point<R>::value == true);
 		assert(range / Rng::max() != 0);
 
 		//return Rng::eval() * (range / (double)Rng::max());

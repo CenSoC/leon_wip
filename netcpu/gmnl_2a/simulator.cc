@@ -38,23 +38,19 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 */
 
-/**
-	@TODO -- this code is outdated (wrt eigen is being really deprecated)
- */
-
 #include <fstream>
 #include <vector>
 
+#include <boost/filesystem.hpp>
 #include <boost/numeric/conversion/bounds.hpp>
 #include <boost/limits.hpp>
 
-
 #include <censoc/lexicast.h>
 #include <censoc/rand.h>
-#include <censoc/halton.h>
-#include <censoc/rnd_mirror_grid.h>
+#include <censoc/cdfinvn.h>
 #include <censoc/finite_math.h>
 
+#include <netcpu/models_ids.h>
 #include <netcpu/message.h>
 #include <netcpu/fstream_to_wrapper.h>
 
@@ -63,226 +59,31 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <netcpu/converger_1/message/bulk.h>
 #include <netcpu/gmnl_2/message/meta.h>
 #include <netcpu/gmnl_2/message/bulk.h>
-#include <netcpu/dataset_1/composite_matrix.h>
 
 namespace censoc { namespace netcpu { namespace gmnl_2a {
 
 typedef censoc::lexicast< ::std::string> xxx;
 
-// TODO -- deprecate this feature
-size_t const static error_injected_choicsets(0);
-
-template <typename N, typename F>
-struct halton_matrix_provider {
-
-//{ typedefs...
-
-	typedef F float_type;
-	typedef ::Eigen::Array<float_type, ::Eigen::Dynamic, 1> vector_column_type;
-	typedef ::Eigen::Array<float_type, ::Eigen::Dynamic, ::Eigen::Dynamic> matrix_columnmajor_type;
-
-	typedef typename netcpu::message::typepair<N>::ram size_type;
-	typedef typename censoc::param<size_type>::type size_paramtype;
-
-	struct ctor_type {
-		vector_column_type * sigma;
-		matrix_columnmajor_type * nonsigma;
-	};
-	typedef typename censoc::param<ctor_type>::type ctor_paramtype;
-
-//}
-
-	halton_matrix_provider(ctor_paramtype ctor)
-	: sigma_(*ctor.sigma), nonsigma_(*ctor.nonsigma){
-	}
-
-	matrix_columnmajor_type & 
-	nonsigma() 
-	{
-		return nonsigma_;
-	}
-
-	vector_column_type & 
-	sigma() 
-	{
-		return sigma_;
-	}
-
-	matrix_columnmajor_type const & 
-	nonsigma() const
-	{
-		return nonsigma_;
-	}
-
-	vector_column_type const & 
-	sigma() const
-	{
-		return sigma_;
-	}
-
-	void
-	nonsigma_resize(size_paramtype rows, size_paramtype columns)
-	{
-		nonsigma_.resize(rows, columns);
-	}
-
-	void
-	sigma_resize(size_paramtype rows)
-	{
-		sigma_.resize(rows);
-	}
-protected:
-
-	vector_column_type & sigma_;
-	matrix_columnmajor_type & nonsigma_;
-};
-
-template <typename N, typename F>
 struct cdfinvn_hook {
-
-	typedef N size_type;
-	typedef F float_type;
-	typedef ::Eigen::Array<float_type, ::Eigen::Dynamic, 1> vector_column_type;
-	typedef ::Eigen::Array<float_type, ::Eigen::Dynamic, ::Eigen::Dynamic> matrix_columnmajor_type;
-
-	typedef typename censoc::param<size_type>::type size_paramtype;
-
-	vector_column_type normal;
-	template <typename TMP>
+	template <typename TMP, typename N>
 	void inline 
-	hook(TMP const & x, N x_size) 
+	hook(TMP const &, N) 
 	{
-#ifndef NDEBUG
-		assert(static_cast<size_type>(x.size()) == x_size);
-		for (size_type i(0); i != x_size; ++i) {
-			assert(x[i] < 10);
-			assert(x[i] > -10);
-		}
-#endif
-		normal = x;
+		// noop -- in this case must remember to pass data as a pointer to 'eval' of the normals obj. otherwise template type inference rules will make type T to be the actualy type (not the reference as per lvalue expression) and then the object will be passed by value (copy-ctor) and then not assigned in this hook and thusly the value modifications will be lost. If passing by pointer, then pointer will be copied (refenece to pointer then gets inferred to just a pointer) which is fine and then 'inplace' modifications will occure even with this empty hook.
 	}
 };
 
-template <typename float_type>
-struct exponent_replacement {
-	typedef typename censoc::param<float_type>::type float_paramtype;
-	float_type 
-	operator()(float_paramtype x) const 
-	{ 
-		if (x < 0)
-			return 1 / (1 - x);
-		else
-			return x + 1;
-	}
-};
-
-/**
-	TODO -- MUST USE LONGEST DOUBLES ANYWAY (irrespective of the meta_msg specs)
-	*/
 template <typename N, typename F>
 void static
 simulate()
 {
 	typedef F float_type;
-	typedef typename censoc::param<float_type>::type float_paramtype;
 
 	typedef typename netcpu::message::typepair<N>::ram size_type;
 	typedef typename censoc::param<size_type>::type size_paramtype;
 
-	typedef ::Eigen::Array<float_type, ::Eigen::Dynamic, ::Eigen::Dynamic> matrix_columnmajor_type;
-	typedef ::Eigen::Array<float_type, ::Eigen::Dynamic, 1> vector_column_type;
-
-	//typedef censoc::halton<size_type, float_type, halton_matrix_provider<N, F> > haltons_type;
-	typedef censoc::rnd_mirror_grid<size_type, float_type, halton_matrix_provider<N, F> > haltons_type;
-
 	typedef netcpu::converger_1::message::meta<N, F, gmnl_2::message::meta<N> > meta_msg_type;
-	typedef netcpu::converger_1::message::bulk<N, F, gmnl_2::message::bulk> bulk_msg_type;
-
-
-#if 0
-
-	0.3054, 1.0000, 0.1095, 0.6456, 0.0538, 0.6971, 0.1952, 0.7779, 
-	0.7557, 0.7065, 0.5271, 0.6312, 0.6084, 0.0098, 0.2723, 0.6815, 
-	0.2172, 1.7000
-
-	0.279321, 0.999486, 0.0550412, 0.874486, -0.0236626, 0.998457, 0.299897, 0.998971, 
-	1.37354, 1.49854, 0.995605, 1.20166, 1.16748, 0.132324, 0.344727, 1.31104, 
-	0.998264, 0.436214 
-
-	0.332305 0.999486 -0.0221193 0.97428 -0.104424 0.998457 0.310185 0.776749 
-	1.43701 1.49902 1.09717 1.43408 1.28809 0.00146484 0.11377 1.49951 
-	0.998843 0.317387
-
-	with 6 steps and 1.9 range for variances
-	todo -- do try with 7 steps?
-	0.282407 0.998971 0.0519547 0.89249 -0.0396091 0.998971 0.307613 0.998971 1.43045 1.59222 1.02513 1.23355 1.20871 0.139955 0.362915 1.3626 0.999349 0.430041
-	float_type const coefficients[] = { 
-	0.282407, 0.998971, 0.0519547, 0.89249, -0.0396091, 0.998971, 0.307613, 0.998971, 
-	1.43045, 1.59222, 1.02513, 1.23355, 1.20871, 0.139955, 0.362915, 1.3626, 
-	0.999349, 0.430041
-	};
-
-
-	float_type const coefficients[] = { 
-	0.3054, 1.0000, 0.1095, 0.6456, 0.0538, 0.6971, 0.1952, 0.7779, 
-	0.7557 / 2, 0.7065 / 2, 0.5271 / 2, 0.6312 / 2, 0.6084 / 2, 0.0098 / 2, 0.2723 / 2, 0.6815 / 2, 
-	0.2172, 1.7000
-	};
-
-	float_type const coefficients[] = { 
-0.311728, 0.998457, 0.103395, 0.998457, -0.0329218, 0.884259, 0.301955, 0.998971, 0.562207, 0.822437, 0.319604, 0.351611, 0.305688, 0.000463867, 0.0194824, 0.500977, 0.572338, 0.556584
-	};
-
-	float_type const coefficients[] = { 
-0.325617, 0.998971, 0.112654, 0.998971, -0.0715021, 0.998457, 0.352366, 0.998457, 0.582153, 1.05159, 0.200854, 0.415625, 0.190649, 0.0213379, 0.000463867, 0.583081, 0.225694, 1.49486
-	};
-	float_type const coefficients[] = { 
-0.320988, 0.998971, 0.114198, 0.998457, -0.141461, 0.998971, 0.41358, 0.998971, 
-0.610913, 1.28398, 0.000463867, 0.513501, 0.000463867, 0.0013916, 0.0013916, 0.630396, 0.204282, 1.2963
-	};
-
-	float_type const coefficients[] = { 
-	0.3054, 1.0000, 0.1095, 0.6456, 0.0538, 0.6971, 0.1952, 0.7779, 
-	0.7557, 0.7065, 0.5271, 0.6312, 0.6084, 0.0098, 0.2723, 0.6815, 
-	0.2172, 1.7000
-	};
-
-0.3054, 1.0000, 0.1095, 0.6456, 0.0538,  
-0.7557, 0.7065, 0.5271, 0.6312, 0.6084,  
-0.2172, 1.7000
-
-#endif
-
-#if 0
-	float_type const coefficients[] = { 
-0.3054, 1.0000, 0.1095, 0.6456,   
-0.7557, 0.7065, 0.5271, 0.6312,   
-1.7000
-	};
-#endif
-
-#if 0
-	float_type const coefficients[] = { 
-0.3054, 1.0000, 0.1095, 0.6456,   
-0, 0, 0, 0,   
-1.7000
-	};
-#endif
-#if 0
-	float_type const coefficients[] = { 
-0.3054, 1.0000, 0.1095, 0.6456,   
-0.7557, 0.7065, 0.5271, 0.6312,   
-0
-	};
-#endif
-
-	float_type const coefficients[] = { 
-1 * 0.3054, 1 * 1.0000, // betas
-1 * 0.7557, 1 * 0.7065, // etas (variances)
-1 * 1.7000, // tau (scale distribution)
--1.7000 // phi (additive approximation afterthought)
-	};
-
+	typedef netcpu::converger_1::message::bulk<N, F, gmnl_2::message::bulk<N> > bulk_msg_type;
 
 	netcpu::message::read_wrapper msg_wire;
 
@@ -292,18 +93,6 @@ simulate()
 	netcpu::message::fstream_to_wrapper(meta_msg_file, msg_wire);
 	meta_msg_type meta_msg;
 	meta_msg.from_wire(msg_wire);
-	meta_msg.print();
-
-	size_type const alternatives(meta_msg.model.dataset.alternatives());
-	size_type const repetitions(meta_msg.model.repetitions()); 
-	size_type const matrix_composite_rows(meta_msg.model.dataset.matrix_composite_rows()); 
-	size_type const matrix_composite_columns(meta_msg.model.dataset.matrix_composite_columns()); 
-	size_type const x_size(meta_msg.model.dataset.x_size()); 
-	assert(x_size == ((sizeof(coefficients) / sizeof(float_type)) - 2) / 2);
-	::std::vector<size_type> respondents_choice_sets;
-	respondents_choice_sets.reserve(static_cast< ::std::size_t>(meta_msg.model.dataset.respondents_choice_sets.size()));
-	for (size_type i(0); i != meta_msg.model.dataset.respondents_choice_sets.size(); ++i) 
-		respondents_choice_sets.push_back(meta_msg.model.dataset.respondents_choice_sets(i));
 
 	::std::ifstream bulk_msg_file("bulk.msg", ::std::ios::binary);
 	if (bulk_msg_file == false)
@@ -312,60 +101,81 @@ simulate()
 	bulk_msg_type bulk_msg;
 	bulk_msg.from_wire(msg_wire);
 
+	::std::vector<uint8_t> choice_sets_alternatives(bulk_msg.model.dataset.choice_sets_alternatives.size());
+	::memcpy(choice_sets_alternatives.data(), bulk_msg.model.dataset.choice_sets_alternatives.data(), choice_sets_alternatives.size());
+	uint8_t * choice_sets_alternatives_ptr(choice_sets_alternatives.data());
 
-	netcpu::dataset_1::composite_matrix<size_type, int> matrix_composite; 
-	matrix_composite.cast(bulk_msg.model.dataset.matrix_composite.data(), matrix_composite_rows, matrix_composite_columns);
+	size_type const repetitions(meta_msg.model.repetitions()); 
+	size_type const x_size(meta_msg.model.dataset.x_size()); 
 
+	::std::vector<double> coefficients(x_size * 2 + 2);
 
-	size_type const expanded_rows(matrix_composite_rows + respondents_choice_sets.size() * error_injected_choicsets);
-	bulk_msg.model.dataset.matrix_composite.resize(expanded_rows * matrix_composite_columns);
-	netcpu::dataset_1::composite_matrix_map<size_type, uint8_t> matrix_composite_dst(bulk_msg.model.dataset.matrix_composite.data(), expanded_rows, matrix_composite_columns);
+	//::std::string const task_name(::boost::filesystem::path(::boost::filesystem::canonical(::boost::filesystem::current_path()).branch_path()).leaf().string());
+	::std::string const task_name(::boost::filesystem::canonical(::boost::filesystem::current_path()).leaf().string());
+	::std::string::size_type begin_pos(task_name.find_first_of('_'));
+	if (begin_pos == ::std::string::npos || task_name.size() <= ++begin_pos)
+		throw ::std::runtime_error(xxx("incorrect path found: [") << ::boost::filesystem::current_path() << ']' );
+	::std::string::size_type end_pos(task_name.find_first_of('-'));
+	if (end_pos == ::std::string::npos)
+		throw ::std::runtime_error(xxx("incorrect path found: [") << ::boost::filesystem::current_path() << ']' );
 
-	vector_column_type vector_haltons_sigma;
-	matrix_columnmajor_type matrix_haltons_nonsigma;
+	unsigned const model_id(censoc::lexicast<unsigned>(task_name.substr(begin_pos, end_pos)));
 
-
-
-	//
-	// now using 'true' randomness instead, so no haltons-like stuff for the time-being...
-	//
-#if 0
-	typename halton_matrix_provider<N, F>::ctor_type haltons_ctor;
-	haltons_ctor.sigma = &vector_haltons_sigma;
-	haltons_ctor.nonsigma = &matrix_haltons_nonsigma;
-	haltons_type haltons(haltons_ctor);
-	haltons.init(1, respondents_choice_sets.size(), x_size);
-	//
-#else
-	censoc::cdfinvn<float_type, size_type, cdfinvn_hook<size_type, float_type> > normals_generator;  
-	// ... and so here comes the random stuff ...
-	// sigma
-	vector_haltons_sigma.resize(respondents_choice_sets.size());
-	for (size_type i(0); i != respondents_choice_sets.size(); ++i)
-		vector_haltons_sigma[i] = haltons_type::sigma_min() + censoc::rand_half<censoc::rand<uint32_t> >().eval(haltons_type::sigma_max() - haltons_type::sigma_min());
-	normals_generator.eval(vector_haltons_sigma, vector_haltons_sigma.size());
-	vector_haltons_sigma = normals_generator.normal;
-	// non sigma...
-	matrix_haltons_nonsigma.resize(respondents_choice_sets.size(), x_size);
-	for (size_type i(0); i != x_size; ++i) {
-		for (size_type j(0); j != respondents_choice_sets.size(); ++j)
-			matrix_haltons_nonsigma(j, i) = haltons_type::non_sigma_min() + censoc::rand_half<censoc::rand<uint32_t> >().eval(haltons_type::non_sigma_max() - haltons_type::non_sigma_min());
-		normals_generator.eval(matrix_haltons_nonsigma.col(i), matrix_haltons_nonsigma.col(i).size());
-		matrix_haltons_nonsigma.col(i) = normals_generator.normal;
+	switch (model_id) {
+	case netcpu::models_ids::gmnl_2a:
+	coefficients[x_size * 2 + 1] = -2;
+	case netcpu::models_ids::gmnl_2:
+	coefficients[x_size * 2] = 1.7;
+	case netcpu::models_ids::mixed_logit:
+	for (unsigned i(0); i != x_size; ++i)
+		coefficients[i + x_size] = censoc::rand_half<censoc::rand<uint32_t> >().eval(3.);
+	case netcpu::models_ids::logit:
+	for (unsigned i(0); i != x_size; ++i)
+		coefficients[i] = censoc::rand_full<censoc::rand<uint32_t> >().eval(5.);
+	break;
+	default:
+		throw ::std::runtime_error("unsupported model");
 	}
-	// ... done with "trully" random stuff
-#endif
 
-	float_paramtype phi(coefficients[2 * x_size + 1]);
-	float_paramtype tau(coefficients[2 * x_size]);
+	::std::cerr << "simulated coefficients:\n";
+	for (unsigned i(0); i != coefficients.size(); ++i)
+		::std::cerr << coefficients[i] << ' ' ;
+	::std::cerr << ::std::endl;
 
-	float_type const * const etavar(coefficients + x_size);
+	::std::vector<size_type> respondents_choice_sets;
+	respondents_choice_sets.reserve(static_cast< ::std::size_t>(bulk_msg.model.dataset.respondents_choice_sets.size()));
+	for (size_type i(0); i != bulk_msg.model.dataset.respondents_choice_sets.size(); ++i) 
+		respondents_choice_sets.push_back(bulk_msg.model.dataset.respondents_choice_sets(i));
+
+
+	::std::vector<int8_t> matrix_composite(bulk_msg.model.dataset.matrix_composite.size());
+	for (size_type i(0); i != matrix_composite.size(); ++i)
+		matrix_composite[i] = netcpu::message::deserialise_from_unsigned_to_signed_integral(bulk_msg.model.dataset.matrix_composite(i));
+	int8_t * matrix_composite_ptr(matrix_composite.data());
+
+	::std::vector<double> vector_haltons_sigma(respondents_choice_sets.size());
+	for (size_type i(0); i != respondents_choice_sets.size(); ++i)
+		vector_haltons_sigma[i] = censoc::cdfn<double, -3>::eval() + censoc::rand_half<censoc::rand<uint32_t> >().eval(censoc::cdfn<double, 3>::eval() - censoc::cdfn<double, -3>::eval());
+
+	::std::vector<double> matrix_haltons_nonsigma(respondents_choice_sets.size() * x_size);
+	for (size_type column(0); column != x_size; ++column)
+		for (size_type row(0); row != respondents_choice_sets.size(); ++row)
+			matrix_haltons_nonsigma[row + column * respondents_choice_sets.size()] = censoc::cdfn<double, -4>::eval() + censoc::rand_half<censoc::rand<uint32_t> >().eval(censoc::cdfn<double, 4>::eval() - censoc::cdfn<double, -4>::eval());
+
+	censoc::cdfinvn<double, size_type, cdfinvn_hook> normals_generator;  
+	normals_generator.eval(vector_haltons_sigma.data(), vector_haltons_sigma.size());
+	for (size_type column(0); column != x_size; ++column)
+		normals_generator.eval(matrix_haltons_nonsigma.data() + column * respondents_choice_sets.size(), respondents_choice_sets.size());
+
+	double phi(coefficients[2 * x_size + 1]);
+	double tau(coefficients[2 * x_size]);
+
+	double const * const etavar(&coefficients[x_size]);
 
 	censoc::rand_half<censoc::rand<uint32_t> > rnd;
 
 	//float_type const mean_normalisation(-::std::log((vector_haltons_sigma * tau).cwise().exp().sum() / respondents_choice_sets.size()));
 	//float_type const mean_normalisation(respondents_choice_sets.size() / (vector_haltons_sigma * tau).unaryExpr(exponent_replacement<float_type>()).sum());
-
 	//float_type const mean_normalisation(::std::exp(-haltons_type::sigma_trunc * tau) + haltons_type::sigma_trunc);
 
 #if 0
@@ -395,7 +205,7 @@ simulate()
 	}
 #endif
 
-	for (size_type i(0), matrix_composite_row_i(0), matrix_composite_dst_row_i(0); i != respondents_choice_sets.size(); ++i) {
+	for (size_type i(0); i != respondents_choice_sets.size(); ++i) {
 
 #if 0
 		float_type const sigma(
@@ -420,12 +230,11 @@ simulate()
 #endif
 
 		assert(x_size);
-		matrix_columnmajor_type ev_cache_tmp_or_censor_cache_tmp(static_cast<int>(respondents_choice_sets[i]), static_cast<int>(alternatives));
-		ev_cache_tmp_or_censor_cache_tmp.setZero();
+
+		::std::vector<double> attributes_weights(x_size);
 		for (size_type x(0); x != x_size; ++x) {
-			size_type const alternatives_columns_begin(x * alternatives);
-			float_type const tmp_tmp(etavar[x] * matrix_haltons_nonsigma(i, x));
-			float_type const tmp(
+			double const tmp_tmp(etavar[x] * matrix_haltons_nonsigma[i + x * respondents_choice_sets.size()]);
+			double const tmp(
 					sigma * 
 					(
 					coefficients[x] + 
@@ -433,80 +242,57 @@ simulate()
 					)
 					+ phi
 					);
-			for (size_type a(0); a != alternatives; ++a)
-				for (size_type t(0), matrix_composite_row_tmp(matrix_composite_row_i); t != respondents_choice_sets[i]; ++t, ++matrix_composite_row_tmp)
-						ev_cache_tmp_or_censor_cache_tmp(t, a) += tmp * matrix_composite(matrix_composite_row_tmp, alternatives_columns_begin + a);
+			attributes_weights[x] = tmp;
 		}
 
-		matrix_columnmajor_type matrix_error(static_cast<int>(respondents_choice_sets[i]), static_cast<int>(alternatives));
-		for (size_type a(0); a != alternatives; ++a) {
-
+		for (size_type t(0); t != respondents_choice_sets[i]; ++t) {
+			uint8_t const alternatives(*choice_sets_alternatives_ptr++);
+			::std::vector<double> ev_cache_tmp_or_censor_cache_tmp(alternatives);
+			double highest_probability(::boost::numeric::bounds<double>::lowest());
+			for (size_type x(0); x != x_size; ++x) {
+				for (size_type a(0); a != alternatives; ++a)
+					ev_cache_tmp_or_censor_cache_tmp[a] += attributes_weights[x] * *matrix_composite_ptr+++
 #if 0
-			// Laplace
-			// Given a random variable U drawn from the uniform distribution in the interval [-1/2, 1/2), the random variable
-			// X = mu - beta * sgn(U) * ln(1 - 2|U|) 
-			// ... not yet implemented a possible todo for future
+						// Laplace
+						// Given a random variable U drawn from the uniform distribution in the interval [-1/2, 1/2), the random variable
+						// X = mu - beta * sgn(U) * ln(1 - 2|U|) 
+						// ... not yet implemented a possible todo for future
 #endif
-
 #if 1
-			// Gumbel 
-			// Given a random variate U drawn from the uniform distribution in the interval (0, 1), the variate
-			// X = mu - beta * ln(-ln(U)) 
-			// The mean is mu + constant * beta; where constant = Euler-Mascheroni constant ~ 0.5772156649015328606
-			for (size_type t(0); t != respondents_choice_sets[i]; ++t)
-				//matrix_error(t, a) = -sigma * (.5772156649015328606 + ::std::log(-::std::log(::std::numeric_limits<float_type>::min() + censoc::rand_half<censoc::rand<uint32_t> >().eval(1 - ::std::numeric_limits<float_type>::min() * 2))));
-				//matrix_error(t, a) =  -1.0 * ::std::log(-::std::log(::std::numeric_limits<float_type>::min() + censoc::rand_half<censoc::rand<uint32_t> >().eval(1 - ::std::numeric_limits<float_type>::min() * 2)));
-				matrix_error(t, a) =  -(.5772156649015328606 + ::std::log(-::std::log(::std::numeric_limits<float_type>::min() + censoc::rand_half<censoc::rand<uint32_t> >().eval(1 - ::std::numeric_limits<float_type>::min() * 2))));
-				//matrix_error(t, a) =  -(.5772156649015328606 + ::std::log(-::std::log(.2 + censoc::rand_half<censoc::rand<uint32_t> >().eval(.6))));
+						// Gumbel 
+						// Given a random variate U drawn from the uniform distribution in the interval (0, 1), the variate
+						// X = mu - beta * ln(-ln(U)) 
+						// The mean is mu + constant * beta; where constant = Euler-Mascheroni constant ~ 0.5772156649015328606
+						// -sigma * (.5772156649015328606 + ::std::log(-::std::log(::std::numeric_limits<double>::min() + censoc::rand_half<censoc::rand<uint32_t> >().eval(1 - ::std::numeric_limits<double>::min() * 2))));
+						// -1.0 * ::std::log(-::std::log(::std::numeric_limits<double>::min() + censoc::rand_half<censoc::rand<uint32_t> >().eval(1 - ::std::numeric_limits<double>::min() * 2)));
+						-(.5772156649015328606 + ::std::log(-::std::log(::std::numeric_limits<double>::min() + censoc::rand_half<censoc::rand<uint32_t> >().eval(1 - ::std::numeric_limits<double>::min() * 2))));
+						// -(.5772156649015328606 + ::std::log(-::std::log(.2 + censoc::rand_half<censoc::rand<uint32_t> >().eval(.6))));
 #endif
-
 #if 0
-			// Uniform -- ignorant hacking atm
-			for (size_type t(0); t != respondents_choice_sets[i]; ++t)
-				matrix_error(t, a) = censoc::rand_full<censoc::rand<uint32_t> >().eval(static_cast<float_type>(.5));
+						// Uniform -- ignorant hacking atm
+						censoc::rand_full<censoc::rand<uint32_t> >().eval(static_cast<double>(.5));
 #endif
-
-		}
-		ev_cache_tmp_or_censor_cache_tmp += matrix_error;
-
-		if (censoc::was_fpu_ok(ev_cache_tmp_or_censor_cache_tmp.data()) == false) 
-			throw ::std::runtime_error("fpu exception taken place for the chosen coefficients");
-
-		size_type tmp_start_i(matrix_composite_row_i);
-		for (size_type t(0); t != respondents_choice_sets[i]; ++t, ++matrix_composite_row_i, ++matrix_composite_dst_row_i) {
-
-			matrix_composite_dst.copy_raw_row(matrix_composite, matrix_composite_row_i, matrix_composite_dst_row_i);
-
-			size_type matrix_composite_thisrow_last_col_i(matrix_composite(matrix_composite_row_i, matrix_composite.cols() - 1));
-
-			float_type highest_probability(::boost::numeric::bounds<float_type>::lowest());
+			}
+			size_type chosen_alternative;
 			for (size_type a(0); a != alternatives; ++a) {
-				float_type const this_prob(ev_cache_tmp_or_censor_cache_tmp(t, a));
-
-				if (this_prob <= ::boost::numeric::bounds<float_type>::lowest())
+				if (ev_cache_tmp_or_censor_cache_tmp[a] <= ::boost::numeric::bounds<double>::lowest())
 					throw ::std::runtime_error("'this_prob' is too low (min expressable in the format)");
-
-				if (this_prob > highest_probability) {
-					highest_probability = this_prob;
-					//matrix_composite(matrix_composite_row_i, matrix_composite.cols() - 1) = a;
-					matrix_composite_dst(matrix_composite_dst_row_i, matrix_composite.cols() - 1) = a;
+				if (ev_cache_tmp_or_censor_cache_tmp[a] > highest_probability) {
+					highest_probability = ev_cache_tmp_or_censor_cache_tmp[a];
+					chosen_alternative = a;
 				} 
 			}
+			*matrix_composite_ptr++ = chosen_alternative;
 
-		}
-
-		// here add the error injected thingies
-		for (size_type e(0); e != error_injected_choicsets; ++e, ++matrix_composite_dst_row_i) {
-			size_type const tmp_row(tmp_start_i + censoc::rand_nobias<censoc::rand<uint32_t> >().eval(respondents_choice_sets[i]));
-			matrix_composite_dst.copy_raw_row(matrix_composite, tmp_row, matrix_composite_dst_row_i);
-			while (!0) {
-				size_type const tmp_alternative(censoc::rand_nobias<censoc::rand<uint32_t> >().eval(alternatives));
-				matrix_composite_dst(matrix_composite_dst_row_i, matrix_composite.cols() - 1) = tmp_alternative;
-				break;
-			}
+			if (censoc::was_fpu_ok(ev_cache_tmp_or_censor_cache_tmp.data()) == false) 
+				throw ::std::runtime_error("fpu exception taken place for the chosen coefficients");
 		}
 
 	} // loop for all respondents
+
+	// todo -- rather crude, only need to overwrite the chosen alternative value (last in the 'row').
+	for (size_type i(0); i != matrix_composite.size(); ++i)
+		bulk_msg.model.dataset.matrix_composite(i, matrix_composite[i]);
 
 	netcpu::message::write_wrapper write_raw; 
 	bulk_msg.to_wire(write_raw);
@@ -514,9 +300,6 @@ simulate()
 	new_bulk_msg_file.write(reinterpret_cast<char const *>(write_raw.head()), write_raw.size());
 	if (new_bulk_msg_file == false)
 		throw ::std::runtime_error("could not write new_bulk.msg");
-
-	for (size_type i(0); i != meta_msg.model.dataset.respondents_choice_sets.size(); ++i) 
-		meta_msg.model.dataset.respondents_choice_sets(i) += error_injected_choicsets;
 }
 
 template <typename IntRes>

@@ -41,6 +41,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //{ includes...
 
 #include <set>
+#include <fstream>
 
 #include <boost/type_traits.hpp>
 // #include <boost/aligned_storage.hpp>
@@ -55,8 +56,10 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <censoc/finite_math.h>
 #include <censoc/sysinfo.h>
 #include <censoc/stl_container_utils.h>
+#include <censoc/sha_file.h>
 
 #include <netcpu/io_wrapper.h>
+#include <netcpu/fstream_to_wrapper.h>
 
 #include <netcpu/combos_builder.h>
 #include <netcpu/range_utils.h>
@@ -347,7 +350,41 @@ struct task_processor_detail : netcpu::io_wrapper<netcpu::message::async_driver>
 
 		censoc::llog() << "ctor in converger_1::task_processor_detail\n";
 
+		::std::string bulk_msg_path((netcpu::ownpath.branch_path() /= "bulk.msg").string());
+		if (::boost::filesystem::exists(bulk_msg_path) == true) {
+			if (censoc::sha_file<size_type>::hushlen == meta_msg.bulk_msg_hush.size()) { // server may choose to send zero-hush to force the reloading of bulk message 
+				censoc::sha_file<size_type> sha;
+				if (!::memcmp(sha.calculate(bulk_msg_path), meta_msg.bulk_msg_hush.data(), censoc::sha_file<size_type>::hushlen)) {
+
+					::std::ifstream bulk_msg_file(bulk_msg_path.c_str(), ::std::ios::binary | ::std::ios::trunc);
+					if (bulk_msg_file) {
+						censoc::llog() << "loading cached bulk message\n";
+
+						netcpu::message::read_wrapper wrapper;
+						netcpu::message::fstream_to_wrapper(bulk_msg_file, wrapper);
+
+						typedef typename Model::bulk_msg_type bulk_msg_type;
+						bulk_msg_type bulk_msg;
+						bulk_msg.from_wire(wrapper);
+						assert(coefficients_size == bulk_msg.coeffs.size());
+
+						model.on_bulk_read(bulk_msg);
+						io().write(converger_1::message::skip_bulk(), &task_processor_detail::on_skip_bulk_reply_write, this);
+
+						return;
+					}
+				}
+			}
+			::boost::filesystem::remove(bulk_msg_path);
+		}
+
 		io().write(netcpu::message::good(), &task_processor_detail::on_meta_reply_write, this);
+	}
+
+	void
+	on_skip_bulk_reply_write()
+	{
+		io().read(&task_processor_detail::on_first_server_state_sync_read, this);
 	}
 
 	void
@@ -406,6 +443,14 @@ struct task_processor_detail : netcpu::io_wrapper<netcpu::message::async_driver>
 
 		// note -- no need to do this really (unless testing in debug mode in the following code)...
 		//combos_modem.build(coefficients_size, init_complexity_size, init_coeffs_atonce_size, coefficients_metadata);
+
+		{
+			::std::string bulk_msg_path((netcpu::ownpath.branch_path() /= "bulk.msg").string());
+			::std::ofstream bulk_msg_file(bulk_msg_path.c_str(), ::std::ios::binary | ::std::ios::trunc);
+			bulk_msg_file.write(reinterpret_cast<char const *>(io().read_raw.head()), io().read_raw.size());
+			if (bulk_msg_file == false)
+				throw ::std::runtime_error("could not write " + bulk_msg_path);
+		}
 
 		io().read(&task_processor_detail::on_first_server_state_sync_read, this);
 	}
@@ -960,7 +1005,7 @@ struct task_processor_detail_meta : netcpu::io_wrapper<netcpu::message::async_dr
 	}
 };
 
-template <template <typename, typename, typename> class Model>
+template <template <typename, typename, typename, bool> class Model>
 struct task_processor : netcpu::io_wrapper<netcpu::message::async_driver> {
 	typedef censoc::lexicast< ::std::string> xxx;
 	typedef converger_1::message::res res_msg_type;
@@ -995,25 +1040,39 @@ struct task_processor : netcpu::io_wrapper<netcpu::message::async_driver> {
 
 		switch (msg.int_res()) {
 			case converger_1::message::int_res<uint32_t>::value :
-			new_task_processor_detail_meta<uint32_t>(msg);
+			new_task_processor_detail_meta_exponent_approximation_choice<uint32_t>(msg);
 		break;
 			case converger_1::message::int_res<uint64_t>::value :
-			new_task_processor_detail_meta<uint64_t>(msg);
+			new_task_processor_detail_meta_exponent_approximation_choice<uint64_t>(msg);
 		break;
 		censoc::llog() << "unsupported resolution: [" << msg.int_res() << ']';
 		io().write(netcpu::message::bad(), &task_processor::on_bad_write, this);
 		}
 	}
+
+	// todo -- a quick hack, later on also test for incorrect values
 	template <typename IntRes>
+	void 
+	new_task_processor_detail_meta_exponent_approximation_choice(res_msg_type const & msg)
+	{
+		if (msg.approximate_exponents()) {
+			new_task_processor_detail_meta<IntRes, true>(msg);
+		} else {
+			new_task_processor_detail_meta<IntRes, false>(msg);
+		}
+	}
+
+	template <typename IntRes, bool ApproximateExponents>
 	void 
 	new_task_processor_detail_meta(res_msg_type const & msg)
 	{
+		// explicit because no need really to have compiler go through "<double, float>" arrangement...
 		if (msg.float_res() == converger_1::message::float_res<float>::value && msg.extended_float_res() == converger_1::message::float_res<float>::value)
-			new converger_1::task_processor_detail_meta<IntRes, float, Model<IntRes, float, float> >(io());
+			new converger_1::task_processor_detail_meta<IntRes, float, Model<IntRes, float, float, ApproximateExponents> >(io());
 		else if (msg.float_res() == converger_1::message::float_res<double>::value && msg.extended_float_res() == converger_1::message::float_res<double>::value)
-			new converger_1::task_processor_detail_meta<IntRes, double, Model<IntRes, double, double> >(io());
+			new converger_1::task_processor_detail_meta<IntRes, double, Model<IntRes, double, double, ApproximateExponents> >(io());
 		else if (msg.float_res() == converger_1::message::float_res<float>::value && msg.extended_float_res() == converger_1::message::float_res<double>::value)
-			new converger_1::task_processor_detail_meta<IntRes, float, Model<IntRes, float, double> >(io());
+			new converger_1::task_processor_detail_meta<IntRes, float, Model<IntRes, float, double, ApproximateExponents> >(io());
 		else // TODO -- may be as per 'on_read' -- write a bad message to client (more verbose)
 			throw ::std::runtime_error(xxx("unsupported floating resolutions: [") << msg.float_res() << "], [" << msg.extended_float_res() << ']');
 	}
@@ -1041,7 +1100,7 @@ struct task_processor : netcpu::io_wrapper<netcpu::message::async_driver> {
 };
 
 // this must be a very very small class (it will exist through the whole of the lifespan of the program)
-template <template <typename, typename, typename> class Model, netcpu::models_ids::val ModelId>
+template <template <typename, typename, typename, bool> class Model, netcpu::models_ids::val ModelId>
 struct model_factory : netcpu::model_factory_base<ModelId> {
 	void 
 	new_task(netcpu::message::async_driver & io_driver)

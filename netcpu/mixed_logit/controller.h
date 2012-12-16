@@ -68,7 +68,7 @@ template <typename N, typename F>
 struct model_traits {
 
 	typedef netcpu::converger_1::message::meta<N, F, mixed_logit::message::meta<N> > meta_msg_type;
-	typedef netcpu::converger_1::message::bulk<N, F, mixed_logit::message::bulk> bulk_msg_type;
+	typedef netcpu::converger_1::message::bulk<N, F, mixed_logit::message::bulk<N> > bulk_msg_type;
 
 	typedef typename netcpu::message::typepair<N>::wire size_type;
 	typedef typename censoc::param<size_type>::type size_paramtype;
@@ -121,9 +121,9 @@ struct model_traits {
 		if (meta_msg.model.draws_sets_size() == static_cast<typename netcpu::message::typepair<N>::wire>(-1))
 			throw netcpu::message::exception("must supply vaild draws sets size of > 0");
 		else if (!meta_msg.model.draws_sets_size())
-			meta_msg.model.draws_sets_size(meta_msg.model.dataset.respondents_choice_sets.size());
+			meta_msg.model.draws_sets_size(bulk_msg.model.dataset.respondents_choice_sets.size());
 		else
-			meta_msg.model.draws_sets_size(::std::min(static_cast<size_type>(meta_msg.model.dataset.respondents_choice_sets.size()), static_cast<size_type>(meta_msg.model.draws_sets_size())));
+			meta_msg.model.draws_sets_size(::std::min(static_cast<size_type>(bulk_msg.model.dataset.respondents_choice_sets.size()), static_cast<size_type>(meta_msg.model.draws_sets_size())));
 
 	}
 };

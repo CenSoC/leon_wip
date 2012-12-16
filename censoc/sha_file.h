@@ -59,7 +59,7 @@ struct sha {
 	enum {hushlen = 20};
 	typedef typename censoc::param<size_type>::type size_paramtype;
 	void static
-	calculate(char const * data, size_paramtype data_size, uint8_t * hush)
+	calculate(void const * data, size_paramtype data_size, uint8_t * hush)
 	{
 		assert(data_size);
 
@@ -91,7 +91,7 @@ public:
 	}
 
 	void
-	calculate(char const * data, size_paramtype data_size)
+	calculate(void const * data, size_paramtype data_size)
 	{
 		assert(data_size);
 		sha<size_type>::calculate(data, data_size, hush);

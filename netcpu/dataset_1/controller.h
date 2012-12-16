@@ -54,7 +54,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <netcpu/message.h>
 
-#include "composite_matrix.h"
 #include "message/meta.h"
 #include "message/bulk.h"
 
@@ -71,16 +70,6 @@ struct composite_matrix_loader {
 
 	typedef typename netcpu::message::typepair<N>::wire size_type;
 	typedef typename censoc::param<size_type>::type size_paramtype;
-
-#if 0 
-	/*
-	Rethinking the whole row-major layout. Mainly because the composite matrix (z ~ x ~ y) appears to be used only '1 row at a time' anyway -- thus even a row-based matrix should not cause performance issues when it is only used to generate 'row views'.
-	*/
-	//typedef ::Eigen::Matrix<float_type, ::Eigen::Dynamic, ::Eigen::Dynamic> matrix_columnmajor_type;
-	//typedef ::Eigen::Matrix<int8_t, ::Eigen::Dynamic, ::Eigen::Dynamic, ::Eigen::RowMajor> int_matrix_rowmajor_type;
-	typedef ::Eigen::Matrix<float_type, ::Eigen::Dynamic, 1> vector_column;
-	typedef ::Eigen::Matrix<float_type, 1, ::Eigen::Dynamic> vector_row;
-#endif
 
 	typedef censoc::lexicast< ::std::string> xxx;
 
@@ -185,21 +174,6 @@ struct composite_matrix_loader {
 		censoc::llog() << "Total of: [" << total_count << "].\n";
 	}
 
-	/**
-		@todo -- deprecate (only used in 1 place anyway)
-		*/
-	template <typename M>
-	void
-	row_append_attributes(M & matrix, ::std::list< ::std::list<size_type> > & attributes, size_paramtype r, size_paramtype c_offset, size_type & c, rawgrid_type & grid, size_paramtype alternatives)
-	{
-		for (typename ::std::list< ::std::list<size_type> >::const_iterator i(attributes.begin()); i != attributes.end(); ++i) {
-			::std::list<size_type> const & columns(*i);
-			for (typename ::std::list<size_type>::const_iterator j(columns.begin()); j != columns.end(); ++j) {
-				assert(grid.template column<F>(*j) == grid.template column<int>(*j));
-				matrix(r, c_offset + (c += alternatives)) = grid.template column<int>(*j);
-			}
-		}
-	}
 
 	struct delby_metadata {
 		delby_metadata(size_paramtype i, censoc::compared const op, float_paramtype value)
@@ -235,6 +209,8 @@ struct composite_matrix_loader {
 	::std::string filedata; 
 	//size_type sheet_i;
 	size_type respondent_i;
+	size_type choice_set_i;
+	size_type alternative_i;
 	size_type row_start_i;
 	size_type best_i;
 
@@ -248,17 +224,17 @@ struct composite_matrix_loader {
 	// TODO refactor to use fastsize 
 	::std::list<size_type> sorted;
 	::std::list<delby_metadata> delby;
-	::std::vector<size_type> respondents_choice_sets;
+	censoc::stl::fastsize< ::std::list<size_type>, size_type> respondents_choice_sets;
 	::std::set<size_type> x_unique;
 
 	composite_matrix_loader()
 	: 
 		//sheet_i(-1), 
-		respondent_i(-1), row_start_i(-1), best_i(-1) {
+		respondent_i(-1), choice_set_i(-1), alternative_i(-1), row_start_i(-1), best_i(-1) {
 	}
 
 	bool
-	parse_arg(::std::string const & name, ::std::string const & value, dataset_1::message::meta<N> & meta_msg, dataset_1::message::bulk & /* bulk_msg */ ) 
+	parse_arg(::std::string const & name, ::std::string const & value, dataset_1::message::meta<N> & meta_msg, dataset_1::message::bulk<N> & /* bulk_msg */ ) 
 	{
 		// (void)bulk_msg; // no 'unused param' warning from the compiler thanks... ('bulk_msg' is passed as a matter of policy for the time being)
 		if (name == "--filepath") {
@@ -277,17 +253,22 @@ struct composite_matrix_loader {
 		} else if (name == "--sort") {
 			sortby.clear();
 			cli_parse_columns(sortby, sortby_unique, value, "sortby list of columns", ute);
-		} else if (name == "--resp") {
+		} else if (name == "--respondent") {
 			cli_parse_column_i(value[0], value, ute, respondent_i);
 			// quick-n-dirty
 			censoc::llog() << "Respondent id column: [" << ute.alpha_tofrom_numeric(respondent_i) << "] no: [" << respondent_i + 1 << "]\n";
+		} else if (name == "--choice_set") {
+			cli_parse_column_i(value[0], value, ute, choice_set_i);
+			// quick-n-dirty
+			censoc::llog() << "Choice set id column: [" << ute.alpha_tofrom_numeric(choice_set_i) << "] no: [" << choice_set_i + 1 << "]\n";
+		} else if (name == "--alternative") {
+			cli_parse_column_i(value[0], value, ute, alternative_i);
+			// quick-n-dirty
+			censoc::llog() << "Alternative id column: [" << ute.alpha_tofrom_numeric(alternative_i) << "] no: [" << alternative_i + 1 << "]\n";
 		} else if (name == "--fromrow") {
 			row_start_i = censoc::lexicast<size_type>(value);
 			censoc::llog() << "Numeric data starts from row: [" << row_start_i << "]\n";
 			--row_start_i;
-		} else if (name == "--alts") {
-			meta_msg.alternatives(censoc::lexicast<size_type>(value));
-			censoc::llog() << "Alternatives in a choice set: [" << meta_msg.alternatives() << "]\n";
 		} else if (name == "--best") { 
 			cli_parse_column_i(value[0], value, ute, best_i);
 			// quick-n-dirty
@@ -302,7 +283,10 @@ struct composite_matrix_loader {
 				throw netcpu::message::exception(xxx() << "incorrect --del value: [" << value << "] need 'column:op:value'");
 
 			size_type delby_i;
-			cli_parse_column_i((*token_i)[0], *token_i, ute, delby_i);
+			if ((*token_i)[0] != '*')
+				cli_parse_column_i((*token_i)[0], *token_i, ute, delby_i);
+			else
+				delby_i = -1;
 
 			if (++token_i == tokens.end())
 				throw netcpu::message::exception(xxx() << "incorrect --del value: [" << value << "] need 'column:op:value'");
@@ -327,7 +311,10 @@ struct composite_matrix_loader {
 
 			float_type const delby_value = censoc::lexicast<float_type>(*token_i);
 
-			censoc::llog() << "Will delete rows based on values from column: [" << ute.alpha_tofrom_numeric(delby_i) << "] no: [" << delby_i + 1 << "]. The comparison for deletion criteria: [" << delby_op_string << "]. The scalar value: [" << delby_value << "]\n";
+			if (delby_i != static_cast<size_type>(-1))
+				censoc::llog() << "Will delete rows based on values from column: [" << ute.alpha_tofrom_numeric(delby_i) << "] no: [" << delby_i + 1 << "]. The comparison for deletion criteria: [" << delby_op_string << "]. The scalar value: [" << delby_value << "]\n";
+			else
+				censoc::llog() << "Will delete rows based on values from any of the attribute columns. The comparison for deletion criteria: [" << delby_op_string << "]. The scalar value: [" << delby_value << "]\n";
 
 			delby.push_back(delby_metadata(delby_i, delby_op, delby_value));
 		} else 
@@ -336,8 +323,29 @@ struct composite_matrix_loader {
 	}
 
 private:
+	bool
+	is_excluded(censoc::compared const meta_op, float_type const meta_value, float_type const value)
+	{
+		if (meta_op == censoc::lt) {
+			if (value < meta_value) 
+				return true;
+		} else if (meta_op == censoc::le) {
+			if (value <= meta_value)
+				return true;
+		} else if (meta_op == censoc::eq) {
+			if (value == meta_value)
+				return true;
+		} else if (meta_op == censoc::ge) {
+			if (value >= meta_value)
+				return true;
+		} else if (meta_op == censoc::gt) {
+			if (value > meta_value)
+				return true;
+		} 
+		return false;
+	}
 	void
-	verify_args_sub(rawgrid_type & grid_obj, dataset_1::message::meta<N> & meta_msg, dataset_1::message::bulk & bulk_msg) 
+	verify_args_sub(rawgrid_type & grid_obj, dataset_1::message::meta<N> & meta_msg, dataset_1::message::bulk<N> & bulk_msg) 
 	{
 		//if (sheet_i == static_cast<size_type>(-1))
 		//	throw netcpu::message::exception("must supply which sheet in the excel file contains relevant data");
@@ -345,14 +353,17 @@ private:
 		if (respondent_i == static_cast<size_type>(-1))
 			throw netcpu::message::exception("must supply colmun for the respondent's id");
 
+		if (choice_set_i == static_cast<size_type>(-1))
+			throw netcpu::message::exception("must supply colmun for the choice_set id");
+
+		if (alternative_i == static_cast<size_type>(-1))
+			throw netcpu::message::exception("must supply colmun for the alternative id");
+
 		if (best_i == static_cast<size_type>(-1))
 			throw netcpu::message::exception("must supply colmun for the best (whatever that means :-)");
 
 		if (row_start_i == static_cast<size_type>(-1))
 			throw netcpu::message::exception("must supply starting row for the numeric data");
-
-		if (meta_msg.alternatives() == static_cast<typename netcpu::message::typepair<N>::wire>(-1))
-			throw netcpu::message::exception("must supply number of alternatives in a choice set");
 
 		if (x_unique.empty() == true)
 			throw netcpu::message::exception("Must supply at least one --x option");
@@ -383,25 +394,10 @@ private:
 			grid_obj.torow(i);
 			for (typename ::std::list<delby_metadata>::iterator d(delby.begin()); d != delby.end() && exclude == false; ++d) {
 				delby_metadata const & meta(*d);
-
-				float_type const value(grid_obj.template column<float_type>(meta.i));
-
-				if (meta.op == censoc::lt) {
-					if (value < meta.value) 
-						exclude = true;
-				} else if (meta.op == censoc::le) {
-					if (value <= meta.value)
-						exclude = true;
-				} else if (meta.op == censoc::eq) {
-					if (value == meta.value)
-						exclude = true;
-				} else if (meta.op == censoc::ge) {
-					if (value >= meta.value)
-						exclude = true;
-				} else if (meta.op == censoc::gt) {
-					if (value > meta.value)
-						exclude = true;
-				} 
+				if (meta.i != static_cast<size_type>(-1))
+					exclude = is_excluded(meta.op, meta.value, grid_obj.template column<float_type>(meta.i));
+				else for (typename ::std::set<size_type>::const_iterator i(x_unique.begin()); i != x_unique.end() && exclude == false; ++i)
+					exclude = is_excluded(meta.op, meta.value, grid_obj.template column<float_type>(*i));
 			}
 
 			if (exclude == false)
@@ -417,81 +413,69 @@ private:
 		if (sortby.empty() == false)
 			sorted.sort(grid_sorter(sortby, grid_obj));
 
-		meta_msg.matrix_composite_rows(sorted.size() / meta_msg.alternatives());
-		meta_msg.matrix_composite_columns(meta_msg.x_size() * meta_msg.alternatives() + 1); // 'alternatives + 1' is for y vector horizontal concatenation
+		censoc::stl::fastsize< ::std::list<uint8_t>, size_type> choice_sets_alternatives;
+		uint8_t max_alternatives(0);
+		size_type matrix_composite_elements_size(0);
+		size_type old_respondent(-1);
+		size_type old_choice_set(-1);
+		size_type old_alternative(-1);
+		for (typename ::std::list<size_type>::const_iterator sorted_i(sorted.begin()); sorted_i != sorted.end(); ++sorted_i) {
+			grid_obj.torow(*sorted_i);
+			size_type const respondent(grid_obj.template column<size_type>(respondent_i));
+			size_type const choice_set(grid_obj.template column<size_type>(choice_set_i));
+			size_type const alternative(grid_obj.template column<size_type>(alternative_i));
 
-		censoc::llog() << "Composite matrix (z submatrix, x submatrix, y subvector) yields -- rows: [" << meta_msg.matrix_composite_rows() << "], columns: [" << meta_msg.matrix_composite_columns() << "]\n";
-
-		bulk_msg.matrix_composite.resize(meta_msg.matrix_composite_rows() * meta_msg.matrix_composite_columns());
-		//::Eigen::Map<int_matrix_rowmajor_type> matrix_composite(bulk_msg.matrix_composite.data(), meta_msg.matrix_composite_rows(), meta_msg.matrix_composite_columns());
-		composite_matrix_map<size_type, uint8_t> matrix_composite(bulk_msg.matrix_composite.data(), meta_msg.matrix_composite_rows(), meta_msg.matrix_composite_columns());
-
-		//matrix_columnmajor_type vector_y_tmp_m(static_cast<int>(meta_msg.matrix_composite_rows()), meta_msg.alternatives());
-
-		// here (in the following loop) also perform the expansion of alternatives into columns
-		typename ::std::list<size_type>::const_iterator sorted_i(sorted.begin()); 
-		assert(meta_msg.matrix_composite_rows());
-		assert(sorted_i != sorted.end());
-
-		grid_obj.torow(*sorted_i);
-		size_type respondent_id_tmp(grid_obj.template column<size_type>(respondent_i));
-		respondents_choice_sets.push_back(0);
-
-		for (size_type r(0); r != meta_msg.matrix_composite_rows(); ++r) { 
-			matrix_composite(r, matrix_composite.cols() - 1) = -1;
-			for (size_type i(0); i != meta_msg.alternatives(); ++i) {
-				grid_obj.torow(*sorted_i);
-
-				size_type const respondent_id_tmp_new(grid_obj.template column<size_type>(respondent_i));
-				if (respondent_id_tmp != respondent_id_tmp_new) {
-					if (respondents_choice_sets.back() % meta_msg.alternatives())
-						throw netcpu::message::exception(xxx() << "Can't calculate exact number of choice-sets per respondent as the number is not completely divisible by alternatives. Respondent: [" << respondent_id_tmp << "], total responses: [" << respondents_choice_sets.back() << "]");
-					respondent_id_tmp = respondent_id_tmp_new;
-					respondents_choice_sets.back() /= meta_msg.alternatives();
-					respondents_choice_sets.push_back(1);
-				} else 
+			unsigned stage;
+			if (old_respondent != respondent)
+				stage = 1;
+			else if (old_choice_set != choice_set)
+				stage = 2;
+			else if (old_alternative != alternative)
+				stage = 3;
+			else
+				throw netcpu::message::exception("design has duplicate rows w.r.t. tuple of {respondent, choice set, alternative} ");
+			switch (stage) { // falling through on purpose...
+				case 1:
+					old_respondent = respondent;
+					respondents_choice_sets.push_back(0);
+				case 2:
+					old_choice_set = choice_set;
 					++respondents_choice_sets.back();
-
-				size_type c_composite(-static_cast<size_type>(meta_msg.alternatives()));
-				row_append_attributes(matrix_composite, x_elements, r, i, c_composite, grid_obj, meta_msg.alternatives());
-
-				//vector_y_tmp_m(r, i) = grid_obj.template column<float_type>(best_i);
-				assert(grid_obj.template column<int>(best_i) == grid_obj.template column<float_type>(best_i));
-				int const best_i_value(grid_obj.template column<int>(best_i));
-				assert(best_i_value == 0 || best_i_value == 1);
-				if (best_i_value) {
-					if (matrix_composite(r, matrix_composite.cols() - 1) != static_cast<uint8_t>(-1))
-						throw netcpu::message::exception("design is not excepted to have multiple 'choices' present for a given choiceset -- only one alternative can be indicated as chosen");
-					matrix_composite(r, matrix_composite.cols() - 1) = i;
-				}
-
-
-#if 1
-				// currently not emulating gauss in wraparound mode when reshaping... see below (else) for commented-out code if emulating gauss...
-				if (sorted_i++ == sorted.end()) 
-					throw netcpu::message::exception("design is not excepted to hit the case of gauss-like behavior of re-reading matrix from start during the 'reshaping' process");
-#else
-				// emulate gauss (TODO -- may not needed it as 'matrix_composite_rows' is already INTEGRALLY divided by 'altrenatives')
-				// warnning -- if enabling -- must recode respondents-counting code!!!
-				if (++sorted_i == sorted.end())
-					sorted_i = sorted.begin();
-#endif
+					choice_sets_alternatives.push_back(0);
+					++matrix_composite_elements_size; // for y vector horizontal concatenation
+				case 3:
+					old_alternative =  alternative;
+					if (++choice_sets_alternatives.back() > max_alternatives) {
+						max_alternatives = choice_sets_alternatives.back();
+						if (::boost::integer_traits<uint8_t>::const_max == max_alternatives)
+							throw netcpu::message::exception(xxx("too many alternatives. any given choiceset must have less than ") << ::boost::integer_traits<uint8_t>::const_max << " alternatives.");
+					}
+					matrix_composite_elements_size += meta_msg.x_size();
 			}
-			if (matrix_composite(r, matrix_composite.cols() - 1) == static_cast<uint8_t>(-1))
-				throw netcpu::message::exception("validity-check failed: after sorting, the y vector value exceeds number of alternatives which would blow the array-index access");
-
 		}
 
-		if (respondents_choice_sets.back() % meta_msg.alternatives())
-			throw netcpu::message::exception(xxx() << "Can't calculate exact number of choice-sets per respondent as the number is not completely divisible by alternatives. Respondent: [" << respondent_id_tmp << "], total responses: [" << respondents_choice_sets.back() << "]");
-		respondents_choice_sets.back() /= meta_msg.alternatives();
+		meta_msg.max_alternatives(max_alternatives);
+		meta_msg.matrix_composite_elements(matrix_composite_elements_size);
 
-		censoc::llog() << "Individual respondents: [" << respondents_choice_sets.size() << "]\n";
+#ifndef NDEBUG
+		{
+			unsigned elements_count(0);
+			for (::std::list<uint8_t>::const_iterator i(choice_sets_alternatives.begin()); i != choice_sets_alternatives.end(); elements_count += (*i * meta_msg.x_size() + 1), ++i)
+				assert(*i <= meta_msg.max_alternatives());
+			assert(elements_count == meta_msg.matrix_composite_elements());
+			unsigned choice_sets_count(0);
+			for (typename ::std::list<size_type>::const_iterator i(respondents_choice_sets.begin()); i != respondents_choice_sets.end(); choice_sets_count += *i, ++i);
+			assert(choice_sets_count == choice_sets_alternatives.size());
+		}
+#endif
+	
+		censoc::llog() << "Composite matrix (attributes/levels wich a choice cell) yields total elements: [" << matrix_composite_elements_size << "], max_alternatives: [" << max_alternatives << "], rows: [" << choice_sets_alternatives.size() << "Individual respondents: [" << respondents_choice_sets.size() << "]\n";
 
-		meta_msg.respondents_choice_sets.resize(respondents_choice_sets.size());
-		for (size_type i(0); i != respondents_choice_sets.size(); ++i)
-			meta_msg.respondents_choice_sets(i, respondents_choice_sets[i]);
 
+		bulk_msg.respondents_choice_sets.resize(respondents_choice_sets.size());
+		size_type bulk_msg_respondent_i(0);
+		for (typename ::std::list<size_type>::const_iterator i(respondents_choice_sets.begin()); i != respondents_choice_sets.end(); ++i)
+			bulk_msg.respondents_choice_sets(bulk_msg_respondent_i++, *i);
 		/*
 		// debug for choice-sets
 		for (::std::vector<size_type>::iterator i(respondents_choice_sets.begin()); i != respondents_choice_sets.end(); ++i) {
@@ -499,23 +483,52 @@ private:
 		}
 		*/
 
-#if 0
-		vector_column vector_y_tmp_v(meta_msg.alternatives());
-		for (size_type i(0); i != meta_msg.alternatives(); ++i) // TODO -- see if there is a 'seqa' like 'populate' method in Eigen...
-			vector_y_tmp_v[i] = i + 1;
 
-		// calculate y vec ... 
-		matrix_composite.col(matrix_composite.cols() - 1) = (vector_y_tmp_m * vector_y_tmp_v).cwise() - 1; // - 1 is because yvec's values are used for accessing another matrix columns -- so are 0 based
-		if ((matrix_composite.col(matrix_composite.cols() - 1).cwise() > meta_msg.alternatives() - 1).any() == true || (matrix_composite.col(matrix_composite.cols() - 1).cwise() < 0).any() == true)
-			throw netcpu::message::exception("validity-check failed: after sorting, the y vector value exceeds number of alternatives which would blow the array-index access");
-#endif
+		// transposition of alternatives into columns
+		typename ::std::list<size_type>::const_iterator sorted_i(sorted.begin()); 
+		assert(sorted_i != sorted.end());
 
-		//censoc::llog() << "Composite matrix:\n" << matrix_composite << '\n';
+		bulk_msg.choice_sets_alternatives.resize(choice_sets_alternatives.size());
+		bulk_msg.matrix_composite.resize(matrix_composite_elements_size);
+		uint8_t * composite_matrix_data_ptr(bulk_msg.matrix_composite.data());
+		size_type bulk_msg_choice_sets_alternatives_i(0);
+		// in every choice set...
+		for (::std::list<uint8_t>::const_iterator r(choice_sets_alternatives.begin()); r != choice_sets_alternatives.end(); ++r, ++bulk_msg_choice_sets_alternatives_i) { 
+			assert(*r > 0);
+			bulk_msg.choice_sets_alternatives(bulk_msg_choice_sets_alternatives_i, *r);
+
+			uint8_t * composite_matrix_data_chosen_alternative_ptr = composite_matrix_data_ptr  + meta_msg.x_size() * *r;
+			*composite_matrix_data_chosen_alternative_ptr = -1;
+
+			// for every 'alternative' row...
+			for (uint8_t a(0); a != *r; ++a) {
+				assert(sorted_i != sorted.end());
+				grid_obj.torow(*sorted_i++);
+
+				// pack grouping by attributes
+				uint8_t * tmp(composite_matrix_data_ptr + a);
+				for (typename ::std::set<size_type>::const_iterator i(x_unique.begin()); i != x_unique.end(); ++i, tmp += *r) {
+					assert(grid_obj.template column<F>(*i) == grid_obj.template column<int>(*i));
+					*tmp = grid_obj.template column<int8_t>(*i);
+				}
+
+				assert(grid_obj.template column<int>(best_i) == grid_obj.template column<float_type>(best_i));
+				int const best_i_value(grid_obj.template column<int>(best_i));
+				assert(best_i_value == 0 || best_i_value == 1);
+				if (best_i_value) {
+					if (*composite_matrix_data_chosen_alternative_ptr != static_cast<uint8_t>(-1))
+						throw netcpu::message::exception("design is not excepted to have multiple 'choices' present for a given choiceset -- only one alternative can be indicated as chosen");
+					*composite_matrix_data_chosen_alternative_ptr = a;
+				}
+			}
+			composite_matrix_data_ptr = composite_matrix_data_chosen_alternative_ptr + 1;
+		}
+		assert(sorted_i == sorted.end());
 	}
 
 public:
 	void
-	verify_args(dataset_1::message::meta<N> & meta_msg, dataset_1::message::bulk & bulk_msg)
+	verify_args(dataset_1::message::meta<N> & meta_msg, dataset_1::message::bulk<N> & bulk_msg)
 	{
 		cli_check_matrix_elements(x_elements, "x submatrix", ute);
 		if (filepath.empty() == false) {

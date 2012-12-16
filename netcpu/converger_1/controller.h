@@ -44,6 +44,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <boost/tokenizer.hpp>
 
 #include <censoc/lexicast.h>
+#include <censoc/sha_file.h>
+
 #include <netcpu/io_wrapper.h>
 #include <netcpu/combos_builder.h>
 
@@ -145,7 +147,7 @@ struct task_loader_detail : netcpu::io_wrapper<AsyncDriver> {
 		}
 	};
 
-	task_loader_detail(AsyncDriver & io_driver, int extended_float_res, ::boost::shared_ptr<netcpu::model_meta> mm)
+	task_loader_detail(AsyncDriver & io_driver, int extended_float_res, int approximate_exponents, ::boost::shared_ptr<netcpu::model_meta> mm)
 	: netcpu::io_wrapper<AsyncDriver>(io_driver), mm(mm) {
 
 		censoc::llog() << "ctor in task_loader_detail\n";
@@ -426,11 +428,21 @@ struct task_loader_detail : netcpu::io_wrapper<AsyncDriver> {
 
 		model.verify_args(meta_msg, bulk_msg); // should throw
 
+		{ // store sha hush of bulk message in meta message...
+			netcpu::message::write_wrapper write_raw; 
+			bulk_msg.to_wire(write_raw);
+			censoc::sha_buf<size_type> sha;
+			sha.calculate(write_raw.head(), write_raw.size());
+			meta_msg.bulk_msg_hush.resize(sha.hushlen);
+			::memcpy(meta_msg.bulk_msg_hush.data(), sha.get(), sha.hushlen);
+		}
+
 		censoc::llog() << "Parsing done... writing the res message..." << ::std::endl;
 		converger_1::message::res res_msg;
 		res_msg.int_res(converger_1::message::int_res<N>::value);
 		res_msg.float_res(converger_1::message::float_res<F>::value);
 		res_msg.extended_float_res(extended_float_res);
+		res_msg.approximate_exponents(approximate_exponents);
 		res_msg.print();
 		base_type::io().AsyncDriver::native_protocol::write(res_msg, &task_loader_detail::on_write_res, this);
 	}
@@ -524,6 +536,7 @@ struct task_loader : netcpu::io_wrapper<AsyncDriver> {
 			int int_res(-1);
 			int float_res(-1);
 			int extended_float_res(-1);
+			int approximate_exponents(-1);
 			for (netcpu::model_meta::args_type::iterator i(args.begin()); i != args.end();) {
 				if (i->first == "--int_resolution") {
 					if (i->second == "32")
@@ -549,6 +562,14 @@ struct task_loader : netcpu::io_wrapper<AsyncDriver> {
 					else
 						throw netcpu::message::exception(netcpu::xxx("Can't have --extended_float_resolution with this option:[") << i->second << ']');
 					args.erase(i++);
+				} else if (i->first == "--approximate_exponents") {
+					if (i->second == "true")
+						approximate_exponents = 1;
+					else if (i->second == "false")
+						approximate_exponents = 0;
+					else
+						throw netcpu::message::exception(netcpu::xxx("Can't have --approximate_exponents with this option:[") << i->second << ']');
+					args.erase(i++);
 				} else 
 					++i;
 			}
@@ -556,10 +577,13 @@ struct task_loader : netcpu::io_wrapper<AsyncDriver> {
 			if (extended_float_res == -1)
 				throw netcpu::message::exception("--extended_float_resolution option must be specified");
 
+			if (approximate_exponents == -1)
+				throw netcpu::message::exception("--approximate_exponents option must be specified");
+
 			if (int_res == converger_1::message::int_res<uint32_t>::value)
-				new_task_loader_detail<uint32_t>(float_res, extended_float_res);
+				new_task_loader_detail<uint32_t>(float_res, extended_float_res, approximate_exponents);
 			else if (int_res == converger_1::message::int_res<uint64_t>::value)
-				new_task_loader_detail<uint64_t>(float_res, extended_float_res);
+				new_task_loader_detail<uint64_t>(float_res, extended_float_res, approximate_exponents);
 			else
 				throw netcpu::message::exception("--int_resolution option must be specified");
 
@@ -570,12 +594,12 @@ struct task_loader : netcpu::io_wrapper<AsyncDriver> {
 	}
 	template <typename IntRes>
 	void 
-	new_task_loader_detail(int float_res, int extended_float_res)
+	new_task_loader_detail(int float_res, int extended_float_res, int approximate_exponents)
 	{
 		if (float_res == converger_1::message::float_res<float>::value)
-			new task_loader_detail<AsyncDriver, IntRes, float, Model<IntRes, float> >(base_type::io(), extended_float_res, mm);
+			new task_loader_detail<AsyncDriver, IntRes, float, Model<IntRes, float> >(base_type::io(), extended_float_res, approximate_exponents, mm);
 		else if (float_res == converger_1::message::float_res<double>::value)
-			new task_loader_detail<AsyncDriver, IntRes, double, Model<IntRes, double> >(base_type::io(), extended_float_res, mm);
+			new task_loader_detail<AsyncDriver, IntRes, double, Model<IntRes, double> >(base_type::io(), extended_float_res, approximate_exponents, mm);
 		else
 			throw netcpu::message::exception("--float_resolution option must be specified");
 	}

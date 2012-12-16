@@ -56,7 +56,8 @@ struct messages_ids {
 		server_recentre_only_sync,
 		server_complexity_only_sync,
 		convergence_state,
-		haltons
+		haltons,
+		skip_bulk
 	};
 };
 

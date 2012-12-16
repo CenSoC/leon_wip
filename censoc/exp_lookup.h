@@ -94,7 +94,7 @@ public:
 	}
 
 	float_type
-	eval(float_type x) 
+	eval(float_type x) const
 	{
 		BOOST_STATIC_ASSERT(steps > 2);
 
@@ -126,6 +126,29 @@ public:
 			return x *= ::std::numeric_limits<float_type>::max();
 	}
 
+};
+
+template <typename float_type, typename, bool>
+struct exponent_evaluation_choice {
+	float_type inline static
+	eval(float_type x) 
+	{
+		return ::std::exp(x);
+	}
+};
+
+template <typename float_type, typename size_type>
+struct exponent_evaluation_choice<float_type, size_type, true> {
+	exp_lookup::linear_interpolation_linear_spacing<float_type, size_type, 100> my_exp;
+	exponent_evaluation_choice()
+	:	my_exp(1)// .99999) 
+	{
+	}
+	float_type inline
+	eval(float_type x) const
+	{
+		return my_exp.eval(x);
+	}
 };
 
 }}

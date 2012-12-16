@@ -62,9 +62,10 @@ struct res : netcpu::message::message_base<message::messages_ids::res> {
 	data_type int_res; 
 	data_type float_res;
 	data_type extended_float_res;
+	data_type approximate_exponents;
 
 	res()
-	: int_res(-1), float_res(-1), extended_float_res(-1) {
+	: int_res(-1), float_res(-1), extended_float_res(-1), approximate_exponents(-1) {
 	}
 
 	res(netcpu::message::read_wrapper & raw)
@@ -78,6 +79,7 @@ struct res : netcpu::message::message_base<message::messages_ids::res> {
 		censoc::llog() << "int resolution: " << int_res() << ::std::endl; 
 		censoc::llog() << "float resolutin: " << float_res() << ::std::endl;
 		censoc::llog() << "extended float resolutin: " << float_res() << ::std::endl;
+		censoc::llog() << "approximate exponents: " << approximate_exponents() << ::std::endl;
 	}
 };
 

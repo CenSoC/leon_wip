@@ -70,6 +70,7 @@ struct meta : meta_base {
 	size_type complexity_size;
 	float_type improvement_ratio_min;
 	float_type shrink_slowdown;
+	netcpu::message::array<uint8_t> bulk_msg_hush;
 
 	Model model;
 
@@ -90,6 +91,9 @@ struct meta : meta_base {
 		censoc::llog() << "shrink_slowdown: " << netcpu::message::deserialise_from_decomposed_floating<F>(shrink_slowdown) << ::std::endl; 
 		model.print();
 	}
+};
+
+struct skip_bulk : netcpu::message::message_base<message::messages_ids::skip_bulk>  {
 };
 
 }}}}

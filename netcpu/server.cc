@@ -100,12 +100,20 @@ char const completed_index_filename[] = "completed.txt";
 
 time_t static task_oldage(0);
 time_t static task_oldage_check(0);
+time_t static wakeonlan_check(7); // in minutes, todo, a quick hack, perhaps a runtime parametric CLI option for the value
 
 ::boost::asio::io_service static io;
 ::boost::asio::ssl::context static ssl(io, ::boost::asio::ssl::context::sslv23);
 ::std::string static root_path;
 tasks_size_type static max_taskid;
 
+void static
+do_wakeonlan()
+{
+	// todo -- use boost filesystem exists to see if script exists and only then run it, or perhaps use a command-line option supplied by the user to determine what (and if) to run.
+	if (::system("./wakeonlan.sh")) // todo -- later make it more configurable and sensible
+		throw ::std::runtime_error("could not run wakeonlan.sh");
+}
 
 bool static 
 verify_callback(bool preverified, ::boost::asio::ssl::verify_context& ctx) 
@@ -295,8 +303,10 @@ bool static completed_existing_tasks_parsing_during_load(false);
 void static
 activate_front_pending_task()
 {
-	if (completed_existing_tasks_parsing_during_load == true && pending_tasks.empty() == false && pending_tasks.front()->active() == false)
+	if (completed_existing_tasks_parsing_during_load == true && pending_tasks.empty() == false && pending_tasks.front()->active() == false) {
 		pending_tasks.front()->activate();
+		do_wakeonlan();
+	}
 }
 
 void static
@@ -327,16 +337,13 @@ named_tasks_type::~named_tasks_type()
 ::std::string
 generate_taskdir(::std::string const & postfix)
 {
-	netcpu::task_id_type tmp(netcpu::max_taskid++);
 	while (!0) {
-		::std::string const name(::std::string(netcpu::xxx(netcpu::max_taskid)) + "_" + postfix);
+		::std::string const name(::std::string(netcpu::xxx(++netcpu::max_taskid)) + "_" + postfix);
 		::std::string const path(netcpu::root_path + name);
 		int const ec(::mkdir(path.c_str(), 0700));
 		if (ec) {
 			if (errno != EEXIST)
 				throw ::std::runtime_error(xxx("could not mkdir: [") << path << "] with error: [" << ::strerror(errno) << ']' );
-			else if (++netcpu::max_taskid == tmp)
-				throw ::std::runtime_error(xxx("could not mkdir: [") << path << "] all options exhausted due to maximum possible tasks being already stored on the drive (consider cleaning or changing typedef for tasks_size_type)");
 		} else {
 			// store max_taskid
 			::std::ofstream f((netcpu::root_path + "last_taskid.tmp").c_str(), ::std::ios::trunc);
@@ -384,6 +391,7 @@ purge_old_tasks_error()
 }
 
 netcpu::message::async_timer static purge_old_tasks_timer(&purge_old_tasks_error);
+netcpu::message::async_timer static wakeonlan_timer;
 
 void static
 purge_old_tasks()
@@ -406,6 +414,14 @@ purge_old_tasks()
 		on_completed_tasks_update();
 
 	purge_old_tasks_timer.timeout(boost::posix_time::seconds(task_oldage_check), &purge_old_tasks);
+}
+
+void static
+wakeonlan()
+{
+	if (pending_tasks.empty() == false && pending_tasks.front()->active() == true)
+		do_wakeonlan();
+	wakeonlan_timer.timeout(boost::posix_time::minutes(wakeonlan_check));
 }
 
 struct interface {
@@ -517,6 +533,8 @@ public:
 		censoc::llog() << "ctor in peer_connection, driver addr: " << &io << ::std::endl;
 		this->io().handshake_callback(&peer_connection::on_handshake, this);
 		io.write_callback(&peer_connection::on_write, this);
+		// todo -- a reasonable cludge this one: end_process_writer et al in converger_1/server.h et al will new-up the peer_connection but without any need to do a handshake -- basically jumping rigth into the 'on_read' state... by that stage the 'on_read' callback had better be set... so just doing it here... later on shall re-factor for more explicit specialisations of the code-use -- as new-in-chain or not...
+		io.read_callback(&peer_connection::on_read, this);
 	}
 
 	~peer_connection() throw();
@@ -789,11 +807,15 @@ run(int argc, char * * argv)
 				throw ::std::runtime_error(xxx("could not stat: [") << ent_path << ']');
 			else if (S_ISDIR(s.st_mode) && name != "." && name != "..") {
 
-				::std::string::size_type delim_pos(name.find_first_of('_'));
-				if (delim_pos == ::std::string::npos || name.size() <= ++delim_pos)
+				::std::string::size_type begin_pos(name.find_first_of('_'));
+				if (begin_pos == ::std::string::npos || name.size() <= ++begin_pos)
 					throw ::std::runtime_error(xxx("incorrect path found: [") << ent_path << ']' );
 
-				netcpu::models_type::iterator implementation(netcpu::models.find(censoc::lexicast<netcpu::task_id_paramtype>(name.substr(delim_pos))));
+				::std::string::size_type end_pos(name.find_first_of('-'));
+				if (end_pos == ::std::string::npos)
+					throw ::std::runtime_error(xxx("incorrect path found: [") << ent_path << ']' );
+
+				netcpu::models_type::iterator implementation(netcpu::models.find(censoc::lexicast<netcpu::task_id_paramtype>(name.substr(begin_pos, end_pos))));
 				if (implementation == netcpu::models.end()) 
 					throw ::std::runtime_error("corrupt directory -- unsupported model found");
 				if (completed_index.find(name) != completed_index.end()) {
@@ -839,6 +861,7 @@ run(int argc, char * * argv)
 	}
 
 	purge_old_tasks_timer.timeout(&purge_old_tasks);
+	wakeonlan_timer.timeout(boost::posix_time::minutes(wakeonlan_check), &wakeonlan);
 
 	::boost::shared_ptr<netcpu::acceptor> acceptor_ptr(new acceptor(ui->endpoints_i)); 
 	ui.reset();

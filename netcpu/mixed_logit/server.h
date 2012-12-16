@@ -57,7 +57,7 @@ namespace censoc { namespace netcpu { namespace mixed_logit {
 template <typename N, typename F>
 struct model_traits {
 	typedef netcpu::converger_1::message::meta<N, F, mixed_logit::message::meta<N> > meta_msg_type;
-	typedef netcpu::converger_1::message::bulk<N, F, mixed_logit::message::bulk> bulk_msg_type;
+	typedef netcpu::converger_1::message::bulk<N, F, mixed_logit::message::bulk<N> > bulk_msg_type;
 };
 
 netcpu::converger_1::model_factory<mixed_logit::model_traits, netcpu::models_ids::mixed_logit> static factory;

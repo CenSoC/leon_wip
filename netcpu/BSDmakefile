@@ -55,7 +55,7 @@ LIB_YUCK_IV = -liphlpapi
 
 .ifndef LIBS_DEFINED
 
-.MAIN : tests server processor controller update_server update_client lognormal_test flexi_dist_test exp_lookup_test survey_generator gmnl_2a/simulator gmnl_2/simulator gmnl_2/2csv gmnl_2/2logit
+.MAIN : tests server processor controller update_server update_client lognormal_test flexi_dist_test exp_lookup_test survey_generator gmnl_2a/simulator gmnl_2/2csv 
 
 server :
 	make LIBS_DEFINED="-lboost_filesystem -lboost_system -lssl -lcrypto -lz" ${.TARGET}.exe
@@ -78,15 +78,9 @@ nosleep :
 	make LIBS_DEFINED="${LIB_YUCK_IV} ${LIB_YUCK_III}" ${.TARGET}.exe
 
 gmnl_2a/simulator : finite_math
-	make LIBS_DEFINED="finite_math.o -lz" ${.TARGET}.exe
-
-gmnl_2/simulator : finite_math
-	make LIBS_DEFINED="finite_math.o -lz" ${.TARGET}.exe
+	make LIBS_DEFINED="finite_math.o  -lboost_filesystem -lboost_system -lz" ${.TARGET}.exe
 
 gmnl_2/2csv : 
-	make LIBS_DEFINED="-lz" ${.TARGET}.exe
-
-gmnl_2/2logit : 
 	make LIBS_DEFINED="-lz" ${.TARGET}.exe
 
 update : update_server update_client

@@ -45,6 +45,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 namespace censoc { namespace netcpu { namespace mixed_logit { namespace message {
 
+// TODO -- use C++11 using syntax for alias templates (gcc 4.6.2 does not seem to support it as of yet)
 template <typename N>
 struct meta : netcpu::gmnl_2::message::meta<N> {
 };
