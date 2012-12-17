@@ -2029,15 +2029,20 @@ function canvas_painter_type(canvas, coefficients, task_name, model_id, betas_si
 
 		var grd = this.ctx.createLinearGradient(0, top, 0, bottom);
 
-		var steps_size = 10; 
-		var color_stop_step = 1.0 / steps_size; 
-		var color_stop = 0.0;
-		while (color_stop <= 1.0) {
-			var distance = (color_stop * this.normal_trunc * 2 - this.normal_trunc) / this.coefficients[i + this.betas_size].normalised_value; 
-			grd.addColorStop(color_stop, "rgba(255, 0, 0, " + 
-					.88 * (Math.exp(distance * distance / -2)).toFixed(5) +
-					")"); 
-			color_stop += color_stop_step;
+		if (this.coefficients[i + this.betas_size].normalised_value > 0.05 || this.coefficients[i + this.betas_size].normalised_value < -0.05) {
+			var steps_size = 10; 
+			var color_stop_step = 1.0 / steps_size; 
+			var color_stop = 0.0;
+			while (color_stop <= 1.0) {
+				var distance = (color_stop * this.normal_trunc * 2 - this.normal_trunc) / this.coefficients[i + this.betas_size].normalised_value; 
+				grd.addColorStop(color_stop, "rgba(255, 0, 0, " + 
+						.88 * (Math.exp(distance * distance / -2)).toFixed(5) +
+						")"); 
+				color_stop += color_stop_step;
+			}
+		} else {
+				grd.addColorStop(0, "rgba(255, 0, 0, 0)"); 
+				grd.addColorStop(1, "rgba(255, 0, 0, 0)"); 
 		}
 
 		this.coefficients[i].render_top = top;
@@ -2083,21 +2088,33 @@ function canvas_painter_type(canvas, coefficients, task_name, model_id, betas_si
 
 		}
 
+		this.ctx.strokeStyle = "darkgreen";
+		this.ctx.lineWidth = 0.8;
+		this.ctx.beginPath();
+		this.coefficients[0].tmp_y = this.value_to_y_coord(this.coefficients[0].normalised_value + normals[(normals_i * this.coefficients.length) %  normals.length] * this.coefficients[this.betas_size].normalised_value);
+		this.ctx.moveTo(this.coefficient_circle_radius, this.coefficients[0].tmp_y);
+		coefficient_centre = this.coefficient_circle_radius * 3 + this.coefficient_circle_padding;
+		for (var i = 1; i < this.betas_size; ++i, coefficient_centre += this.coefficient_centre_stepsize) {
+			var y = this.value_to_y_coord(this.coefficients[i].normalised_value + normals[(i + normals_i * this.coefficients.length) %  normals.length] * this.coefficients[i + this.betas_size].normalised_value);
+			this.coefficients[i].tmp_y = y;
+			this.ctx.lineTo(coefficient_centre, this.coefficients[i].tmp_y);
+		}
+		this.ctx.stroke();
+		this.ctx.closePath();
+
 		this.ctx.fillStyle = "lightgrey";
 		coefficient_centre = this.coefficient_circle_radius;
 		this.ctx.beginPath();
 		for (var i = 0; i != this.betas_size; ++i, coefficient_centre += this.coefficient_centre_stepsize) {
-			var y = this.value_to_y_coord(this.coefficients[i].normalised_value + normals[(i + normals_i * this.coefficients.length) %  normals.length] * this.coefficients[i + this.betas_size].normalised_value);
-			this.coefficients[i].tmp_y = y;
 			this.ctx.beginPath();
-			this.ctx.arc(coefficient_centre, y, this.coefficient_circle_radius * .5, 0, Math.PI * 2);
+			this.ctx.arc(coefficient_centre, this.coefficients[i].tmp_y, this.coefficient_circle_radius * .5, 0, Math.PI * 2);
 			this.ctx.fill();
 			this.ctx.closePath();
 		}
 
 		this.ctx.beginPath();
 		//this.ctx.fillStyle = "white";
-		this.ctx.strokeStyle = "white";
+		this.ctx.strokeStyle = "blue";
 		this.ctx.lineWidth = 2;
 		coefficient_centre = this.coefficient_circle_radius;
 		for (var i = 0; i != this.betas_size; ++i, coefficient_centre += this.coefficient_centre_stepsize) {
@@ -2112,18 +2129,7 @@ function canvas_painter_type(canvas, coefficients, task_name, model_id, betas_si
 		}
 		this.ctx.stroke();
 
-		this.ctx.strokeStyle = "black";
-		this.ctx.lineWidth = 0.8;
-		this.ctx.beginPath();
-		this.coefficients[0].tmp_y = this.value_to_y_coord(this.coefficients[0].normalised_value + normals[(normals_i * this.coefficients.length) %  normals.length] * this.coefficients[this.betas_size].normalised_value);
-		this.ctx.moveTo(this.coefficient_circle_radius, this.coefficients[0].tmp_y);
-		coefficient_centre = this.coefficient_circle_radius * 3 + this.coefficient_circle_padding;
-		for (var i = 1; i < this.betas_size; ++i, coefficient_centre += this.coefficient_centre_stepsize) {
-			this.ctx.lineTo(coefficient_centre, this.coefficients[i].tmp_y);
-		}
-		this.ctx.stroke();
-		//this.ctx.closePath();
-
+		/*
 		this.ctx.strokeStyle = "black";
 		this.ctx.lineWidth = 0.77;
 		coefficient_centre = this.coefficient_circle_radius;
@@ -2137,14 +2143,16 @@ function canvas_painter_type(canvas, coefficients, task_name, model_id, betas_si
 			this.ctx.lineTo(coefficient_centre + tmp, y + tmp);
 			this.ctx.moveTo(coefficient_centre + tmp, y - tmp);
 			this.ctx.lineTo(coefficient_centre - tmp, y + tmp);
-			/*
-			this.ctx.moveTo(coefficient_centre - this.coefficient_circle_radius, y);
-			this.ctx.lineTo(coefficient_centre + this.coefficient_circle_radius, y);
-			this.ctx.moveTo(coefficient_centre, y - this.coefficient_circle_radius);
-			this.ctx.lineTo(coefficient_centre, y + this.coefficient_circle_radius);
-			*/
+			//
+			//this.ctx.moveTo(coefficient_centre - this.coefficient_circle_radius, y);
+			//this.ctx.lineTo(coefficient_centre + this.coefficient_circle_radius, y);
+			//this.ctx.moveTo(coefficient_centre, y - this.coefficient_circle_radius);
+			//this.ctx.lineTo(coefficient_centre, y + this.coefficient_circle_radius);
+			//
 		}
 		this.ctx.stroke();
+		*/
+
 		this.ctx.closePath();
 	}
 
