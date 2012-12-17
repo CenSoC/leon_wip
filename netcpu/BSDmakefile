@@ -55,7 +55,7 @@ LIB_YUCK_IV = -liphlpapi
 
 .ifndef LIBS_DEFINED
 
-.MAIN : tests server processor controller update_server update_client lognormal_test flexi_dist_test exp_lookup_test survey_generator gmnl_2a/simulator gmnl_2/2csv 
+.MAIN : tests server processor controller update_server update_client lognormal_test flexi_dist_test exp_lookup_test survey_generator gmnl_2a/simulator gmnl_2/2csv http/server
 
 server :
 	make LIBS_DEFINED="-lboost_filesystem -lboost_system -lssl -lcrypto -lz" ${.TARGET}.exe
