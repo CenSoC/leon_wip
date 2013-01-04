@@ -2032,16 +2032,16 @@ struct task : netcpu::task {
 					assert(i->second);
 					total_remaining_complexity_size += i->second;
 				}
-				xxx << "Currently to-be calculated complexity: " << active_task_processor->current_complexity_level->first << " evaluations in total.\\n"
-				<< "Remaining-to-compute from the current complexity: " << total_remaining_complexity_size << " evaluations.\\n";
+				xxx << "Currently calculated complexity has " << active_task_processor->current_complexity_level->first << " evaluations in total\\n"
+				<< "(with " << total_remaining_complexity_size  << " evaluations awating computation)" << << "\\n";
 
 				unsigned coeffs_at_once(1);
 				for (tmp = active_task_processor->combos_modem.metadata().begin(); tmp != active_task_processor->current_complexity_level; ++tmp, ++coeffs_at_once);
-				xxx << "Currently in the stage of iterating through " << coeffs_at_once << "-coefficient(s)-@-once diagonality.\\n";
+				xxx << "The aforementioned complexity is robust with respect to " << coeffs_at_once << "-coefficient(s)-@-once terrain diagonality.\\n";
 			}
-			xxx << "Final complexity-size (at current zoom-level): " << active_task_processor->combos_modem.metadata().rbegin()->first << " evaluations.\\n";
 
-			xxx << "visited_places elements: " << active_task_processor->visited_places.size() << "\\n";
+			xxx << "Final complexity size (at the present zoom-level) is " << active_task_processor->combos_modem.metadata().rbegin()->first << " evaluations in total\\n";
+			xxx << "So far " << active_task_processor->visited_places.size() << " universally-unique terrain locations have been evaluated\\n";
 
 			::std::string meta_text(xxx);
 			tasks_list.meta_text.resize(meta_text.size());
