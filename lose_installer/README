@@ -52,3 +52,4 @@ certificate.pem
 
 The .exe is to be generated as per build/compilation stage; and certificate should be unique as per any given deployment scenario (i.e. not to be shared in "one for all" public context).
 
+Additionally, due to the way the update_client currently calls and parses filepaths and arguments, there shall not be any whitespaces in the installed applications and folders names (i.e. no spaces in the full filepath of any file or directory). This, however, is an implicity pseudo-standard file-naming convention for me anyways (i.e. lower-case letters and underscores in place of spaces).

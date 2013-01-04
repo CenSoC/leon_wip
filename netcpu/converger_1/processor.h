@@ -283,6 +283,7 @@ struct task_processor_detail : netcpu::io_wrapper<netcpu::message::async_driver>
 	typedef ::std::map<size_type, size_type> complexities_type;
 	complexities_type remaining_complexities;
 	complexities_type unreported_complexities;
+	bool do_send_peer_report;
 
 	void (task_processor_detail::* peer_report) ();
 
@@ -315,7 +316,7 @@ struct task_processor_detail : netcpu::io_wrapper<netcpu::message::async_driver>
 		}
 	} e_min;
 
-	size_type const static rollback_report_timeout_minutes = 30;
+	size_type const static rollback_report_timeout_minutes = 10; // taking care not to make it too long (e.g. < 30)... see relevant 'blame' commit log in the git repository history for reasoning...
 	netcpu::message::async_timer rollback_report_timer; // used to *rarely* report accumulated unreported complexities, so that the server can update its view/state of the overall convergence process and can recover quicker if the server crashes due to power outage, etc... (otherwise a given 'coeffs at once' combination may take very long time to complete (e.g. may be a day) and then, if no new peers are connecting/dropping in the meantime, the after-crash server will need to start from the very start of the given combination thereby loosing a day (or something like that anyway...)
 	netcpu::message::async_timer process_iteration_timer;
 	bool skip_next_process_iteration;
@@ -342,6 +343,7 @@ struct task_processor_detail : netcpu::io_wrapper<netcpu::message::async_driver>
 	coefficients_size(model.get_coefficients_size()) ,
 	coefficients_metadata(coefficients_size),
 	init_complexity_size(meta_msg.complexity_size()),
+	do_send_peer_report(false),
 	e_min(censoc::largish<float_type>(), netcpu::message::deserialise_from_decomposed_floating<float_type>(meta_msg.improvement_ratio_min)), 
 	skip_next_process_iteration(false)
 	{
@@ -350,35 +352,75 @@ struct task_processor_detail : netcpu::io_wrapper<netcpu::message::async_driver>
 
 		censoc::llog() << "ctor in converger_1::task_processor_detail\n";
 
+		if (censoc::sha_file<size_type>::hushlen != meta_msg.bulk_msg_hush.size()) { // server may choose to send zero-hush to force the reloading of bulk message 
+			io().write(netcpu::message::good(), &task_processor_detail::on_meta_reply_write, this);
+		} else if (netcpu::clone_instance_index) {
+			io().read_callback(&task_processor_detail::on_first_server_state_sync_read, this);
+			// timeout must be of large-enought value as some loser os will lock the file from deletion if other programs/instances are reading it... so will sleep long enough for the first instance of the program to get to bulk_msg and potentially delete the old/rogue one...
+			// idea of using file-locks (create lock file, atomically fail if already exists) shall not make much difference as issue of concurrent access to a given resource won't change and the integrity of the read file is already taken care of by the hush value verification/re-calculation.
+			unsigned const static cpus_size(censoc::sysinfo::cpus_size()); // todo -- this may be deprecated as cpus_size in sysinfo should really become more of a singleton's kind...
+			for (unsigned i(0); i != 5; ++i) { // todo -- use ncpus (or max clone index)
+				if (try_load_bulk_msg_from_file(meta_msg) == bulk_msg_file_ok) {
+					io().write(converger_1::message::skip_bulk(), &task_processor_detail::on_skip_bulk_reply_write, this);
+					return;
+				} else 
+					censoc::scheduler::sleep_s(3 + cpus_size * 1.5);
+			}
+			throw ::std::runtime_error("could not read bulk_msg in a subsquent instance of the processor"); 
+		} else {
+			bulk_msg_file_state const rv(try_load_bulk_msg_from_file(meta_msg));
+			if (rv == bulk_msg_file_ok)
+				io().write(converger_1::message::skip_bulk(), &task_processor_detail::on_skip_bulk_reply_write, this);
+			else { 
+				if (rv == bulk_msg_file_stale) {
+					// some loser os will lock the file from deletion if other programs/instances are reading it...
+					unsigned i(10);
+					while (--i) { // todo -- use ncpus (or max clone index)
+						try {
+							::boost::filesystem::remove(netcpu::ownpath.branch_path() /= "bulk.msg");
+						} catch (::boost::filesystem::filesystem_error const & e) {
+							::std::cerr << "boost remove of stale bulk_msg has failed: [" << e.what() << "]\n";
+							censoc::scheduler::sleep_s(1);
+							continue;
+						}
+						break;
+					} 
+					if (!i)
+						throw ::std::runtime_error("could not remove stale bulk_msg"); 
+				} 
+				io().write(netcpu::message::good(), &task_processor_detail::on_meta_reply_write, this);
+			}
+		}
+	}
+
+	enum bulk_msg_file_state { bulk_msg_file_missing, bulk_msg_file_ok, bulk_msg_file_stale };
+	bulk_msg_file_state
+	try_load_bulk_msg_from_file(meta_msg_type const & meta_msg)
+	{
 		::std::string bulk_msg_path((netcpu::ownpath.branch_path() /= "bulk.msg").string());
 		if (::boost::filesystem::exists(bulk_msg_path) == true) {
-			if (censoc::sha_file<size_type>::hushlen == meta_msg.bulk_msg_hush.size()) { // server may choose to send zero-hush to force the reloading of bulk message 
-				censoc::sha_file<size_type> sha;
-				if (!::memcmp(sha.calculate(bulk_msg_path), meta_msg.bulk_msg_hush.data(), censoc::sha_file<size_type>::hushlen)) {
+			assert(censoc::sha_file<size_type>::hushlen == meta_msg.bulk_msg_hush.size());
+			censoc::sha_file<size_type> sha;
+			if (!::memcmp(sha.calculate(bulk_msg_path), meta_msg.bulk_msg_hush.data(), censoc::sha_file<size_type>::hushlen)) {
+				::std::ifstream bulk_msg_file(bulk_msg_path.c_str(), ::std::ios::binary);
+				if (bulk_msg_file) {
+					censoc::llog() << "loading cached bulk message\n";
 
-					::std::ifstream bulk_msg_file(bulk_msg_path.c_str(), ::std::ios::binary | ::std::ios::trunc);
-					if (bulk_msg_file) {
-						censoc::llog() << "loading cached bulk message\n";
+					netcpu::message::read_wrapper wrapper;
+					netcpu::message::fstream_to_wrapper(bulk_msg_file, wrapper);
 
-						netcpu::message::read_wrapper wrapper;
-						netcpu::message::fstream_to_wrapper(bulk_msg_file, wrapper);
+					typedef typename Model::bulk_msg_type bulk_msg_type;
+					bulk_msg_type bulk_msg;
+					bulk_msg.from_wire(wrapper);
+					assert(coefficients_size == bulk_msg.coeffs.size());
 
-						typedef typename Model::bulk_msg_type bulk_msg_type;
-						bulk_msg_type bulk_msg;
-						bulk_msg.from_wire(wrapper);
-						assert(coefficients_size == bulk_msg.coeffs.size());
-
-						model.on_bulk_read(bulk_msg);
-						io().write(converger_1::message::skip_bulk(), &task_processor_detail::on_skip_bulk_reply_write, this);
-
-						return;
-					}
+					model.on_bulk_read(bulk_msg);
+					return bulk_msg_file_ok;
 				}
-			}
-			::boost::filesystem::remove(bulk_msg_path);
-		}
-
-		io().write(netcpu::message::good(), &task_processor_detail::on_meta_reply_write, this);
+			} 
+			return bulk_msg_file_stale;
+		} else
+			return bulk_msg_file_missing;
 	}
 
 	void
@@ -428,7 +470,14 @@ struct task_processor_detail : netcpu::io_wrapper<netcpu::message::async_driver>
 
 		typedef typename Model::bulk_msg_type bulk_msg_type;
 
-		if (bulk_msg_type::myid != io().read_raw.id()) 
+		if (netcpu::message::end_process::myid == io().read_raw.id()) {
+			censoc::llog() << "bailing out... with some elegance\n";
+			if (io().is_write_pending() == false)
+				respond_to_end_process();
+			else
+				io().write_callback(&task_processor_detail::respond_to_end_process, this);
+			return;
+		} else if (bulk_msg_type::myid != io().read_raw.id()) 
 			throw ::std::runtime_error(xxx("wrong message: [") << io().read_raw.id() << "] want bulk id: [" << static_cast<netcpu::message::id_type>(bulk_msg_type::myid) << ']'); 
 
 		censoc::llog() << "on_bulk_read ctored bulk_msg\n";
@@ -444,14 +493,22 @@ struct task_processor_detail : netcpu::io_wrapper<netcpu::message::async_driver>
 		// note -- no need to do this really (unless testing in debug mode in the following code)...
 		//combos_modem.build(coefficients_size, init_complexity_size, init_coeffs_atonce_size, coefficients_metadata);
 
-		{
+		if (!netcpu::clone_instance_index) {
 			::std::string bulk_msg_path((netcpu::ownpath.branch_path() /= "bulk.msg").string());
-			::std::ofstream bulk_msg_file(bulk_msg_path.c_str(), ::std::ios::binary | ::std::ios::trunc);
-			bulk_msg_file.write(reinterpret_cast<char const *>(io().read_raw.head()), io().read_raw.size());
-			if (bulk_msg_file == false)
-				throw ::std::runtime_error("could not write " + bulk_msg_path);
+				// some loser os may lock the file from modification if other programs/instances are reading it...
+				for (unsigned i(0);;++i) {
+					::std::ofstream bulk_msg_file(bulk_msg_path.c_str(), ::std::ios::binary | ::std::ios::trunc);
+					bulk_msg_file.write(reinterpret_cast<char const *>(io().read_raw.head()), io().read_raw.size());
+					if (bulk_msg_file == false) {
+						censoc::scheduler::sleep_s(1);
+						if (i != 33) // todo -- use ncpus (or max clone index)
+							continue;
+						else
+							throw ::std::runtime_error("could not write bulk_msg cache" + bulk_msg_path);
+					} else
+						break;
+				}
 		}
-
 		io().read(&task_processor_detail::on_first_server_state_sync_read, this);
 	}
 
@@ -548,7 +605,7 @@ struct task_processor_detail : netcpu::io_wrapper<netcpu::message::async_driver>
 			}
 #endif
 		} 
-		if (value_complexity != static_cast<size_type>(-1) || remaining_complexities.empty() == true) {
+		if (value_complexity != static_cast<size_type>(-1) || remaining_complexities.empty() == true || do_send_peer_report == true) {
 			assert(unreported_complexities.empty() == false);
 			assert(peer_report == &task_processor_detail::on_peer_report);
 
@@ -565,12 +622,16 @@ struct task_processor_detail : netcpu::io_wrapper<netcpu::message::async_driver>
 				complexitywise_element_msg.complexity_size(i->second);
 			}
 			assert(j == unreported_complexities.size());
-			unreported_complexities.clear();
 
 			if (io().is_write_pending() == false) 
 				on_peer_report();
 			else
 				io().write_callback(&task_processor_detail::on_peer_report_write, this);
+
+			if (do_send_peer_report == true) {
+				do_send_peer_report = false;
+				process_iteration_timer.timeout();
+			}
 		} else // only need to start another iteration if nothing better was found and some complexities still remain 
 			process_iteration_timer.timeout();
 	}
@@ -581,13 +642,14 @@ struct task_processor_detail : netcpu::io_wrapper<netcpu::message::async_driver>
 		peer_report_msg.print();
 		censoc::llog() << "on_peer_report, SENDING a peer report\n";
 		io().write(peer_report_msg);
+		unreported_complexities.clear();
 	}
 
 	void
 	on_rollback_report_timeout()
 	{
-		if (unreported_complexities.empty() == false && io().is_write_pending() == false) // really simple -- if network/io buffering is an issue, then not reporting (not critical to report anyway)...
-			on_peer_report();
+		if (unreported_complexities.empty() == false)
+			do_send_peer_report = true;
 		rollback_report_timer.timeout(::boost::posix_time::minutes(rollback_report_timeout_minutes));
 	}
 
@@ -765,6 +827,7 @@ struct task_processor_detail : netcpu::io_wrapper<netcpu::message::async_driver>
 				echo_status_key = server_state_sync_msg.echo_status_key();
 				io().write_callback(&task_processor_detail::on_write, this);
 				unreported_complexities.clear();
+				do_send_peer_report = false;
 				e_min = netcpu::message::deserialise_from_decomposed_floating<float_type>(server_state_sync_msg.value);
 
 				// assign in-ram coefficients data
@@ -787,11 +850,8 @@ struct task_processor_detail : netcpu::io_wrapper<netcpu::message::async_driver>
 
 			} else if (unreported_complexities.empty() == false) {
 				// if echo key is the same, and unreported complexities present -- write them out (in case the message was sent as a delayed cause of recalculate peers complexities from the server)
+				do_send_peer_report = true;
 				assert(peer_report == &task_processor_detail::on_peer_report);
-				if (io().is_write_pending() == false) 
-					on_peer_report();
-				else
-					io().write_callback(&task_processor_detail::on_peer_report_write, this);
 			}
 				
 			// substitute complexity range (need to do in all cases -- as could be a part of either -- proper state-sync, or just recalculation of complexities due to another peer connecting to server...
@@ -841,6 +901,7 @@ struct task_processor_detail : netcpu::io_wrapper<netcpu::message::async_driver>
 
 			// substitute complexity range
 			unreported_complexities.clear();
+			do_send_peer_report = false;
 			remaining_complexities.clear();
 			append_to_remaining_complexities(server_recentre_only_sync_msg);
 			assert(remaining_complexities.empty() == false);
@@ -888,10 +949,7 @@ struct task_processor_detail : netcpu::io_wrapper<netcpu::message::async_driver>
 			server_complexity_only_sync_msg.from_wire(io().read_raw);
 			if (!server_complexity_only_sync_msg.noreply() && unreported_complexities.empty() == false) {
 				assert(peer_report == &task_processor_detail::on_peer_report);
-				if (io().is_write_pending() == false) 
-					on_peer_report();
-				else
-					io().write_callback(&task_processor_detail::on_peer_report_write, this);
+				do_send_peer_report = true;
 			}
 			// NOTE -- no need to have echo_status_key/io_key for this message (not atomic/serialised w.r.t. server state)
 			remaining_complexities.clear();

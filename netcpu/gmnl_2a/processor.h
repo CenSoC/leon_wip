@@ -714,13 +714,7 @@ public:
 			+ matrix_composite_elements // matrix_composite
 		); 
 
-		// todo -- define the guard for app and it's mem structs more correctly as opposed to this ugly hack
-		anticipated_ram_utilization += 17000000;
-		
-		if ((netcpu::cpu_affinity_index + 1) * anticipated_ram_utilization > static_cast<float_type>(censoc::sysinfo::ram_size()) * .8) 
-			return false;
-		else 
-			return true;
+		return netcpu::test_anticipated_ram_utilization(anticipated_ram_utilization);
 	}
 
 };

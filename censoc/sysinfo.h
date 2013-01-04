@@ -55,6 +55,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 namespace censoc { namespace sysinfo {
 
+// todo -- given that such an info is not going to change during the runtime of the code... perhaps introduce the const static variants of the code, so that only the first time it is calculated, similar to singleton's init-only-once approach...
+
 // find out how many cpus I have...
 // NOTE/TODO: these will invoke extra ::GetSystemInfo call in loser-os, but that's ok (not a bottle-neck)... later will write a variant of the call to get more info types in one call (if such becomes needed w.r.t. bottle-neck/performance-related standpoints)...
 inline unsigned static
@@ -136,12 +138,11 @@ cpus_size()
 #endif
 }
 
-inline uint64_t static
+inline uintptr_t static
 ram_size()
 {
 #ifdef __FreeBSD__
-
-	// e.g. hw.ncpu: 2
+#if 0
 	int mib[4];
 	size_t mib_len(4);
 	if (::sysctlnametomib("hw.physmem", mib, &mib_len))
@@ -149,12 +150,18 @@ ram_size()
 	size_t len;
 	if (::sysctl(mib, mib_len, NULL, &len, NULL, 0)) 
 		throw ::std::runtime_error("could not sysctl");
-	censoc::array<char, unsigned> data(len);
-	if (::sysctl(mib, mib_len, data, &len, NULL, 0))
+	uintptr_t data(0);
+	if (len > sizeof(data))
+		throw ::std::runtime_error("could not sysctl: len is too great");
+	if (::sysctl(mib, mib_len, &data, &len, NULL, 0))
 		throw ::std::runtime_error("could not sysctl");
-
-	return *reinterpret_cast<uint64_t const *>(static_cast<char const *>(data));
-
+#else
+	uintptr_t data(0);
+	size_t len(sizeof(data));
+	if (::sysctlbyname("hw.physmem", &data, &len, NULL, 0))
+		throw ::std::runtime_error("could not sysctlbyname(hw.pagesize)");
+#endif
+	return data;
 #elif defined __WIN32__
 
 	::MEMORYSTATUSEX meminfo;
@@ -165,6 +172,43 @@ ram_size()
 	return meminfo.ullTotalPhys;
 #endif
 }
+
+#ifdef __FreeBSD__
+inline uintptr_t static
+ram_page_size()
+{
+	uintptr_t data(0);
+	size_t len(sizeof(data));
+	if (::sysctlbyname("hw.pagesize", &data, &len, NULL, 0))
+		throw ::std::runtime_error("could not sysctlbyname(hw.pagesize)");
+	return data;
+}
+inline uintptr_t static
+free_ram_size()
+{
+	uintptr_t const static page_size(ram_page_size());
+	uintptr_t data(0);
+	size_t len(sizeof(data));
+	if (::sysctlbyname("vm.stats.vm.v_free_count", &data, &len, NULL, 0))
+		throw ::std::runtime_error("could not sysctlbyname(hw.pagesize)");
+	uintptr_t const tmp(data * page_size);
+	data = 0;
+	len = sizeof(data);
+	if (::sysctlbyname("vm.stats.vm.v_cache_count", &data, &len, NULL, 0))
+		throw ::std::runtime_error("could not sysctlbyname(hw.pagesize)");
+	return tmp + data * page_size;
+}
+#elif defined __WIN32__
+inline uintptr_t static
+free_ram_size()
+{
+	MEMORYSTATUSEX stat;
+	stat.dwLength = sizeof(stat);
+	if (!::GlobalMemoryStatusEx(&stat))
+		throw ::std::runtime_error("could not GlobalMemoryStatusEx");
+	return stat.ullAvailPhys; // sum of free, standby (cached?), zero pools
+}
+#endif
 
 }}
 

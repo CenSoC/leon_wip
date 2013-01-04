@@ -105,13 +105,19 @@ simulate()
 	::memcpy(choice_sets_alternatives.data(), bulk_msg.model.dataset.choice_sets_alternatives.data(), choice_sets_alternatives.size());
 	uint8_t * choice_sets_alternatives_ptr(choice_sets_alternatives.data());
 
+#if 0
 	size_type const repetitions(meta_msg.model.repetitions()); 
+#endif
 	size_type const x_size(meta_msg.model.dataset.x_size()); 
 
 	::std::vector<double> coefficients(x_size * 2 + 2);
 
 	//::std::string const task_name(::boost::filesystem::path(::boost::filesystem::canonical(::boost::filesystem::current_path()).branch_path()).leaf().string());
-	::std::string const task_name(::boost::filesystem::canonical(::boost::filesystem::current_path()).leaf().string());
+	// todo -- use this when installed boost version supports it...
+	//::std::string const task_name(::boost::filesystem::canonical(::boost::filesystem::current_path()).leaf().string());
+	// otherwise, using older, deprecated-but-still-present
+	::std::string const task_name(::boost::filesystem::current_path().normalize().leaf().string());
+
 	::std::string::size_type begin_pos(task_name.find_first_of('_'));
 	if (begin_pos == ::std::string::npos || task_name.size() <= ++begin_pos)
 		throw ::std::runtime_error(xxx("incorrect path found: [") << ::boost::filesystem::current_path() << ']' );

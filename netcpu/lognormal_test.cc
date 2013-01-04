@@ -63,7 +63,7 @@ struct postcdfinvn {
 	vector_column_type normal;
 	template <typename TMP>
 	void inline 
-	hook(TMP const & x, unsigned x_size) 
+	hook(TMP const & x, unsigned /* x_size */) 
 	{
 #ifndef NDEBUG
 		for (unsigned i(0); i != static_cast<unsigned>(x.size()); ++i) {

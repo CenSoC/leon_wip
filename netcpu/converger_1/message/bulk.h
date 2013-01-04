@@ -60,7 +60,7 @@ struct coeffwise_bulk {
 	typedef netcpu::message::scalar<typename netcpu::message::typepair<N>::wire> size_type;
 	typedef netcpu::message::array<typename netcpu::message::typepair<N>::wire> size_arraytype; 
 	//typedef netcpu::message::scalar<F> float_type; 
-	typedef netcpu::message::decomposed_floating float_type; 
+	typedef netcpu::message::decomposed_floating<> float_type; 
 
 #if 0
 	float_type clamp_from;
@@ -112,7 +112,7 @@ struct coeffwise_bulk_x {
 
 	typedef netcpu::message::array<typename netcpu::message::typepair<N>::wire> size_arraytype; 
 	//typedef netcpu::message::scalar<F> float_type; 
-	typedef netcpu::message::decomposed_floating float_type; 
+	typedef netcpu::message::decomposed_floating<> float_type; 
 
 	float_type threshold;
 	size_arraytype grid_resolutions;

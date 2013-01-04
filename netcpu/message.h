@@ -431,22 +431,34 @@ public:
 
 
 // quick'n'simple for the time-being 
-struct field_interface;
+template <typename FieldInterface>
 struct fields_master_type {
-	typedef ::std::list<field_interface *> fields_type;
+	typedef ::std::list<FieldInterface *> fields_type;
 	fields_type * fields;
-	fields_type::iterator i; // must point 1 past 'current'
-} static fields_master;
+	typename fields_type::iterator i; // must point 1 past 'current'
+};
+
+struct field_interface;
+message::fields_master_type<field_interface> static fields_master;
+struct fields_master_traits {
+	typedef typename message::fields_master_type<message::field_interface>::fields_type fields_type;
+	message::fields_master_type<message::field_interface> static & 
+	get_fields_master() 
+	{
+		return message::fields_master;
+	}
+};
 
 /**
 	@note -- noncopyable is just a quick quality-assurance hack. later on will write appropriate copy ctor et al.
 	*/
+template <typename FieldsMasterTraits = message::fields_master_traits>
 struct message_base_noid : ::boost::noncopyable  {
-	::std::list<field_interface *> fields;
+	typename FieldsMasterTraits::fields_type fields;
 	message_base_noid()
 	{
-		message::fields_master.fields = &fields;
-		message::fields_master.i = fields.end();
+		FieldsMasterTraits::get_fields_master().fields = &fields;
+		FieldsMasterTraits::get_fields_master().i = fields.end();
 	}
 	~message_base_noid()
 	{
@@ -456,31 +468,34 @@ struct message_base_noid : ::boost::noncopyable  {
 /**
 	@note -- noncopyable is just a quick quality-assurance hack. later on will write appropriate copy ctor et al.
  */
-struct field_interface : ::boost::noncopyable {
+template <typename FieldsMasterTraits = message::fields_master_traits>
+struct field_interface_base : ::boost::noncopyable {
 
 	typedef message::size_type size_type;
 	typedef censoc::param<size_type>::type size_paramtype;
 
 	// array-specific hacks -- for arrays which contain user-defined struct which may contain scalars/custom-types. when such arrays are reset/resized/etc. they will need to know where to delete themselves from the right place in the fields list...
-	message::fields_master_type::fields_type * fields;
-	message::fields_master_type::fields_type::iterator my_i;
+	typename FieldsMasterTraits::fields_type * fields;
+	typename FieldsMasterTraits::fields_type::iterator my_i;
 	// end of array-specific hacks
 
-	field_interface()
-	{
-		assert(message::fields_master.fields != NULL);
-		fields = message::fields_master.fields; 
-		if (message::fields_master.i != message::fields_master.fields->end())
-			++message::fields_master.i;
-		message::fields_master.i = my_i = fields->insert(message::fields_master.i, this);
+	typename FieldsMasterTraits::fields_type::value_type const deriving_this;
+
+	field_interface_base(typename FieldsMasterTraits::fields_type::value_type deriving_this)
+	: deriving_this(deriving_this) {
+		assert(FieldsMasterTraits::get_fields_master().fields != NULL);
+		fields = FieldsMasterTraits::get_fields_master().fields; 
+		if (FieldsMasterTraits::get_fields_master().i != fields->end())
+			++FieldsMasterTraits::get_fields_master().i;
+		FieldsMasterTraits::get_fields_master().i = my_i = fields->insert(FieldsMasterTraits::get_fields_master().i, deriving_this);
 	}
-	~field_interface()
+	~field_interface_base()
 	{
 #ifndef NDEBUG
 #ifndef NDEBUG_XSLOW
 		bool found(false);
 		for (message::fields_master_type::fields_type::iterator i(fields->begin()); i != fields->end(); ++i) {
-			if (*i == this) {
+			if (*i == deriving_this) {
 				if (found == false)
 					found = true;
 				else {
@@ -492,10 +507,16 @@ struct field_interface : ::boost::noncopyable {
 		assert(found == true);
 #endif
 #endif
-		assert(*my_i == this);
+		assert(*my_i == deriving_this);
 		assert(my_i != fields->end());
 
 		fields->erase(my_i);
+	}
+};
+
+struct field_interface : field_interface_base<> {
+	field_interface()
+	: field_interface_base<>(this) {
 	}
 	void virtual from_wire(censoc::param<message::read_wrapper>::type, size_type & offset) = 0;
 	size_type virtual to_wire_size() const = 0;
@@ -505,7 +526,7 @@ struct field_interface : ::boost::noncopyable {
 };
 
 template <unsigned Id>
-struct message_base : message_base_noid {
+struct message_base : message_base_noid<> {
 	typedef censoc::lexicast< ::std::string> xxx;
 
 	typedef message::size_type size_type;
@@ -527,7 +548,7 @@ struct message_base : message_base_noid {
 			wrapper.inflate();
 
 			size_type offset(0); 
-			for (typename message::fields_master_type::fields_type::iterator i(fields.begin()); i != fields.end(); ++i) 
+			for (typename message::fields_master_type<message::field_interface>::fields_type::iterator i(fields.begin()); i != fields.end(); ++i) 
 				(*i)->from_wire(wrapper, offset);
 		}
 	}
@@ -541,14 +562,14 @@ struct message_base : message_base_noid {
 		// todo -- make this a template-based arg variant (message-deriving class should know if it has any fields at compile-time)
 		if (fields.empty() == false) {
 			size_type tmp(0);
-			for (typename message::fields_master_type::fields_type::const_iterator i(fields.begin()); i != fields.end(); ++i) 
+			for (typename message::fields_master_type<message::field_interface>::fields_type::const_iterator i(fields.begin()); i != fields.end(); ++i) 
 				tmp += (*i)->to_wire_size();
 
 			wrapper.inflated_payload_size(tmp);
 
 			// write-out the rest of the fields
 			tmp = 0; 
-			for (typename message::fields_master_type::fields_type::const_iterator i(fields.begin()); i != fields.end(); ++i) 
+			for (typename message::fields_master_type<message::field_interface>::fields_type::const_iterator i(fields.begin()); i != fields.end(); ++i) 
 				(*i)->to_wire(wrapper, tmp);
 
 			wrapper.deflate();
@@ -560,7 +581,7 @@ struct message_base : message_base_noid {
 	void
 	reset() 
 	{
-		for (typename message::fields_master_type::fields_type::iterator i(fields.begin()); i != fields.end(); ++i) 
+		for (typename message::fields_master_type<message::field_interface>::fields_type::iterator i(fields.begin()); i != fields.end(); ++i) 
 			(*i)->reset();
 	}
 };
@@ -631,9 +652,10 @@ deserialise_from_unsigned_to_signed_integral(T x)
 		return x;
 }  
 
+template <template <typename T> class ScalarType = message::scalar>
 struct decomposed_floating {
 	typedef uint64_t capacity_type;
-	typedef message::scalar<capacity_type> size_type;
+	typedef ScalarType<capacity_type> size_type;
 
 	decomposed_floating()
 	: fractional(0), exponent(0) {
@@ -651,11 +673,11 @@ double static inline frexp(double x, int * const e) { return ::frexp(x, e); }
 float static inline ldexp(float x, int e) { return ::ldexpf(x, e); } 
 double static inline ldexp(double x, int e) { return ::ldexp(x, e); } 
 
-template <typename F>
+template <typename F, template <typename T> class ScalarType>
 void 
-serialise_to_decomposed_floating(F const & from, decomposed_floating & to)
+serialise_to_decomposed_floating(F const & from, decomposed_floating<ScalarType> & to)
 {
-	typedef typename ::boost::make_signed<typename decomposed_floating::capacity_type>::type exponent_type;
+	typedef typename ::boost::make_signed<typename decomposed_floating<ScalarType>::capacity_type>::type exponent_type;
 
 	int exponent;
 	F const fractional(message::frexp(from, &exponent));
@@ -664,12 +686,12 @@ serialise_to_decomposed_floating(F const & from, decomposed_floating & to)
 	to.exponent(exponent);
 }  
 
-template <typename F>
+template <typename F, template <typename T> class ScalarType>
 F 
-deserialise_from_decomposed_floating(decomposed_floating const & from)
+deserialise_from_decomposed_floating(decomposed_floating<ScalarType> const & from)
 {
-	typedef typename decomposed_floating::capacity_type fractional_type;
-	typedef typename ::boost::make_signed<typename decomposed_floating::capacity_type>::type exponent_type;
+	typedef typename decomposed_floating<ScalarType>::capacity_type fractional_type;
+	typedef typename ::boost::make_signed<typename decomposed_floating<ScalarType>::capacity_type>::type exponent_type;
 
 	F const static inverted_max(static_cast<F>(1) / ::std::numeric_limits<exponent_type>::max());
 
@@ -976,7 +998,7 @@ struct get_tasks_list : message_base<message::controller_messages_ids::get_tasks
 
 
 struct task_coefficient_info {
-	typedef message::decomposed_floating float_type; 
+	typedef message::decomposed_floating<> float_type; 
 	float_type value;
 	float_type from;
 	float_type range;
@@ -990,6 +1012,7 @@ struct task_info {
 };
 
 struct tasks_list : message_base<message::controller_messages_ids::tasks_list>  {
+	message::array<char> meta_text;
 	message::array<message::task_info> tasks;
 	tasks_list(message::read_wrapper & raw)
 	{

@@ -38,24 +38,22 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 */
 
-//{ includes...
-#include <netcpu/message.h>
-#include <netcpu/types.h>
-//}
 
-#ifndef CENSOC_NETCPU_CONVERGER_1_MESSAGE_VISITED_PLACE_H
-#define CENSOC_NETCPU_CONVERGER_1_MESSAGE_VISITED_PLACE_H
+#ifndef CENSOC_NETCPU_MAIN_MODELS_IDS_H
+#define CENSOC_NETCPU_MAIN_MODELS_IDS_H
 
-namespace censoc { namespace netcpu { namespace converger_1 { namespace message {
+namespace censoc { namespace netcpu { 
 
-template <typename N>
-struct visited_place {
-	typedef netcpu::message::scalar<typename netcpu::message::typepair<N>::wire> size_type;
-
-	netcpu::message::array<char unsigned> begin;
-	size_type size;
+struct models_ids {
+	enum val {
+		logit = 1,
+		mixed_logit = 2,
+		gmnl_2 = 3,
+		gmnl_2a = 4
+	};
 };
 
-}}}}
+
+}}
 
 #endif

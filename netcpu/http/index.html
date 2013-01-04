@@ -52,6 +52,15 @@ li {
 	color: grey;
 	font-size:10pt;
 	font-family: mono;
+	font-style:normal;
+}
+
+.active_task_meta_text {
+	color: purple;
+	font-size:9pt;
+	font-family: serif;
+	font-style: italic;
+	padding : 0em;
 }
 
 .debug_log_from_server {
@@ -1986,7 +1995,7 @@ function draw_from_normal()
 function canvas_painter_type(canvas, coefficients, task_name, model_id, betas_size) 
 {
 	this.betas_size = betas_size
-	this.normal_trunc = 2;
+	this.normal_trunc = 3;
 	this.model_id = parseInt(model_id);
 	this.task_name = task_name;
 	this.coefficients = coefficients;
@@ -2024,25 +2033,22 @@ function canvas_painter_type(canvas, coefficients, task_name, model_id, betas_si
 
 	for (var i = 0; i != this.betas_size; ++i) {
 
-		var top = this.value_to_y_coord(this.coefficients[i].normalised_value + this.normal_trunc);
-		var bottom = this.value_to_y_coord(this.coefficients[i].normalised_value - this.normal_trunc);
+		//todo -- may be need to scale the top and bottom by the variance/std-dev thingy
+
+		var top = this.value_to_y_coord(this.coefficients[i].normalised_value + this.normal_trunc * this.coefficients[i + this.betas_size].normalised_value);
+		var bottom = this.value_to_y_coord(this.coefficients[i].normalised_value - this.normal_trunc * this.coefficients[i + this.betas_size].normalised_value);
 
 		var grd = this.ctx.createLinearGradient(0, top, 0, bottom);
 
-		if (this.coefficients[i + this.betas_size].normalised_value > 0.05 || this.coefficients[i + this.betas_size].normalised_value < -0.05) {
-			var steps_size = 10; 
-			var color_stop_step = 1.0 / steps_size; 
-			var color_stop = 0.0;
-			while (color_stop <= 1.0) {
-				var distance = (color_stop * this.normal_trunc * 2 - this.normal_trunc) / this.coefficients[i + this.betas_size].normalised_value; 
-				grd.addColorStop(color_stop, "rgba(255, 0, 0, " + 
-						.88 * (Math.exp(distance * distance / -2)).toFixed(5) +
-						")"); 
-				color_stop += color_stop_step;
-			}
-		} else {
-				grd.addColorStop(0, "rgba(255, 0, 0, 0)"); 
-				grd.addColorStop(1, "rgba(255, 0, 0, 0)"); 
+		var steps_size = 10; 
+		var color_stop_step = 1.0 / steps_size; 
+		var color_stop = 0.0;
+		while (color_stop <= 1.0) {
+			var distance = (color_stop * this.normal_trunc * 2 - this.normal_trunc) ; // / this.coefficients[i + this.betas_size].normalised_value; 
+			grd.addColorStop(color_stop, "rgba(255, 0, 0, " + 
+					.88 * (Math.exp(distance * distance / -2)).toFixed(5) +
+					")"); 
+			color_stop += color_stop_step;
 		}
 
 		this.coefficients[i].render_top = top;
@@ -2091,11 +2097,11 @@ function canvas_painter_type(canvas, coefficients, task_name, model_id, betas_si
 		this.ctx.strokeStyle = "darkgreen";
 		this.ctx.lineWidth = 0.8;
 		this.ctx.beginPath();
-		this.coefficients[0].tmp_y = this.value_to_y_coord(this.coefficients[0].normalised_value + normals[(normals_i * this.coefficients.length) %  normals.length] * this.coefficients[this.betas_size].normalised_value);
+		this.coefficients[0].tmp_y = this.value_to_y_coord(this.coefficients[0].normalised_value + normals[(normals_i * this.coefficients.length) % normals.length] * this.coefficients[this.betas_size].normalised_value);
 		this.ctx.moveTo(this.coefficient_circle_radius, this.coefficients[0].tmp_y);
 		coefficient_centre = this.coefficient_circle_radius * 3 + this.coefficient_circle_padding;
 		for (var i = 1; i < this.betas_size; ++i, coefficient_centre += this.coefficient_centre_stepsize) {
-			var y = this.value_to_y_coord(this.coefficients[i].normalised_value + normals[(i + normals_i * this.coefficients.length) %  normals.length] * this.coefficients[i + this.betas_size].normalised_value);
+			var y = this.value_to_y_coord(this.coefficients[i].normalised_value + normals[(i + normals_i * this.coefficients.length) % normals.length] * this.coefficients[i + this.betas_size].normalised_value);
 			this.coefficients[i].tmp_y = y;
 			this.ctx.lineTo(coefficient_centre, this.coefficients[i].tmp_y);
 		}
@@ -2114,7 +2120,7 @@ function canvas_painter_type(canvas, coefficients, task_name, model_id, betas_si
 
 		this.ctx.beginPath();
 		//this.ctx.fillStyle = "white";
-		this.ctx.strokeStyle = "blue";
+		this.ctx.strokeStyle = "black";
 		this.ctx.lineWidth = 2;
 		coefficient_centre = this.coefficient_circle_radius;
 		for (var i = 0; i != this.betas_size; ++i, coefficient_centre += this.coefficient_centre_stepsize) {
@@ -2231,7 +2237,7 @@ function tasks_list_type()
 		this.table = tbl;
 	}
 
-	this.blahblah = function(tasks)
+	this.blahblah = function(obj)
 	{
 		var tbl = document.createElement("table");
 		tbl.className = "full_width";
@@ -2247,12 +2253,12 @@ function tasks_list_type()
 		tr.appendChild(td);
 		tbl.appendChild(tr);
 
-		var inpt_size = tasks.length / 10 + 2;
+		var inpt_size = obj.tasks.length / 10 + 2;
 
 		var new_task_names_set = {};
 
-		for (var i = 0; i != tasks.length; ++i) {
-			new_task_names_set[tasks[i].name] = true;
+		for (var i = 0; i != obj.tasks.length; ++i) {
+			new_task_names_set[obj.tasks[i].name] = true;
 			tr = document.createElement("tr");
 
 			//{ task position/order control
@@ -2267,8 +2273,8 @@ function tasks_list_type()
 			inpt.title = "To change task's position in the list -- enter new position number and press enter";
 			inpt.pid = this;
 			inpt.value = i + 1;
-			inpt.task_name = tasks[i].name;
-			if (tasks[i].state == "complete")
+			inpt.task_name = obj.tasks[i].name;
+			if (obj.tasks[i].state == "complete")
 				inpt.disabled = true;
 			inpt.onchange = function ()
 			{
@@ -2315,7 +2321,7 @@ function tasks_list_type()
 
 
 			td = document.createElement("td");
-			td.appendChild(document.createTextNode(tasks[i].name));
+			td.appendChild(document.createTextNode(obj.tasks[i].name));
 			tr.appendChild(td);
 
 			//{ show details control
@@ -2325,18 +2331,20 @@ function tasks_list_type()
 			label.appendChild(document.createTextNode("show details"));
 			var checkbox = document.createElement("input");
 			checkbox.type = "checkbox";
-			if (this.existing_detail_showing_tasks[tasks[i].name])
+			if (this.existing_detail_showing_tasks[obj.tasks[i].name])
 				checkbox.checked = true;
 			else
 				checkbox.checked = false;
 			checkbox.pid = this;
-			if (tasks[i].coefficients)
-				checkbox.coefficients = tasks[i].coefficients;
-			checkbox.task_name = tasks[i].name;
-			checkbox.task_complete = (tasks[i].state == "complete" ? true : false);
+			if (obj.meta_text)
+				checkbox.meta_text = obj.meta_text;
+			if (obj.tasks[i].coefficients)
+				checkbox.coefficients = obj.tasks[i].coefficients;
+			checkbox.task_name = obj.tasks[i].name;
+			checkbox.task_complete = (obj.tasks[i].state == "complete" ? true : false);
 			checkbox.row = tr;
 			checkbox.table = tbl;
-			checkbox.model_id = tasks[i].name.split(/[_\-x]/g)[1];
+			checkbox.model_id = obj.tasks[i].name.split(/[_\-x]/g)[1];
 			checkbox.onchange = function()
 			{
 				if (this.checked == true) {
@@ -2344,7 +2352,16 @@ function tasks_list_type()
 					var td = document.createElement("td");
 					//td.className = "centered_td";
 					td.colSpan = 5;
+
 					if (this.coefficients) {
+
+						if (this.meta_text) {
+							var div = document.createElement("div");
+							//div.className = "active_task_meta_text";
+							//div.appendChild(document.createTextNode(this.meta_text));
+							div.innerHTML = "<pre class='active_task_meta_text'>" + this.meta_text + "\n(do not try to click/reload all the bloody time as numbers may update rarely -- like in 10 minutes or so)</pre>";
+							td.appendChild(div);
+						}
 
 						var calculate_scale = function(betas_size, coefficients)
 						{
@@ -2480,12 +2497,11 @@ function tasks_list_type()
 
 						td.appendChild(tbl_);
 
-
 						var canvas = document.createElement("canvas");
 						canvas.painter = new canvas_painter_type(canvas, this.coefficients, this.task_name, this.model_id, betas_size);
 
 						if (repainting_timer == null)
-							repainting_timer = setInterval("timer_callback()", 700);
+							repainting_timer = setInterval("timer_callback()", 3000);
 						this.pid.existing_detail_showing_tasks[this.task_name] = canvas;
 
 						td.appendChild(document.createElement("br"));
@@ -2513,12 +2529,12 @@ function tasks_list_type()
 
 			//{ status display
 			td = document.createElement("td");
-			if (!i && tasks[i].state == "pending") {
+			if (!i && obj.tasks[i].state == "pending") {
 				td.className = "active_task_label";
 				td.appendChild(document.createTextNode("active"));
 			} else {
-				td.appendChild(document.createTextNode(tasks[i].state));
-				if (tasks[i].state == "pending")
+				td.appendChild(document.createTextNode(obj.tasks[i].state));
+				if (obj.tasks[i].state == "pending")
 					td.className = "pending_task_label";
 				else
 					td.className = "complete_task_label";
@@ -2531,7 +2547,7 @@ function tasks_list_type()
 			var btn = document.createElement("button");
 			btn.appendChild(document.createTextNode("delete"));
 			btn.pid = this;
-			btn.task_name = tasks[i].name;
+			btn.task_name = obj.tasks[i].name;
 			btn.onclick = function ()
 			{
 				if (confirm("About to delete task \"" + this.task_name + "\"...\nDO YOU WANT TO PROCEED?") == true) {
@@ -2599,10 +2615,11 @@ function tasks_list_type()
 
 		/*
 		//{ offline testing
-		var tasks = [];
-		tasks.length = 8;
+		var obj = {};
+		obj.tasks = [];
+		obj.tasks.length = 8;
 		for (var i = 0; i != 5; ++i) {
-			tasks[i] = new function() {
+			obj.tasks[i] = new function() {
 				this.name = i + "_3-1x2";
 				this.state = "pending";
 				this.coefficients = [
@@ -2615,7 +2632,7 @@ function tasks_list_type()
 			}
 		}
 		for (var i = 5; i != 8; ++i) {
-			tasks[i] = new function() {
+			obj.tasks[i] = new function() {
 				this.name = i + "_4-1x2";
 				this.state = "complete";
 				this.coefficients = [];
@@ -2639,7 +2656,8 @@ function tasks_list_type()
 				];
 			}
 		}
-		this.blahblah(tasks);
+		obj.meta_text = "processing peers: 3. \nblah blah blah";
+		this.blahblah(obj);
 		return;
 		//}
 		*/
@@ -2658,7 +2676,7 @@ function tasks_list_type()
 						this.pid.display_status("Server says hmmm: " + obj.error);
 						return;
 					} else if (obj.tasks) {
-						this.pid.blahblah(obj.tasks);
+						this.pid.blahblah(obj);
 						return;
 					}
 				} else if (this.status != 0 || this.spurious_try_again_flag == false) {
@@ -2680,7 +2698,7 @@ function main_menu_type()
 	this.gui = document.createElement("div");
 	var beta_div = document.createElement("div");
 	beta_div.className = "beta";
-	beta_div.appendChild(document.createTextNode("Pease note: this software is pre-BETA. Expect multitude of bugs and nasty surprises."));
+	beta_div.appendChild(document.createTextNode("Pease note: this software is pre-BETA. Expect multitude of bugs, slow responses, server crashes and other nasty surprises."));
 	this.gui.appendChild(beta_div);
 
 	var tbl = document.createElement("table");
@@ -2728,7 +2746,7 @@ function main_menu_type()
 var loading_please_wait_title;
 function async_main()
 {
-		normals.length = 100000;
+		normals.length = 200000;
 		for (var i = 0; i != normals.length; ++i)
 			normals[i] = draw_from_normal();
 		document.body.removeChild(loading_please_wait_title);
@@ -2769,7 +2787,7 @@ function timer_callback()
 		if (canvas["painter"])
 			canvas.painter.repaint();
 	}
-	++normals_i;
+	normals_i = ++normals_i % normals.length();
 }
 
 </script>

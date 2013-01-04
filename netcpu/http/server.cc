@@ -825,7 +825,7 @@ struct get_tasks_list : io_wrapper<http_adapter_driver> {
 	::std::string
 	task_info_2_json(netcpu::message::task_info const & task)
 	{
-		::std::string rv("{\"name\":\"" + ::std::string(task.name.data(), task.name.size()) + "\",\"state\":\"" + (task.state() == netcpu::message::task_info::state_type::pending ? "pending" : "complete") + "\"");
+		::std::string rv("{\"name\":\"" + ::std::string(task.name.data(), task.name.size()) + "\",\"state\":\"" + (task.state() == netcpu::message::task_info::state_type::pending ? "pending" : "complete") + '\"');
 		if (task.coefficients.size()) {
 			rv += ",\"coefficients\":[";
 			for (uint_fast32_t i(0); i != task.coefficients.size(); ++i) {
@@ -851,10 +851,13 @@ struct get_tasks_list : io_wrapper<http_adapter_driver> {
 		if (netcpu::message::tasks_list::myid == io().native_protocol::read_raw.id()) {
 			netcpu::message::tasks_list msg(io().native_protocol::read_raw);
 			if (msg.tasks.size()) {
-				::std::string result("{\"tasks\":[" + task_info_2_json(msg.tasks[0]));
+				::std::string result("{");
+				if (msg.meta_text.size())
+					result += "\"meta_text\":\"" + ::std::string(msg.meta_text.data(), msg.meta_text.size()) + "\",";
+				result += "\"tasks\":[" + task_info_2_json(msg.tasks[0]);
 				for (uint_fast32_t i(1); i != msg.tasks.size(); ++i)
-					result += "," + task_info_2_json(msg.tasks[i]);
-				result += ("]}");
+					result += ',' + task_info_2_json(msg.tasks[i]);
+				result += "]}";
 				io().http_protocol::write(result);
 			} else
 				throw netcpu::message::exception("no tasks present yet (why dont you add some, sunshine?)");

@@ -234,7 +234,7 @@ struct composite_matrix_loader {
 	}
 
 	bool
-	parse_arg(::std::string const & name, ::std::string const & value, dataset_1::message::meta<N> & meta_msg, dataset_1::message::bulk<N> & /* bulk_msg */ ) 
+	parse_arg(::std::string const & name, ::std::string const & value, dataset_1::message::meta<N> &, dataset_1::message::bulk<N> & /* bulk_msg */ ) 
 	{
 		// (void)bulk_msg; // no 'unused param' warning from the compiler thanks... ('bulk_msg' is passed as a matter of policy for the time being)
 		if (name == "--filepath") {

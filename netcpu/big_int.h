@@ -60,41 +60,12 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 namespace censoc { namespace netcpu { 
 
-#if 0
-	// todo -- delete this unused experimental code
-struct big_int_alloc {
-	::BIGNUM num;
-	big_int_alloc() 
-	// : num(::BN_new()) 
-	{
-		::BN_init(&num);
-	}
-	big_int_alloc(big_int_alloc const & x) 
-	//: num(::BN_dup(&x)) 
-	{
-		::BN_init(&num);
-		::BN_copy(&num, &x.num);
-	}
-	~big_int_alloc() 
-	{
-		::BN_free(&num);
-	}
-#if 0
-	void
-	reset()
-	{
-		::BN_free(&num);
-		::BN_init(&num);
-	}
-#endif
-};
-#endif
-
 template <typename size_type>
 class big_uint {
 	typedef typename censoc::param<size_type>::type size_paramtype;
 
-	//BOOST_STATIC_ASSERT(::boost::integer_traits<size_type>::const_max <= ::boost::integer_traits<unsigned long>::const_max);
+	BOOST_STATIC_ASSERT(::boost::integer_traits<size_type>::const_max <= ::boost::integer_traits<unsigned long>::const_max);
+	BOOST_STATIC_ASSERT(::boost::integer_traits<size_type>::const_max <= ::boost::integer_traits<BN_ULONG>::const_max);
 
 /**
 	@NOTE -- hack: currently using copy-on-write implementation to save on redundant copying (i.e. ::BN_copy(num, x.num)) when passing by value (e.g. std::make_pair, etc.) 
@@ -105,18 +76,23 @@ class big_uint {
 	*/
 	::boost::shared_ptr< ::BIGNUM> num;
 
+	typedef ::std::hash<big_uint<size_type> > hasher_type;
+
 public:
 
 	big_uint()
-	: num(::BN_new(), ::BN_free) {
+	: num(netcpu::big_int_context.get_bn()) {
+		assert(num.use_count() == 1); 
 	}
 
 	big_uint(big_uint const & x)
 	: num(x.num) {
+		assert(num.use_count() > 1); 
 	}
 
 	big_uint(size_paramtype x)
-	: num(::BN_new(), ::BN_free) {
+	: num(netcpu::big_int_context.get_bn()) {
+		assert(num.use_count() == 1); 
 		// TODO -- specialize better for 64bit ints etc. using BN_bin2bn et al
 		assert(x <= ::std::numeric_limits<unsigned long>::max());
 #ifndef NDEBUG
@@ -126,10 +102,16 @@ public:
 		assert(rv);
 	}
 
+	~big_uint()
+	{
+		if (num.use_count() == 1) 
+			netcpu::big_int_context.return_bn(num);
+	}
+
 	void
 	zero()
 	{
-		isolate_on_write();
+		netcpu::big_int_context.isolate_on_write(num);
 #ifndef NDEBUG
 		int rv = 
 #endif
@@ -140,7 +122,7 @@ public:
 	void
 	one()
 	{
-		isolate_on_write();
+		netcpu::big_int_context.isolate_on_write(num);
 #ifndef NDEBUG
 		int rv = 
 #endif
@@ -151,7 +133,7 @@ public:
 	void
 	rand(big_uint const & range)
 	{
-		isolate_on_write();
+		netcpu::big_int_context.isolate_on_write(num);
 #ifndef NDEBUG
 		int rv = 
 #endif
@@ -184,7 +166,7 @@ public:
 	void 
 	operator = (size_paramtype x) 
 	{
-		isolate_on_write();
+		netcpu::big_int_context.isolate_on_write(num);
 #ifndef NDEBUG
 		int rv =
 #endif
@@ -211,7 +193,7 @@ public:
 	big_uint &
 	operator += (big_uint const & x) 
 	{
-		copy_on_write();
+		netcpu::big_int_context.copy_on_write(num);
 		::BN_add(num.get(), num.get(), x.num.get());
 		return *this;
 	}
@@ -220,7 +202,7 @@ public:
 	operator += (size_paramtype x) 
 	{
 		assert(x <= ::std::numeric_limits<unsigned long>::max());
-		copy_on_write();
+		netcpu::big_int_context.copy_on_write(num);
 		::BN_add_word(num.get(), x);
 		return *this;
 	}
@@ -236,7 +218,7 @@ public:
 	big_uint &
 	operator-=(big_uint const & x) 
 	{
-		copy_on_write();
+		netcpu::big_int_context.copy_on_write(num);
 		::BN_sub(num.get(), num.get(), x.num.get());
 		return *this;
 	}
@@ -247,7 +229,7 @@ public:
 		//big_uint tmp(x);
 		//::BN_mul(tmp.num.get(), tmp.num.get(), num.get(), netcpu::big_int_context.context);
 		big_uint tmp(*this);
-		tmp.copy_on_write();
+		netcpu::big_int_context.copy_on_write(tmp.num);
 		::BN_mul_word(tmp.num.get(), x);
 		return tmp;
 	}
@@ -255,7 +237,7 @@ public:
 	big_uint &
 	operator*=(big_uint const & x) 
 	{
-		copy_on_write();
+		netcpu::big_int_context.copy_on_write(num);
 		::BN_mul(num.get(), num.get(), x.num.get(), netcpu::big_int_context.context);
 		return *this;
 	}
@@ -264,7 +246,7 @@ public:
 	operator*=(size_paramtype x) 
 	{
 		assert(x <= ::std::numeric_limits<unsigned long>::max());
-		copy_on_write();
+		netcpu::big_int_context.copy_on_write(num);
 		::BN_mul_word(num.get(), x);
 		return *this;
 	}
@@ -274,7 +256,7 @@ public:
 	{
 		assert(x <= ::std::numeric_limits<unsigned long>::max());
 		big_uint tmp(*this);
-		tmp.copy_on_write();
+		netcpu::big_int_context.copy_on_write(tmp.num);
 		::BN_div_word(tmp.num.get(), x);
 		return tmp;
 	}
@@ -283,7 +265,7 @@ public:
 	operator/=(size_paramtype x)
 	{
 		assert(x <= ::std::numeric_limits<unsigned long>::max());
-		copy_on_write();
+		netcpu::big_int_context.copy_on_write(num);
 		::BN_div_word(num.get(), x);
 		return *this;
 	}
@@ -359,14 +341,8 @@ public:
 	void
 	load(unsigned char const * from, size_paramtype from_size) 
 	{
-		isolate_on_write(); //copy_on_write();
+		netcpu::big_int_context.isolate_on_write(num);
 		::BN_bin2bn(from, from_size, num.get());
-	}
-
-	void
-	reset()
-	{
-		num.reset(::BN_new(), ::BN_free);
 	}
 
 	::std::string
@@ -378,25 +354,27 @@ public:
 		return rv;
 	}
 
-private:
-	void
-	copy_on_write() 
+	size_type
+	hash() const 
 	{
-		if (num.use_count() > 1) 
-			num.reset(::BN_dup(num.get()), ::BN_free);
-		assert(num.use_count() == 1);
+		assert(num.get() != NULL);
+		return netcpu::big_int_context.hash_bn<size_type>(num.get());
 	}
-	void
-	isolate_on_write() 
-	{
-		if (num.use_count() > 1) 
-			num.reset(::BN_new(), ::BN_free);
-		assert(num.use_count() == 1);
-	}
-
 };
 
 }}
+
+namespace std {
+template<typename SizeType>
+struct hash< ::censoc::netcpu::big_uint<SizeType> > {
+	SizeType
+	operator()(::censoc::netcpu::big_uint<SizeType> const & x) const noexcept
+	{ 
+		return x.hash();
+	}
+};
+}
+
 
 template <typename T, typename BigIntSubtype>
 ::censoc::netcpu::big_uint<BigIntSubtype>

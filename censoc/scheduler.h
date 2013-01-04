@@ -114,6 +114,14 @@ idle()
 	// NOTE -- if *using* the above -- then *must* call/enable-code in other places such as: ::SetProcessWorkingSetSize(::GetCurrentProcess(), ...) in order to reduce soft-pagefaults in W7. Alternatively may play with defined or not __win64__ thingies etc.
 	// WILL USE THE ABOVE, HOWEVER, RIGHT NOW AND SET THE LIMIT ON WORKING SET OF THE PROCESS -- TO TEST THE "CLOSE-TO-WORST" CASES ON PERFORMANCE.
 
+#if 0 // todo -- windows 8 only, et al.
+	MEMORY_PRIORITY_INFORMATION mem_prio;
+	::ZeroMemory(&mem_prio, sizeof(mem_prio));
+	mem_prio.MemoryPriority = MEMORY_PRIORITY_VERY_LOW;
+	if (!::SetProcessInformation(::GetCurrentProcess(), ProcessMemoryPriority, &mem_prio, sizeof(mem_prio) || !::SetThreadInformation(::GetCurrentThread(), ThreadMemoryPriority, &mem_prio, sizeof(mem_prio))
+		::std::clog << "failed to lower memory priority\n";
+	etc. etc. etc. (e.g. similar to thread-specific context)
+#endif
 
 	//{ TODO -- io priority (vista and greater only)
 

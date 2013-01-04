@@ -100,7 +100,7 @@ char const completed_index_filename[] = "completed.txt";
 
 time_t static task_oldage(0);
 time_t static task_oldage_check(0);
-time_t static wakeonlan_check(7); // in minutes, todo, a quick hack, perhaps a runtime parametric CLI option for the value
+time_t static wakeonlan_check(30); // in minutes, todo, a quick hack, perhaps a runtime parametric CLI option for the value, don't make it too short -- see git commit history logs for reasoning.
 
 ::boost::asio::io_service static io;
 ::boost::asio::ssl::context static ssl(io, ::boost::asio::ssl::context::sslv23);
@@ -229,7 +229,7 @@ struct task {
 	// NOTE -- a temporary, quick hack; this is because the deriving task already has floating-point and integral specialisations (needed for reading convergence_state message); moreover convergence_state is specific to the converger_1 algorithm which may, later on, not be the only algo used and so the awareness of the mapping/translation of algo-native message structure to a more universal/common format may be needed anyway. Just about the only choice is to whether make each algo write-out the common-format convergence when it writes its native convergence_state message (then just reading the file upon every controller request); or, alternatively calculate the mapping on-the-run: the way it is done now... 
 	// TODO -- consider (in more detail) the former alternative...
 	// TODO -- it may even be plausible that different models will not have a common representational structure (coefficient values, etc.) in the first place, and so the message-building -cooking process will need to be re-factored to perhaps generate either a dynamically-structured messages or a multi-message sequences during io-communication with the peer... this, however, is rather in a very distant future to consider...
-	virtual void load_coefficients_info(netcpu::message::task_info &) = 0;
+	virtual void load_coefficients_info_et_al(netcpu::message::tasks_list & tasks_list, netcpu::message::task_info &) = 0;
 
 	task(::std::string const & name, time_t birthday = ::time(NULL))
 	: name_i(named_tasks.insert(::std::make_pair(name, this)).first), age_i(aged_tasks.insert(::std::make_pair(birthday, this))) {
@@ -591,14 +591,14 @@ public:
 			tsk.name.resize((*i)->name().size());
 			::memcpy(tsk.name.data(), (*i)->name().c_str(), (*i)->name().size());
 			tsk.state(netcpu::message::task_info::state_type::pending);
-			(*i)->load_coefficients_info(tsk);
+			(*i)->load_coefficients_info_et_al(msg, tsk);
 		}
 		for (censoc::stl::fastsize< ::std::list<netcpu::task *>, uint_fast32_t>::const_iterator i(completed_tasks.begin()); i != completed_tasks.end(); ++i, ++task_i) {
 			netcpu::message::task_info & tsk(msg.tasks[task_i]);
 			tsk.name.resize((*i)->name().size());
 			::memcpy(tsk.name.data(), (*i)->name().c_str(), (*i)->name().size());
 			tsk.state(netcpu::message::task_info::state_type::completed);
-			(*i)->load_coefficients_info(tsk);
+			(*i)->load_coefficients_info_et_al(msg, tsk);
 		}
 		io().write(msg);
 	}

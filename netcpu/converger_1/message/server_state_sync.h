@@ -58,7 +58,7 @@ struct server_state_sync : netcpu::message::message_base<message::messages_ids::
 	typedef netcpu::message::scalar<typename converger_1::key_typepair::wire> key_type;
 	typedef netcpu::message::array<coeffwise_server_state_sync<N, F> > coeff_arraytype;
 	//typedef netcpu::message::scalar<F> float_type;
-	typedef netcpu::message::decomposed_floating float_type; 
+	typedef netcpu::message::decomposed_floating<> float_type; 
 	typedef netcpu::message::scalar<typename netcpu::message::typepair<N>::wire> size_type;
 	typedef netcpu::message::array<complexitywise_element<N> > complexities_type;
 	typedef netcpu::message::scalar<typename netcpu::message::typepair<uint8_t>::wire> bool_type;
@@ -90,7 +90,7 @@ struct server_recentre_only_sync : netcpu::message::message_base<message::messag
 	typedef netcpu::message::scalar<typename converger_1::key_typepair::wire> key_type;
 	typedef netcpu::message::scalar<typename netcpu::message::typepair<N>::wire> size_type;
 	//typedef netcpu::message::scalar<F> float_type;
-	typedef netcpu::message::decomposed_floating float_type; 
+	typedef netcpu::message::decomposed_floating<> float_type; 
 	typedef netcpu::message::array<complexitywise_element<N> > complexities_type;
 	//}
 

@@ -66,13 +66,12 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <boost/asio/ssl.hpp>
 #include <boost/filesystem.hpp>
 
-#include <Eigen/Core>
-
 #include <censoc/lexicast.h>
 #include <censoc/arrayptr.h>
 #include <censoc/scheduler.h>
 #include <censoc/sysinfo.h>
 #include <censoc/finite_math.h>
+#include <censoc/rand.h>
 
 #ifdef __WIN32__
 // mingw may have ZwQuerySystemInformation in libntdll.a (otherwise, if using different compiler, comment this out and re-enable the GetProcAddress et al code).
@@ -82,12 +81,6 @@ long __stdcall ZwQuerySystemInformation(int, void*, unsigned long, unsigned long
 }
 #endif
 
-#include "big_int_context.h"
-namespace censoc { namespace netcpu { 
-big_int_context_type static big_int_context;
-}}
-#include "big_int.h"
-
 namespace censoc { namespace netcpu {
 	
 ::boost::filesystem::path static ownpath;
@@ -95,7 +88,26 @@ namespace censoc { namespace netcpu {
 ::boost::asio::ssl::context static ssl(io, ::boost::asio::ssl::context::sslv23);
 ::boost::system::error_code static ec;
 unsigned static cpu_affinity_index(0);
+unsigned static clone_instance_index(0);
 
+uintptr_t static free_ram_low_watermark;
+uintptr_t static free_ram_high_watermark;
+bool static
+test_anticipated_ram_utilization(double x)
+{
+	x = x * 1.1 + 
+		// todo -- define the guard for app and it's mem structs more correctly as opposed to this ugly hack
+		21000000;
+	double free_to_play_with(censoc::sysinfo::ram_size() * .8); // todo: make parametric so that may easily utilise all of the memeroy if/when running on a dedicated box.
+	double const cumulative_memory_consumption((netcpu::clone_instance_index + 1.) * x);
+	if (cumulative_memory_consumption > free_to_play_with)
+		return false;
+	else {
+		free_ram_high_watermark = censoc::sysinfo::ram_size() * .1;
+		free_ram_low_watermark = free_ram_high_watermark - x * .777;
+		return true;
+	}
+}
 
 //{ windooze insanity
 #ifdef __WIN32__
@@ -168,6 +180,20 @@ public:
 		if ((long_mode += systime_delta_msec) > 6000) {
 			long_mode = 0;
 			ping_exit();
+
+			// extra case for ram availability w.r.t. other, non-NetCPU, user-based running programs etc. 
+
+			unsigned static ncpus(censoc::sysinfo::cpus_size());
+			if (censoc::sysinfo::free_ram_size() < (am_sleeping == true ? free_ram_low_watermark : free_ram_high_watermark)) {
+				sleep();
+				// random value for sleep is similar to CSMACD strategy -- multilpe instances of processors are unlinkely to come back at once so they will gradually "fill" the ram capacity as permitted by free space and the last one to wake-up will go back to sleep...
+				// an alternative strategy could have been for each of the processor's instances to create a "i am aware of the ram depletion and have gone to sleep" file (made unique by the filename containing the clone_index from the processor's instance).
+				// then instances with 'lower' clone index would not immediately go into sleep upon sensing the ram issue, but rather wait for higher-indexed "I am aware and sleeping" index to become present in the file system. there would have to be an additional time-out sensitivity in case the highe-indexed instance has crashed, so that the lower-indexed instance can proceed with own sleeping anyway. but, for the time-being, shall address the issue in a "kiss" manner -- keep it simple stupid :-)
+				time_atom = 120000 + (censoc::rand<uint32_t>::eval() % ncpus) * 15000;
+				systime_stamp = systime_stamp_tmp;
+				return true;
+			}
+
 			if (am_sleeping == false) {
 				ping();
 				if (::SwitchToThread())
@@ -599,13 +625,11 @@ main(int argc, char * * argv)
 
 			::censoc::scheduler::idle();
 
-			::censoc::netcpu::big_int_context.reset();
-
-
-			if (argc > 2)
+			if (argc > 3)
 				throw ::std::runtime_error("no longer using CLI for args, instead use cfg file (implicitly of the same basename as the binary/exe). The only allowed arg now is the cpuaffinity expressed as zero-based number.");
-			else if (argc == 2) {
+			else if (argc == 3) {
 				::censoc::netcpu::cpu_affinity_index = ::censoc::lexicast<unsigned>(argv[1]);
+				::censoc::netcpu::clone_instance_index = ::censoc::lexicast<unsigned>(argv[2]);
 #ifndef __WIN32__
 				cpuset_t set;
 				CPU_ZERO(&set);
@@ -616,12 +640,12 @@ main(int argc, char * * argv)
 				::SetThreadAffinityMask(::GetCurrentThread(), (1 << ::censoc::netcpu::cpu_affinity_index));
 				::SetProcessAffinityMask(::GetCurrentProcess(), (1 << ::censoc::netcpu::cpu_affinity_index));
 #endif
-			}
+
+			} else 
+				throw ::std::runtime_error("processor *needs* cpu affinity and clone index specified on CLI indeed");
 
 			::censoc::netcpu::ownpath = *argv;
 #ifdef __WIN32__
-			if (argc != 2)
-				throw ::std::runtime_error("windows version *needs* cpu affinity specified on CLI indeed");
 			::censoc::netcpu::should_i_sleep.init();
 #endif
 			::censoc::netcpu::run();

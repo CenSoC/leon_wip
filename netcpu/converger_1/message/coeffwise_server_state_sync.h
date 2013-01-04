@@ -53,7 +53,7 @@ struct coeffwise_server_state_sync {
 	//{ typedefs...
 	typedef netcpu::message::scalar<typename netcpu::message::typepair<N>::wire> size_type;
 	//typedef netcpu::message::scalar<F> float_type;
-	typedef netcpu::message::decomposed_floating float_type; 
+	typedef netcpu::message::decomposed_floating<> float_type; 
 	typedef netcpu::message::array<typename netcpu::message::typepair<N>::wire> size_arraytype; 
 	typedef netcpu::message::scalar<typename netcpu::message::typepair<uint8_t>::wire> bool_type;
 	//}

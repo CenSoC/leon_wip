@@ -43,18 +43,18 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdio.h>
 
 #include <iostream>
+#include <unordered_set>
 
 #include <boost/numeric/conversion/bounds.hpp>
 #include <boost/scoped_ptr.hpp>
 #include <boost/scoped_array.hpp>
 #include <boost/filesystem.hpp>
 
-#include <Eigen/Core>
-
 #include <censoc/stl_container_utils.h>
 #include <censoc/rand.h>
 #include <censoc/cdfinvn.h>
 
+#include <netcpu/big_int.h>
 #include <netcpu/message.h>
 #include <netcpu/fstream_to_wrapper.h>
 #include <netcpu/io_wrapper.h>
@@ -67,7 +67,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "message/bulk.h"
 #include "message/peer_report.h"
 #include "message/server_state_sync.h"
-#include "message/convergence_state.h"
 
 // includes }
 
@@ -381,6 +380,369 @@ public:
 
 };
 
+namespace fstreamer {
+
+// similar to message, but not quite -- todo, later will refactor for commonality
+
+struct field_interface;
+netcpu::message::fields_master_type<fstreamer::field_interface> static fields_master;
+struct fields_master_traits {
+	typedef typename netcpu::message::fields_master_type<fstreamer::field_interface>::fields_type fields_type;
+	netcpu::message::fields_master_type<fstreamer::field_interface> static & 
+	get_fields_master()
+	{
+		return fstreamer::fields_master;
+	}
+};
+struct field_interface : netcpu::message::field_interface_base<fstreamer::fields_master_traits> {
+	field_interface()
+	: field_interface_base<fstreamer::fields_master_traits>(this) {
+	}
+	void virtual from_wire(::std::istream & f, ::std::vector<uint8_t> & buffer) = 0;
+	void virtual to_wire(::std::ostream & f, ::std::vector<uint8_t> & buffer) const = 0;
+};
+
+
+// todo -- a quick utility hack for the time being...
+void static
+reset_with_capacity(::std::vector<uint8_t> & buffer, unsigned size)
+{
+	if (buffer.capacity() < size) {
+		buffer.clear(); // do not copy existing members
+		buffer.reserve(sizeof(size));
+	}
+}
+
+/** 
+	for memory-conservation reasons, stream is NOT using DOM (all-in-RAM object representation), rather a streaming interface is deployed for the majority of the API, this implies respecting the sequential nature when interacting with the instances of this type. First get header, then coefficients one by one, then complexities one by one, then visited places one by one. The only time where such a sequence of steps may be skipped is when there is zero members in either of complexities or visited places...
+	*/
+struct fstream_serializer_multifield : netcpu::message::message_base_noid<fstreamer::fields_master_traits> {
+
+	typedef netcpu::message::size_type size_type;
+
+	void virtual
+	from_wire(::std::istream & f, ::std::vector<uint8_t> & buffer)
+	{
+		assert(fields.empty() == false);
+		for (typename netcpu::message::fields_master_type<fstreamer::field_interface>::fields_type::iterator i(fields.begin()); i != fields.end(); ++i) 
+			(*i)->from_wire(f, buffer);
+		if (f == false)
+			throw ::std::runtime_error("could not read a multifield serialized block from file");
+	}
+
+	void virtual
+	to_wire(::std::ostream & f, ::std::vector<uint8_t> & buffer) const
+	{
+		assert(fields.empty() == false);
+		for (typename netcpu::message::fields_master_type<fstreamer::field_interface>::fields_type::const_iterator i(fields.begin()); i != fields.end(); ++i) 
+			(*i)->to_wire(f, buffer);
+		if (f == false)
+			throw ::std::runtime_error("could not write a multifield serialized block to file");
+	}
+};
+
+
+template <typename T> 
+struct fstream_serializer_scalar : fstreamer::field_interface {
+
+	typedef T data_type;
+	typedef typename censoc::param<data_type>::type data_paramtype;
+
+	BOOST_STATIC_ASSERT(::boost::is_pod<T>::value == true);
+	BOOST_STATIC_ASSERT(::boost::is_unsigned<T>::value == true);
+
+	data_type x;
+
+	fstream_serializer_scalar()
+	{
+	}
+	fstream_serializer_scalar(data_paramtype x)
+	: x(x) {
+	}
+	data_paramtype
+	operator()() const
+	{
+		return x;
+	}
+	void 
+	operator()(data_paramtype x) 
+	{
+		this->x = x;
+	}
+	void
+	from_wire(::std::istream & f, ::std::vector<uint8_t> & buffer)
+	{
+		reset_with_capacity(buffer, sizeof(data_type));
+		f.read(reinterpret_cast<char*>(buffer.data()), sizeof(data_type));
+		netcpu::message::from_wire<data_type>::eval(buffer.data(), x);
+	}
+	void
+	to_wire(::std::ostream & f, ::std::vector<uint8_t> & buffer) const
+	{
+		reset_with_capacity(buffer, sizeof(data_type));
+		netcpu::message::to_wire<data_type>::eval(buffer.data(), x);
+		f.write(reinterpret_cast<char const *>(buffer.data()), sizeof(data_type));
+	}
+};
+
+template <typename T>
+struct fstream_serializer_array : fstreamer::field_interface {
+
+	typedef T data_type;
+	typedef typename censoc::param<data_type>::type data_paramtype;
+
+	censoc::array<data_type, size_type> buffer_; 
+
+	size_type buffer_size;
+	size_type size_;
+
+	fstream_serializer_array()
+	: buffer_size(0), size_(0) {
+	}
+
+	data_type const &
+	operator()(size_paramtype i) const
+	{
+		assert(i < size_);
+		return buffer_[i];
+	}
+
+	data_type &
+	operator()(size_paramtype i) 
+	{
+		assert(i < size_);
+		return buffer_[i];
+	}
+
+	data_type const & 
+	operator[](size_paramtype i) const
+	{
+		assert(i < size_);
+		return buffer_[i];
+	}
+
+	data_type  &
+	operator[](size_paramtype i) 
+	{
+		assert(i < size_);
+		return buffer_[i];
+	}
+
+	void
+	operator()(size_paramtype i, data_paramtype x)
+	{
+		assert(i < size_);
+		buffer_[i] = x;
+	}
+
+	void
+	from_wire(::std::istream & f, ::std::vector<uint8_t> & buffer)
+	{
+		reset_with_capacity(buffer, sizeof(size_));
+		f.read(reinterpret_cast<char*>(buffer.data()), sizeof(size_));
+		netcpu::message::from_wire<size_type>::eval(buffer.data(), size_);
+		if (buffer_size < size_) 
+			buffer_.reset(buffer_size = size_);
+		reset_with_capacity(buffer, sizeof(data_type));
+		for (unsigned i(0); i != size_; ++i) {
+			f.read(reinterpret_cast<char*>(buffer.data()), sizeof(data_type));
+			netcpu::message::from_wire<data_type>::eval(buffer.data(), buffer_[i]);
+		}
+	}
+
+	void
+	to_wire(::std::ostream & f, ::std::vector<uint8_t> & buffer) const
+	{
+		reset_with_capacity(buffer, sizeof(size_type));
+		netcpu::message::to_wire<size_type>::eval(buffer.data(), size_);
+		f.write(reinterpret_cast<char const *>(buffer.data()), sizeof(size_type));
+		reset_with_capacity(buffer, sizeof(data_type));
+		for (unsigned i(0); i != size_; ++i) {
+			netcpu::message::to_wire<data_type>::eval(buffer.data(), buffer_[i]);
+			f.write(reinterpret_cast<char const *>(buffer.data()), sizeof(data_type));
+		}
+	}
+
+	void
+	resize(size_type size) 
+	{
+		size_ = size;
+		if (buffer_size < size_) 
+			buffer_.reset(buffer_size = size_);
+	}
+
+	data_type *
+	data() 
+	{
+		return buffer_;
+	}
+
+	data_type const *
+	data() const
+	{
+		return buffer_;
+	}
+
+	size_type
+	size() const
+	{
+		return size_;
+	}
+};
+
+template <typename N> 
+struct convergence_state_fstreamer_base {
+
+	typedef typename netcpu::message::typepair<N>::ram size_type;
+	typedef typename censoc::param<size_type>::type size_paramtype;
+
+	typedef fstream_serializer_scalar<typename netcpu::message::typepair<N>::wire> wire_size_type;
+	typedef fstream_serializer_array<typename netcpu::message::typepair<N>::wire> wire_size_arraytype; 
+	typedef fstream_serializer_scalar<typename netcpu::message::typepair<uint8_t>::wire> wire_byte_type;
+	typedef fstream_serializer_array<typename netcpu::message::typepair<uint8_t>::wire> wire_byte_arraytype; 
+	typedef netcpu::message::decomposed_floating<fstream_serializer_scalar> wire_float_type; 
+
+	::std::vector<uint8_t> buffer;
+	::std::vector<char> stream_buffer;
+
+	convergence_state_fstreamer_base()
+	{
+		stream_buffer.reserve(1024 * 1024 * 10);
+	}
+
+	void
+	set_stream_buffer(::std::filebuf * fb)
+	{
+		stream_buffer.reserve(1024 * 1024 * 10);
+	  fb->pubsetbuf(stream_buffer.data(), stream_buffer.capacity());
+	}
+
+	struct header_type : fstream_serializer_multifield {
+		wire_float_type value;
+		wire_byte_type am_bootstrapping;
+		wire_byte_type intended_coeffs_at_once;
+		wire_size_type coefficients_rand_range_ended_wait;
+		wire_size_type current_complexity_level_first;
+		wire_size_type coefficients_size;
+		wire_size_type complexities_size;
+		wire_size_type visited_places_size;
+	};
+	header_type header;
+	header_type &
+	get_header()
+	{
+		return header;
+	}
+
+	struct coefficient_type : fstream_serializer_multifield {
+		wire_size_type value; 
+		wire_byte_type range_ended;
+		wire_float_type value_f;
+		wire_float_type value_from;
+		wire_float_type rand_range;
+		wire_size_arraytype grid_resolutions;
+	};
+	coefficient_type coefficient;
+	coefficient_type & 
+	get_coefficient()
+	{ 
+		return coefficient;
+	}
+
+	struct complexity_type : fstream_serializer_multifield {
+		wire_size_type complexity_begin;
+		wire_size_type complexity_size;
+	};
+	complexity_type complexity;
+	complexity_type & 
+	get_complexity()
+	{ 
+		return complexity;
+	}
+
+	struct visited_place_type : fstream_serializer_multifield {
+		wire_byte_arraytype bytes;
+	};
+	visited_place_type visited_place;
+	visited_place_type & 
+	get_visited_place()
+	{ 
+		return visited_place;
+	}
+};
+
+template <typename N> 
+struct convergence_state_ifstreamer : convergence_state_fstreamer_base<N> {
+	typedef convergence_state_fstreamer_base<N> base_type;
+
+	::std::ifstream stream;
+
+	convergence_state_ifstreamer()
+	{
+		base_type::set_stream_buffer(stream.rdbuf());
+	}
+
+	void
+	load_header(::std::string const & filepath)
+	{
+		stream.open(filepath.c_str(), ::std::ios::binary);
+		base_type::header.from_wire(stream, base_type::buffer);
+	}
+	void
+	load_coefficient()
+	{
+		base_type::coefficient.from_wire(stream, base_type::buffer);
+	}
+	void
+	load_complexity()
+	{
+		base_type::complexity.from_wire(stream, base_type::buffer);
+	}
+	void
+	load_visited_place()
+	{
+		base_type::visited_place.from_wire(stream, base_type::buffer);
+	}
+};
+
+template <typename N> 
+struct convergence_state_ofstreamer : convergence_state_fstreamer_base<N> {
+	typedef convergence_state_fstreamer_base<N> base_type;
+
+	::std::ofstream stream;
+
+	convergence_state_ofstreamer()
+	{
+		base_type::set_stream_buffer(stream.rdbuf());
+	}
+
+	void
+	store_header(::std::string const & filepath)
+	{
+		stream.open(filepath.c_str(), ::std::ios::binary | ::std::ios::trunc);
+		base_type::header.to_wire(stream, base_type::buffer);
+	}
+	void
+	store_coefficient()
+	{
+		base_type::coefficient.to_wire(stream, base_type::buffer);
+	}
+	void
+	store_complexity()
+	{
+		base_type::complexity.to_wire(stream, base_type::buffer);
+	}
+	void
+	store_visited_place()
+	{
+		base_type::visited_place.to_wire(stream, base_type::buffer);
+	}
+};
+
+}
+
+
+
 template <typename N, typename F, typename Model, netcpu::models_ids::val ModelId> struct processing_peer;
 
 // current end-process sequence: server->'end_process_message'->client; client->'good'->server; client->ready_to_process->server;
@@ -436,8 +798,6 @@ struct task_processor : ::boost::noncopyable {
 	typedef typename netcpu::message::typepair<N>::ram size_type;
 	typedef typename censoc::param<size_type>::type size_paramtype;
 
-	typedef ::Eigen::Matrix<float_type, ::Eigen::Dynamic, 1> vector_column_type;
-
 	typedef typename converger_1::key_typepair::ram key_type;
 
 	typedef censoc::array<converger_1::coefficient_metadata<N, F>, size_type> coefficients_metadata_type;
@@ -488,8 +848,8 @@ struct task_processor : ::boost::noncopyable {
 	bool peer2peer_assisted_complexity_present; // indicates that some peers have their complexities done by other peers...
 
 	netcpu::big_uint<size_type> offset;
-	::std::map<netcpu::big_uint<size_type>, size_type> accumulated_visited_places_since_last_sync;
-	::std::map<netcpu::big_uint<size_type>, size_type> visited_places;
+	// hash-mapping may use more mem, but in practice it is acceptable most of the time
+	::std::unordered_set<netcpu::big_uint<size_type> > visited_places;
 
 	task_processor()
 	: 
@@ -498,6 +858,7 @@ struct task_processor : ::boost::noncopyable {
 #endif
 	e_min_complexity(-1), better_find_since_last_recentered_sync(false), redistribute_remaining_complexities(false), peer2peer_assisted_complexity_present(false), io_key(0) { 
 
+		visited_places.reserve(50000000);
 
 		netcpu::message::read_wrapper wrapper;
 
@@ -546,25 +907,30 @@ struct task_processor : ::boost::noncopyable {
 
 		server_state_sync_msg.coeffs.resize(coefficients_size);
 
-		// start from the previosuly calculated position... if present (NO NETWORK-SERIALIZED BYTE ORDER IS KEPT, it's just a temp cache for native arch-at-a-time of deployment)
-		::std::string const convergence_state_filepath(netcpu::root_path + netcpu::pending_tasks.front()->name() + "/convergence_state.msg");
-		converger_1::message::convergence_state<N, F> convergence_state_msg;
+		// start from the previosuly calculated position... if present
+		::std::string const convergence_state_filepath(netcpu::root_path + netcpu::pending_tasks.front()->name() + "/convergence_state.bin");
+		bool convergence_state_present;
+		converger_1::fstreamer::convergence_state_ifstreamer<N> convergence_state;
 		if (::boost::filesystem::exists(convergence_state_filepath) == true) {
-			::std::ifstream convergence_state_file(convergence_state_filepath.c_str(), ::std::ios::binary);
-			netcpu::message::fstream_to_wrapper(convergence_state_file, wrapper);
-			convergence_state_msg.from_wire(wrapper);
-		}
+			convergence_state_present = true;
+			convergence_state.load_header(convergence_state_filepath);
+		} else
+			convergence_state_present = false;
 
-		if (convergence_state_msg.coeffs.size()) {
-			e_min = netcpu::message::deserialise_from_decomposed_floating<float_type>(convergence_state_msg.value);
-			am_bootstrapping = convergence_state_msg.am_bootstrapping() ? true : false;
+		if (convergence_state_present == true) {
+			assert(coefficients_size);
+			assert(convergence_state.get_header().coefficients_size() == coefficients_size);
+
+			e_min = netcpu::message::deserialise_from_decomposed_floating<float_type>(convergence_state.get_header().value);
+			am_bootstrapping = convergence_state.get_header().am_bootstrapping() ? true : false;
 			//assert(e_min != censoc::largish<float_type>());
-			coefficients_rand_range_ended_wait = convergence_state_msg.coefficients_rand_range_ended_wait();
+			coefficients_rand_range_ended_wait = convergence_state.get_header().coefficients_rand_range_ended_wait();
 
 			if (!coefficients_rand_range_ended_wait)
 				throw ::std::runtime_error(xxx() << "Sanity-check for the sysadmin of the server's integrity failed. Task which should have been complete is being actively processed. Remaining coefficients to wait for should be zero, yet the value is: [" << coefficients_rand_range_ended_wait << "]");
+			
 
-			intended_coeffs_at_once = convergence_state_msg.intended_coeffs_at_once();
+			intended_coeffs_at_once = convergence_state.get_header().intended_coeffs_at_once();
 		} else {
 			e_min = censoc::largish<float_type>();
 			am_bootstrapping = true;
@@ -587,9 +953,9 @@ struct task_processor : ::boost::noncopyable {
 #endif
 					netcpu::message::deserialise_from_decomposed_floating<float_type>(wire.rand_range_end), offset);
 
-			if (convergence_state_msg.coeffs.size()) {
-				converger_1::message::coeffwise_server_state_sync<N, F> const & wire(convergence_state_msg.coeffs(i));
-				ram.reset_from_convergence_state(wire.value(), wire.range_ended() ? true : false, netcpu::message::deserialise_from_decomposed_floating<float_type>(wire.value_f), netcpu::message::deserialise_from_decomposed_floating<float_type>(wire.value_from), netcpu::message::deserialise_from_decomposed_floating<float_type>(wire.rand_range), wire.grid_resolutions);
+			if (convergence_state_present == true) {
+				convergence_state.load_coefficient();
+				ram.reset_from_convergence_state(convergence_state.get_coefficient().value(), convergence_state.get_coefficient().range_ended() ? true : false, netcpu::message::deserialise_from_decomposed_floating<float_type>(convergence_state.get_coefficient().value_f), netcpu::message::deserialise_from_decomposed_floating<float_type>(convergence_state.get_coefficient().value_from), netcpu::message::deserialise_from_decomposed_floating<float_type>(convergence_state.get_coefficient().rand_range), convergence_state.get_coefficient().grid_resolutions);
 			} else {
 				ram.reset_before_bootstrapping(wire.grid_resolutions);
 			}
@@ -600,7 +966,7 @@ struct task_processor : ::boost::noncopyable {
 #if 0
 			// NOTE/TODO cludge: setting value to max -- thereby guaranteeing that if fpu state is bad on the processor side, then 'cached' values for the main cache will never be saved during bootstrapping (as value_modified will always be true); and moreover guaranteeing that any subsequent sync shall have valid starting points where fpu state is ok (thereby allowing implicit caching of the 'main' caches on the processor side -- as opposed to having to reset to 'max' the cached values when/if help_matrix calculation yields Nan et al for the 'now_values' coeffs). Of course, the probability of 'value_rand' at processors side returning the same value as the now_value is extremely small, but this appoach will make sure. An alternative way could also be 'do value_rand while value_modified == false' but it will cause more comparisons etc during the general runtime of the model, whereas initialising to 'max' is only affecting the bootstrapping stage.
 			// Overall, this approach may influence some 'assert' behaviour but it's worth it...
-			if (!convergence_state_msg.coeffs.size())
+			if (convergence_state_present == false)
 				//server_state_sync_msg.coeffs(i).value(censoc::largish<float_type>());
 				server_state_sync_msg.coeffs(i).value(-1);
 #endif
@@ -635,52 +1001,51 @@ struct task_processor : ::boost::noncopyable {
 
 		assert(remaining_complexities.empty() == true);
 
-		if (!convergence_state_msg.complexities.size()) {
+		if (convergence_state_present == false) {
 			censoc::llog() << "combos-at-once size (incl one at a time): [" << combos_modem.metadata().size() << "]\n";
 			current_complexity_level = combos_modem.metadata().begin();
-			censoc::netcpu::range_utils::add(remaining_complexities, ::std::pair<size_type, size_type>(0, current_complexity_level->first));
+			//censoc::netcpu::range_utils::add(remaining_complexities, ::std::pair<size_type, size_type>(0, current_complexity_level->first));
+			assert(remaining_complexities.empty() == true);
+			remaining_complexities.insert(::std::pair<size_type, size_type>(0, current_complexity_level->first));
 		} else {
-			assert(convergence_state_msg.current_complexity_level_first());
-			current_complexity_level = combos_modem.metadata().find(convergence_state_msg.current_complexity_level_first());
+			assert(convergence_state.get_header().current_complexity_level_first());
+			current_complexity_level = combos_modem.metadata().find(convergence_state.get_header().current_complexity_level_first());
 			assert(current_complexity_level != combos_modem.metadata().end());
-			::std::list< ::std::pair<size_type, size_type> > tmp_container;
-			for (size_type i(0); i != convergence_state_msg.complexities.size(); ++i) {
-				converger_1::message::complexitywise_element<N> const & wire(convergence_state_msg.complexities(i));
-				//censoc::netcpu::range_utils::add(remaining_complexities, ::std::pair<size_type, size_type>(wire.complexity_begin(), wire.complexity_size()));
-				tmp_container.push_back(::std::pair<size_type, size_type>(wire.complexity_begin(), wire.complexity_size()));
+			if (convergence_state.get_header().complexities_size()) {
+				// by definition, remaining complexities serialised by the convergence state object should already be appropriate w.r.t. range_utils requirements, so just insert directly into a map which is empty now anyways (so there's nothing to conflict with)
+				assert(remaining_complexities.empty() == true);
+				::std::list< ::std::pair<size_type, size_type> > tmp_container;
+				for (size_type i(0); i != convergence_state.get_header().complexities_size(); ++i) {
+					convergence_state.load_complexity();
+					// todo -- after getting a more c++11 compliant version of the compiler, use emplace instead of insert
+					remaining_complexities.insert(::std::pair<size_type, size_type>(convergence_state.get_complexity().complexity_begin(), convergence_state.get_complexity().complexity_size()));
+				}
 			}
-			censoc::netcpu::range_utils::add(remaining_complexities, tmp_container);
-		}
-
-		if (convergence_state_msg.visited_places.size()) {
-			censoc::llog() << "Loading visited places...\n";
-			::std::list< ::std::pair<netcpu::big_uint<size_type>, size_type> > tmp_container;
-			for (size_type i(0); i != convergence_state_msg.visited_places.size(); ++i) {
-				converger_1::message::visited_place<N> const & wire(convergence_state_msg.visited_places(i));
-				netcpu::big_uint<size_type> begin;
-				if (wire.begin.size())
-					begin.load(wire.begin.data(), wire.begin.size());
-				else
-					begin.zero();
-				//censoc::netcpu::range_utils::add(visited_places, ::std::pair<netcpu::big_uint<size_type>, size_type>(begin, wire.size()));
-				tmp_container.push_back(::std::pair<netcpu::big_uint<size_type>, size_type>(begin, wire.size()));
+			if (convergence_state.get_header().visited_places_size()) {
+				censoc::llog() << "Loading visited places...\n";
+				for (unsigned i(0); i != convergence_state.get_header().visited_places_size(); ++i) {
+					convergence_state.load_visited_place();
+					netcpu::big_uint<size_type> bn;
+					if (convergence_state.get_visited_place().bytes.size())
+						bn.load(convergence_state.get_visited_place().bytes.data(), convergence_state.get_visited_place().bytes.size());
+					else
+						bn.zero();
+					// todo replace with emplace when later version of c++11 compliant compiler gets delployed
+					visited_places.insert(bn); 
+				}
+				censoc::llog() << "... done loading visited places\n";
 			}
-			censoc::netcpu::range_utils::add(visited_places, tmp_container);
-			censoc::llog() << "... done loading visited places\n";
-		}
-
 #ifndef NDEBUG
-		if (convergence_state_msg.complexities.size()) {
 			// make sure that all relevant visited places have already been subtracted from currently deployed remaining complexity
 			for (typename complexities_type::const_iterator i(remaining_complexities.begin()); i != remaining_complexities.end(); ++i) {
 				for (size_type j(0); j != i->second; ++j) {
 					offset.zero();
 					combos_modem.demodulate(j + i->first, coefficients_metadata, coefficients_size);
-					assert(censoc::netcpu::range_utils::find(visited_places, offset) == false);
+					assert(!visited_places.count(offset));
 				}
 			}
-		}
 #endif
+		}
 
 		complete_server_state_sync_msg();
 
@@ -717,16 +1082,15 @@ struct task_processor : ::boost::noncopyable {
 		censoc::lerr() << "bootstrapping to : " << e_min << ::std::endl;
 		bootstrapping_peer_report_msg.print();
 
-		assert(bootstrapping_peer_report_msg.coeffs.size() == coefficients_size); 
-		offset.reset();
+		assert(bootstrapping_peer_report_msg.coeffs.size() == coefficients_size);
 		offset.zero();
 		for (size_type i(0); i != coefficients_size; ++i) {
 			coefficients_metadata[i].reset_after_bootstrapping(bootstrapping_peer_report_msg.coeffs(i));
 			coefficient_to_server_state_sync_msg(i);
 		}
-		::std::pair<netcpu::big_uint<size_type>, size_type> (offset, 1);
 		assert(visited_places.empty() == true);
-		visited_places.insert(::std::pair<netcpu::big_uint<size_type>, size_type> (offset, 1));
+		// todo replace with emplace when later version of c++11 compliant compiler gets delployed
+		visited_places.insert(offset);
 
 
 		assert(remaining_complexities.size() == 1);
@@ -801,8 +1165,7 @@ struct task_processor : ::boost::noncopyable {
 #endif
 		}
 
-		//  appropriate the complexities 
-		offset.reset();
+		//  appropriate the complexities
 		for (size_type i(0); i != peer_report_msg.complexities.size(); ++i) {
 
 			size_type const complexity_begin(peer_report_msg.complexities(i).complexity_begin());
@@ -819,8 +1182,8 @@ struct task_processor : ::boost::noncopyable {
 			for (size_type j(0); j != complexity_size; ++j) {
 				offset.zero();
 				combos_modem.demodulate(complexity_begin + j, coefficients_metadata, coefficients_size);
-				::std::pair<netcpu::big_uint<size_type>, size_type> tmp_pair(offset, 1);
-				censoc::netcpu::range_utils::add(accumulated_visited_places_since_last_sync, tmp_pair);
+				// todo replace with emplace when later version of c++11 compliant compiler gets delployed
+				visited_places.insert(offset);
 			}
 
 		}
@@ -945,7 +1308,7 @@ struct task_processor : ::boost::noncopyable {
 		for (size_type i(begin); i != end; ++i) {
 			offset.zero();
 			combos_modem.demodulate(i, coefficients_metadata, coefficients_size);
-			if (censoc::netcpu::range_utils::find(visited_places, offset) == true) {
+			if (visited_places.count(offset)) {
 				censoc::netcpu::range_utils::subtract(remaining_complexities, ::std::pair<size_type, size_type>(i, 1));
 #ifndef NDEBUG
 #ifndef NDEBUG_XSLOW
@@ -961,7 +1324,7 @@ struct task_processor : ::boost::noncopyable {
 				for (size_type j(0); j != i->second; ++j) {
 					offset.zero();
 					combos_modem.demodulate(j + i->first, coefficients_metadata, coefficients_size);
-					assert(censoc::netcpu::range_utils::find(visited_places, offset) == false);
+					assert(!visited_places.count(offset));
 				}
 			}
 		}
@@ -969,26 +1332,6 @@ struct task_processor : ::boost::noncopyable {
 #endif
 	}
 	
-
-	/** 
-		@note to be called by timer at certain intervals
-		*/
-	struct postcdfinvn {
-		vector_column_type normal;
-		template <typename TMP>
-		void inline 
-		hook(TMP const & x) 
-		{
-#ifndef NDEBUG
-			for (N i(0); i != static_cast<N>(x.size()); ++i) {
-				assert(x[i] < 10);
-				assert(x[i] > -10);
-			}
-#endif
-			normal = x;
-		}
-	};
-
 	/**
 		@post 'true' if ok, 'false' if nothing is left to be redistributed (e.g. visited places alaready have all)
 		*/
@@ -1036,29 +1379,26 @@ struct task_processor : ::boost::noncopyable {
 			}
 			accumulated_remaining_complexities_since_last_sync.clear();
 
+#ifndef NDEBUG
 			// print out remaining complexities
 			censoc::llog() << "Remaining complexities start:\n";
 			for (typename complexities_type::const_iterator i(remaining_complexities.begin()); i != remaining_complexities.end(); ++i) 
 				censoc::llog() << i->first << "," << i->second << ' ';
 			censoc::llog() << "\n... remaining complexities end\n";
+#endif
 		}
 
-		if (accumulated_visited_places_since_last_sync.empty() == false) {
-			censoc::netcpu::range_utils::add(visited_places, accumulated_visited_places_since_last_sync);
-			accumulated_visited_places_since_last_sync.clear();
-			censoc::llog() << "visited_places: " << visited_places.size() << '\n';
 #ifndef NDEBUG
 			{
 				for (typename complexities_type::const_iterator i(remaining_complexities.begin()); i != remaining_complexities.end(); ++i) {
 					for (size_type j(0); j != i->second; ++j) {
 						offset.zero();
 						combos_modem.demodulate(j + i->first, coefficients_metadata, coefficients_size);
-						assert(censoc::netcpu::range_utils::find(visited_places, offset) == false);
+						assert(!visited_places.count(offset));
 					}
 				}
 			}
 #endif
-		}
 
 		bool do_shrink(false);
 		if (better_find_since_last_recentered_sync == false) { // 'better find took place' cases are taken care of later... (need to reduce complexities AFTER recentering)
@@ -1098,10 +1438,9 @@ struct task_processor : ::boost::noncopyable {
 			remaining_complexities.clear();
 			censoc::netcpu::range_utils::add(remaining_complexities, ::std::make_pair(static_cast<size_type>(0), (current_complexity_level = combos_modem.metadata().begin())->first));
 			reduce_remaining_complexities(0, current_complexity_level->first);
-			if (do_redistribute_remaining_complexities() == true) {
-				do_redistribute_remaining_peers_complexities();
+			if (do_redistribute_remaining_complexities() == true)
 				do_send_recentre_message = true;
-			} else
+			else
 				do_shrink = true;
 		} 
 
@@ -1234,7 +1573,7 @@ struct task_processor : ::boost::noncopyable {
 
 		size_type static write_to_disk_wait(3);
 		if (!--write_to_disk_wait) {
-			write_to_disk_wait = 7;
+			write_to_disk_wait = 1200;
 			save_convergence_state();
 		}
 
@@ -1251,64 +1590,54 @@ struct task_processor : ::boost::noncopyable {
 
 		censoc::llog() << "Writing convergence state to disk...\n";
 
-		// build the message
-		converger_1::message::convergence_state<N, F> convergence_state_msg;
-		convergence_state_msg.coeffs.resize(coefficients_size);
-		for (size_type i(0); i != coefficients_size; ++i) {
-			coefficient_metadata<N, F> const & ram(coefficients_metadata[i]);
-			converger_1::message::coeffwise_server_state_sync<N, F> & wire(convergence_state_msg.coeffs(i));
-			wire.value(ram.saved_index());
-			wire.range_ended(ram.range_ended() == true ? 1 : 0);
-			netcpu::message::serialise_to_decomposed_floating(ram.saved_value(), wire.value_f);
-			netcpu::message::serialise_to_decomposed_floating(ram.value_from(), wire.value_from);
-			netcpu::message::serialise_to_decomposed_floating(ram.rand_range(), wire.rand_range);
-			size_type const grid_resolutions_size(ram.grid_resolutions.size());
-			wire.grid_resolutions.resize(grid_resolutions_size);
-			for (size_type i(0); i != grid_resolutions_size; ++i)
-				wire.grid_resolutions(i, ram.grid_resolutions[i]);
-		}
-		netcpu::message::serialise_to_decomposed_floating(e_min, convergence_state_msg.value);
-		convergence_state_msg.am_bootstrapping(am_bootstrapping == true ? 1 : 0);
-		convergence_state_msg.intended_coeffs_at_once(intended_coeffs_at_once);
-		convergence_state_msg.coefficients_rand_range_ended_wait(coefficients_rand_range_ended_wait);
-
-		if (coefficients_rand_range_ended_wait) {
-			assert(current_complexity_level != combos_modem.metadata().end());
-			convergence_state_msg.current_complexity_level_first(current_complexity_level->first);
-			convergence_state_msg.complexities.resize(remaining_complexities.size());
-			size_type j(0);
-			for (typename complexities_type::const_iterator i(remaining_complexities.begin()); i != remaining_complexities.end(); ++i) {
-				converger_1::message::complexitywise_element<N> & wire(convergence_state_msg.complexities(j++));
-				wire.complexity_begin(i->first);
-				wire.complexity_size(i->second);
-			}
-
-			convergence_state_msg.visited_places.resize(visited_places.size());
-			j = 0;
-			for (typename ::std::map<netcpu::big_uint<size_type>, size_type>::const_iterator i(visited_places.begin()); i != visited_places.end(); ++i) {
-				converger_1::message::visited_place<N> & wire(convergence_state_msg.visited_places(j++));
-				//assert(i->first.size());
-				wire.begin.resize(i->first.size());
-				if (wire.begin.size())
-					i->first.store(wire.begin.data());
-				wire.size(i->second);
-			}
-		}
-#ifndef NDEBUG
-		if (!coefficients_rand_range_ended_wait)
-			convergence_state_msg.current_complexity_level_first(0);
-#endif
-
-		// serialise
-		::std::string const convergence_state_filepath(netcpu::root_path + netcpu::pending_tasks.front()->name() + "/convergence_state.msg");
+		::std::string const convergence_state_filepath(netcpu::root_path + netcpu::pending_tasks.front()->name() + "/convergence_state.bin");
 		{
-			netcpu::message::write_wrapper write_raw; 
-			convergence_state_msg.to_wire(write_raw);
-			::std::ofstream convergence_state_file((convergence_state_filepath + ".tmp").c_str(), ::std::ios::binary | ::std::ios::trunc);
-			convergence_state_file.write(reinterpret_cast<char const *>(write_raw.head()), write_raw.size());
-			if (convergence_state_file == false)
-				throw ::std::runtime_error("could not write " + convergence_state_filepath + ".tmp");
+			converger_1::fstreamer::convergence_state_ofstreamer<N> convergence_state;
+
+			netcpu::message::serialise_to_decomposed_floating(e_min, convergence_state.get_header().value);
+			convergence_state.get_header().am_bootstrapping(am_bootstrapping == true ? 1 : 0);
+			convergence_state.get_header().intended_coeffs_at_once(intended_coeffs_at_once);
+			convergence_state.get_header().coefficients_rand_range_ended_wait(coefficients_rand_range_ended_wait);
+			convergence_state.get_header().coefficients_size(coefficients_size);
+			if (current_complexity_level != combos_modem.metadata().end())
+				convergence_state.get_header().current_complexity_level_first(current_complexity_level->first);
+#ifndef NDEBUG
+			else
+				convergence_state.get_header().current_complexity_level_first(0); // noop really...
+#endif
+			convergence_state.get_header().complexities_size(remaining_complexities.size());
+			convergence_state.get_header().visited_places_size(visited_places.size());
+
+			convergence_state.store_header(convergence_state_filepath + ".tmp");
+
+			for (size_type i(0); i != coefficients_size; ++i) {
+				coefficient_metadata<N, F> const & ram(coefficients_metadata[i]);
+				convergence_state.get_coefficient().value(ram.saved_index());
+				convergence_state.get_coefficient().range_ended(ram.range_ended() == true ? 1 : 0);
+				netcpu::message::serialise_to_decomposed_floating(ram.saved_value(), convergence_state.get_coefficient().value_f);
+				netcpu::message::serialise_to_decomposed_floating(ram.value_from(), convergence_state.get_coefficient().value_from);
+				netcpu::message::serialise_to_decomposed_floating(ram.rand_range(), convergence_state.get_coefficient().rand_range);
+				size_type const grid_resolutions_size(ram.grid_resolutions.size());
+				convergence_state.get_coefficient().grid_resolutions.resize(grid_resolutions_size);
+				for (size_type i(0); i != grid_resolutions_size; ++i)
+					convergence_state.get_coefficient().grid_resolutions(i, ram.grid_resolutions[i]);
+				convergence_state.store_coefficient();
+			}
+
+			for (typename complexities_type::const_iterator i(remaining_complexities.begin()); i != remaining_complexities.end(); ++i) {
+				convergence_state.get_complexity().complexity_begin(i->first);
+				convergence_state.get_complexity().complexity_size(i->second);
+				convergence_state.store_complexity();
+			}
+
+			for (typename ::std::unordered_set<netcpu::big_uint<size_type> >::const_iterator i(visited_places.begin()); i != visited_places.end(); ++i) {
+				convergence_state.get_visited_place().bytes.resize(i->size());
+				if (i->size())
+					i->store(convergence_state.get_visited_place().bytes.data());
+				convergence_state.store_visited_place();
+			}
 		}
+
 		::rename((convergence_state_filepath + ".tmp").c_str(), convergence_state_filepath.c_str());
 
 		censoc::llog() << "...done writing to disk\n";
@@ -1322,16 +1651,26 @@ struct task_processor : ::boost::noncopyable {
 		//{ // TODO -- WATCH OUT FOR PEERS DOING 'delete this' AND THEREBY DELETING THEMSELVES FROM THE ITERATED LOOP!!!
 		// it should be reasonably safe to advance iterator (after saving current as tmp) -- for as long as any given peer will only 'delete this' and not cause the deletion of other peers in a 'chain reaction' type of thing.
 		// altenatively -- make a guarantee that 'sync_peer_to_server' will not throw... }
-		for (typename ::std::list<converger_1::processing_peer<N, F, Model, ModelId> *>::iterator i(processing_peers.begin()); i != processing_peers.end(); ++i) 
-			(*i)->sync_peer_to_server(server_state_sync_msg);
+		for (typename ::std::list<converger_1::processing_peer<N, F, Model, ModelId> *>::iterator i(processing_peers.begin()); i != processing_peers.end();) {
+			typename ::std::list<converger_1::processing_peer<N, F, Model, ModelId> *>::iterator j(i++);
+			if ((*j)->has_io_wrapped_around() == true)
+				delete *j;
+			else
+				(*j)->sync_peer_to_server(server_state_sync_msg);
+		}
 	}
 
 	void
 	sync_peers_to_server_recentre_only()
 	{
 		censoc::llog() << "about to write recentre only sync msg\n";
-		for (typename ::std::list<converger_1::processing_peer<N, F, Model, ModelId> *>::iterator i(processing_peers.begin()); i != processing_peers.end(); ++i) 
-			(*i)->sync_peer_to_server(server_recentre_only_sync_msg);
+		for (typename ::std::list<converger_1::processing_peer<N, F, Model, ModelId> *>::iterator i(processing_peers.begin()); i != processing_peers.end();) {
+			typename ::std::list<converger_1::processing_peer<N, F, Model, ModelId> *>::iterator j(i++);
+			if ((*j)->has_io_wrapped_around() == true)
+				delete *j;
+			else
+				(*j)->sync_peer_to_server(server_recentre_only_sync_msg);
+		}
 	}
 
 	void
@@ -1450,6 +1789,18 @@ struct processing_peer : netcpu::io_wrapper<netcpu::message::async_driver> {
 	io_key_echo(typename censoc::param<key_type>::type x)
 	{
 		io_key_echo_ = x;
+	}
+
+	bool
+	has_io_wrapped_around() const
+	{
+		return processor.io_key == io_key_echo_ ? true : false;
+	}
+
+	bool
+	is_io_stale() const
+	{
+		return processor.io_key - io_key_echo_ < stale_io_limit ? false : true;
 	}
 
 	template <typename T>
@@ -1662,26 +2013,55 @@ struct task : netcpu::task {
 	}
 
 	void 
-	load_coefficients_info(netcpu::message::task_info & task)
+	load_coefficients_info_et_al(netcpu::message::tasks_list & tasks_list, netcpu::message::task_info & task)
 	{
-		::std::string const convergence_state_filepath(netcpu::root_path + name() + "/convergence_state.msg");
-		converger_1::message::convergence_state<N, F> convergence_state_msg;
+		if (active_task_processor.get() != NULL) {
+			//todo -- the newline escaping for the sake of the JSON formatting should be done elsewhere!!
+			censoc::lexicast< ::std::string> xxx("There are potentially ");
+			xxx << active_task_processor->processing_peers.size() << " processing workers (productivity of each is not yet accounted for).\\n";
+#ifndef NDEBUG
+			typename ::std::map<size_type, ::std::vector<size_type> >::const_iterator tmp; // assert parsing otherwise barfs if putting all into the assert macro...
+			assert(active_task_processor->current_complexity_level != tmp);
+#endif
+			assert(active_task_processor->combos_modem.metadata().empty() == false);
+			if (active_task_processor->current_complexity_level != active_task_processor->combos_modem.metadata().end()) {
+
+				// Note -- having a cached, pre-calculated, "total of the remaining complexities size" variable is not so simple. Cannot simply respond to every peer report because multiple peers may report same complexities; having the 'range_utils' calculated the total elements subtracted (if any) in their implementation will cause an overloading of the semantics (i.e. if such feature is not needed by the user code, then it would simply be a waste of cycles); altering 'second' type of the ranges to automaticall reference and decrement the common variable will be suboptimal due to potential number of constructors as well as the additional uintptr_t (at least 8 bytes in all realistic deployment cases) memory consupmtion. Just about the only simple-enough thing left would be to have a rarely occuring statistics/diagnostic timer which would calculate the data and this way the http-invoked requests will not cause frequent re-calculation on 'per request' basis. However, leaving this as a future 'todo' -- given that overly-frequent requests from controllers (http or not) should be solved at a more general level (i.e. dropping/firewall-blacklisting peers which perform very frequent request resending). 
+				size_type total_remaining_complexity_size(0);
+				for (typename ::std::map<size_type, size_type>::const_iterator i(active_task_processor->remaining_complexities.begin()); i != active_task_processor->remaining_complexities.end(); ++i) {
+					assert(i->second);
+					total_remaining_complexity_size += i->second;
+				}
+				xxx << "Currently to-be calculated complexity: " << active_task_processor->current_complexity_level->first << " evaluations in total.\\n"
+				<< "Remaining-to-compute from the current complexity: " << total_remaining_complexity_size << " evaluations.\\n";
+
+				unsigned coeffs_at_once(1);
+				for (tmp = active_task_processor->combos_modem.metadata().begin(); tmp != active_task_processor->current_complexity_level; ++tmp, ++coeffs_at_once);
+				xxx << "Currently in the stage of iterating through " << coeffs_at_once << "-coefficient(s)-@-once diagonality.\\n";
+			}
+			xxx << "Final complexity-size (at current zoom-level): " << active_task_processor->combos_modem.metadata().rbegin()->first << " evaluations.\\n";
+
+			xxx << "visited_places elements: " << active_task_processor->visited_places.size() << "\\n";
+
+			::std::string meta_text(xxx);
+			tasks_list.meta_text.resize(meta_text.size());
+			::memcpy(tasks_list.meta_text.data(), meta_text.c_str(), meta_text.size());
+		}
+
+		::std::string const convergence_state_filepath(netcpu::root_path + name() + "/convergence_state.bin");
 		if (::boost::filesystem::exists(convergence_state_filepath) == true) {
-			::std::ifstream convergence_state_file(convergence_state_filepath.c_str(), ::std::ios::binary);
-			netcpu::message::read_wrapper wrapper;
-			netcpu::message::fstream_to_wrapper(convergence_state_file, wrapper);
-			convergence_state_msg.from_wire(wrapper);
+			converger_1::fstreamer::convergence_state_ifstreamer<N> convergence_state;
+			convergence_state.load_header(convergence_state_filepath);
 
-			assert(convergence_state_msg.coeffs.size());
-			task.coefficients.resize(convergence_state_msg.coeffs.size());
+			assert(convergence_state.get_header().coefficients_size());
+			task.coefficients.resize(convergence_state.get_header().coefficients_size());
 
-			for (size_type i(0); i != convergence_state_msg.coeffs.size(); ++i) {
+			for (size_type i(0); i != convergence_state.get_header().coefficients_size(); ++i) {
 				netcpu::message::task_coefficient_info & to(task.coefficients(i));
-				converger_1::message::coeffwise_server_state_sync<N, F> const & from(convergence_state_msg.coeffs(i));
-
-				netcpu::message::serialise_to_decomposed_floating(netcpu::message::deserialise_from_decomposed_floating<float_type>(from.value_f), to.value);
-				netcpu::message::serialise_to_decomposed_floating(netcpu::message::deserialise_from_decomposed_floating<float_type>(from.value_from), to.from);
-				netcpu::message::serialise_to_decomposed_floating(netcpu::message::deserialise_from_decomposed_floating<float_type>(from.rand_range), to.range);
+				convergence_state.load_coefficient();
+				netcpu::message::serialise_to_decomposed_floating(netcpu::message::deserialise_from_decomposed_floating<float_type>(convergence_state.get_coefficient().value_f), to.value);
+				netcpu::message::serialise_to_decomposed_floating(netcpu::message::deserialise_from_decomposed_floating<float_type>(convergence_state.get_coefficient().value_from), to.from);
+				netcpu::message::serialise_to_decomposed_floating(netcpu::message::deserialise_from_decomposed_floating<float_type>(convergence_state.get_coefficient().rand_range), to.range);
 			}
 
 		}

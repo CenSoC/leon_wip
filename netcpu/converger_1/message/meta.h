@@ -64,7 +64,7 @@ struct meta : meta_base {
 	typedef netcpu::message::scalar<typename netcpu::message::typepair<N>::wire> size_type;
 	typedef netcpu::message::array<typename netcpu::message::typepair<N>::wire> array_type;
 	//typedef netcpu::message::scalar<F> float_type; 
-	typedef netcpu::message::decomposed_floating float_type; 
+	typedef netcpu::message::decomposed_floating<> float_type; 
 
 	size_type dissect_do;
 	size_type complexity_size;

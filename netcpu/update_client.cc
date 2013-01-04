@@ -98,7 +98,7 @@ namespace censoc { namespace netcpu {
 
 	bool static quit_flag(false);
 	int static ncpus(0);
-	::std::set<unsigned> static excluded_cpus;
+	::std::set<unsigned> static excluded_cpus; // those are predominantly for the hyper-threading related customization (when user actually wants to have hyperthreading enabled for users activities, but the NetCPU preference would be not to run on the hyperthreaded cpu "cores".
 
 #ifndef __WIN32__
 	pid_t nosleep;
@@ -246,6 +246,7 @@ nuke_app(
 #endif
 }
 
+template <unsigned ArgsCount = 0>
 void static
 launch_app(
 #ifndef __WIN32__
@@ -253,7 +254,7 @@ launch_app(
 #else
 	::PROCESS_INFORMATION & meta
 #endif
-	, ::std::string const & app_filepath, ::std::string const & one_arg = "")
+	, ::std::string const & app_filepath, ::std::array< ::std::string, ArgsCount> const & cli = ::std::array< ::std::string, 0>())
 {
 	if (::boost::filesystem::exists(app_filepath) == false) {
 		//throw ::std::runtime_error("the app to be launched does not appear to exist on the filesystem: [" + app_filepath + ']');
@@ -267,13 +268,14 @@ launch_app(
 		meta = 0;
 		throw ::std::runtime_error("could not fork [" + app_filepath + ']');
 	} else if (meta == static_cast<pid_t>(0)) {
-		char * args[3];
+		char * args[ArgsCount + 2];
 		args[0] = const_cast<char * const>(app_filepath.c_str());
-		if (one_arg.empty() == false)
-			args[1] = const_cast<char * const>(one_arg.c_str());
-		else
-			args[1] = NULL;
-		args[2] = NULL;
+
+		for (unsigned i(0); i != ArgsCount; ++i) {
+			assert(cli[i].empty() == false);
+			args[i + 1] = const_cast<char * const>(cli[i].c_str());
+		}
+		args[ArgsCount + 1] = NULL;
 		::execv(args[0], args);
 		::exit(0);
 	}
@@ -281,7 +283,13 @@ launch_app(
 	if (meta.hProcess)
 		return;
 	::STARTUPINFO tmp; ::memset(&tmp, 0, sizeof(tmp)); tmp.cb = sizeof(tmp); 
-	if (!::CreateProcess(NULL, const_cast<CHAR *>(one_arg.empty() == true ? app_filepath.c_str() : (app_filepath + ' ' + one_arg).c_str()), NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &tmp, &meta) || !meta.hProcess) {
+	// NOTE -- whitespaces are NOT welcome at the moment for any of the application/file structures and paths. So when installing the binaries make sure to structure the directories without any spaces in them.
+	::std::string args(app_filepath);
+	for (unsigned i(0); i != ArgsCount; ++i) {
+		assert(cli[i].empty() == false);
+		args += ' ' + cli[i];
+	}
+	if (!::CreateProcess(NULL, const_cast<CHAR *>(args.c_str()), NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &tmp, &meta) || !meta.hProcess) {
 		meta.hProcess = 0;
 		throw ::std::runtime_error("could not CreateProcess [" + app_filepath + ']');
 	}
@@ -302,9 +310,9 @@ launch_processors()
 	assert(ncpus);
 
 	::std::string const processor_filepath((netcpu::ownpath.parent_path() / "censoc_netcpu_processor.exe").string());
-	for (int i(0); i != ncpus; ++i) 
+	for (int i(0), j(0); i != ncpus; ++i) 
 		if (netcpu::excluded_cpus.find(i) == netcpu::excluded_cpus.end())
-			launch_app(processors[i], processor_filepath, censoc::lexicast< ::std::string>(i));
+			launch_app<2>(processors[i], processor_filepath, ::std::array< ::std::string, 2>{{censoc::lexicast< ::std::string>(i), censoc::lexicast< ::std::string>(j++)}});
 }
 
 // NOTE: largely copy from 'processor.cc'...

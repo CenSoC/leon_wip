@@ -65,7 +65,7 @@ struct checker {
 
 	template <typename TMP>
 	void inline 
-	hook(TMP const & x, unsigned x_size) 
+	hook(TMP const & x, unsigned /* x_size */) 
 	{
 		if (::std::abs(x[0] - value_) > .00001)
 			throw ::std::runtime_error(xxx("bad value: [") << x[0] << ", expected: [" << value_ << "], delta: [" << x[0] - value_ << ']');

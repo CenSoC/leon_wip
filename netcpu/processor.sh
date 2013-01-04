@@ -5,24 +5,24 @@
 
 # GDB this is for normal sh (not bash)
 echo "catch throw" > processor.gdb
-echo "run " >> processor.gdb
+echo "run 0 0" >> processor.gdb
 MALLOC_OPTIONS="10nPJ" gdb processor.exe -x processor.gdb
 rm processor.gdb
 
 exit
 
 # for non-gdb runs
-MALLOC_OPTIONS="10nPJ" ./processor.exe 
+MALLOC_OPTIONS="10nPJ" ./processor.exe  0 0
 
 exit
 
 # for release mode
-MALLOC_OPTIONS="10nP" ./processor.exe
+MALLOC_OPTIONS="10nP" ./processor.exe 0 0
 
 exit
 
 # GDB this is for bash... unfinished (no catch throw cmd yet)
 # need to put this at top #!/usr/local/bin/bash
-MALLOC_OPTIONS="10nPJ" gdb processor.exe -x <(echo "run ") 
+MALLOC_OPTIONS="10nPJ" gdb processor.exe  0 0 -x <(echo "run ") 
 
 exit

@@ -77,7 +77,7 @@ struct bootstrapping_peer_report : netcpu::message::message_base<message::messag
 	typedef netcpu::message::scalar<typename converger_1::key_typepair::wire> key_type;
 	typedef netcpu::message::scalar<typename netcpu::message::typepair<N>::wire> size_type;
 	//typedef netcpu::message::scalar<F> float_type;
-	typedef netcpu::message::decomposed_floating float_type; 
+	typedef netcpu::message::decomposed_floating<> float_type; 
 	typedef netcpu::message::array<typename netcpu::message::typepair<N>::wire> coefficients_type;
 	//}
 
@@ -116,7 +116,7 @@ struct peer_report : netcpu::message::message_base<message::messages_ids::peer_r
 	typedef netcpu::message::scalar<typename converger_1::key_typepair::wire> key_type;
 	typedef netcpu::message::scalar<typename netcpu::message::typepair<N>::wire> size_type;
 	//typedef netcpu::message::scalar<F> float_type;
-	typedef netcpu::message::decomposed_floating float_type; 
+	typedef netcpu::message::decomposed_floating<> float_type; 
 	typedef netcpu::message::array<complexitywise_element<N> > complexities_type;
 	//}
 
