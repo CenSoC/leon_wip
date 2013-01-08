@@ -42,13 +42,58 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <stdlib.h>
 
+#include <boost/noncopyable.hpp>
+#include <boost/type_traits.hpp>
+
 #ifndef CENSOC_ARRAYPTR_H
 #define CENSOC_ARRAYPTR_H
 
 namespace censoc {
 
+// guarantees by design that it is safe to call 'reset' or 'clobber' during the destructor of the managed object which is itself is invoked from the destructor of this object.
+template <typename T>
+struct unique_ptr : ::boost::noncopyable {
+	unique_ptr() noexcept
+	: x(NULL) {
+	}
+	unique_ptr(T * x) noexcept
+	: x(x) {
+	}
+	~unique_ptr() noexcept
+	{
+		delete x;
+	}
+	void
+	reset(T * x) noexcept
+	{
+		assert(x != NULL);
+		assert(x != this->x);
+		delete this->x; // dtors should not throw anyway -- at least in this API (as opposed to worrying about making sure that throwing dtors do not appear as a part of any stack-unwinding due to some other exception being thrown).
+		// if, on the other hand, 'delete/dtor' are likely to throw, then save tmp copy of this->x first, then assign this->x, then erase the tmp copy of old this->x
+		this->x = x;
+	}
+	void
+	release() noexcept
+	{
+		x = NULL;
+	}
+	T * 
+	get() const noexcept
+	{
+		return x;
+	}
+private:
+	T * x;
+};
+
 template <typename T, typename N>
 struct array_base {
+	T *
+	data() const noexcept
+	{
+		assert(x != NULL);
+		return x;
+	}
 	operator T * ()
 	{
 		assert(x != NULL);
@@ -94,7 +139,7 @@ private:
 	void operator = (array_base const &);
 };
 
-template <typename T, typename N>
+template <typename T, typename N, bool IsBuiltin = ::boost::is_fundamental<T>::value>
 struct array : public array_base<T, N> {
 	array()
 	{
@@ -123,18 +168,19 @@ struct array : public array_base<T, N> {
 	}
 };
 
-template <typename N>
-struct array<char, N> : public array_base<char, N> {
-	typedef array_base<char, N> base;
+template <typename T, typename N>
+struct array<T, N, true> : public array_base<T, N> {
+	BOOST_STATIC_ASSERT(sizeof(T));
+	typedef array_base<T, N> base;
 	array()
 	{
 	}
 	array(N const & n)
-	: base(static_cast<char *>(::malloc(static_cast< ::size_t>(n)))) {
+	: base(static_cast<T *>(::malloc(static_cast< ::size_t>(n * sizeof(T))))) {
 		if (base::x == NULL)
-			throw ::std::runtime_error("::malloc failed in array<char> ctor");
+			throw ::std::runtime_error("::malloc failed in array<T> ctor");
 #ifndef NDEBUG
-		base::size = n;;
+		base::size = n;
 #endif
 	}
 	~array()
@@ -146,10 +192,10 @@ struct array<char, N> : public array_base<char, N> {
 	{
 		::free(base::x);
 
-		base::x = static_cast<char *>(::malloc(static_cast< ::size_t>(n)));
+		base::x = static_cast<T *>(::malloc(static_cast< ::size_t>(n * sizeof(T))));
 		// C++ 'new' vs C's 'malloc' differ in their standardization for zero-sized requests (non-error conditions should return non-NULL pointer in C++, yet 'malloc' may indeed return a NULL pointer -- as, indeed, possible with runtime-tuning as per 'man malloc' the V option under FreeBSD).
 		if (base::x == NULL && n)
-			throw ::std::runtime_error("::malloc failed in array<char> reset");
+			throw ::std::runtime_error("::malloc failed in array<T> reset");
 
 #ifndef NDEBUG
 		base::size = n;
@@ -161,18 +207,68 @@ struct array<char, N> : public array_base<char, N> {
 		if (base::x == NULL)
 			reset(n);
 		else {
-			char * new_x(static_cast<char *>(::realloc(base::x, n)));
+			T * new_x(static_cast<T *>(::realloc(base::x, n * sizeof(T))));
 			::free(base::x);
 			base::x = new_x;
 			// C++ 'new' vs C's 'malloc' differ in their standardization for zero-sized requests (non-error conditions should return non-NULL pointer in C++, yet 'malloc' may indeed return a NULL pointer -- as, indeed, possible with runtime-tuning as per 'man malloc' the V option under FreeBSD).
 			if (base::x == NULL && !n)
-				throw ::std::runtime_error("::realloc failed in array<char> resize");
+				throw ::std::runtime_error("::realloc failed in array<T> resize");
 #ifndef NDEBUG
 			base::size = n;;
 #endif
 		}
 	}
 };
+
+template <typename T, typename N, bool IsBuiltin = ::boost::is_fundamental<T>::value>
+struct vector : array<T, N, IsBuiltin> {
+	typedef array<T, N, IsBuiltin> base_type;
+	N size_;
+	vector()
+	: size_(0) {
+	}
+	vector(N const & n)
+	: base_type(n), size_(n) {
+	}
+	void
+	reset(N const & n)
+	{
+		base_type::reset(size_ = n);
+	}
+	N
+	size() const
+	{
+		return size_;
+	}
+};
+
+template <typename T, typename N>
+struct vector<T, N, true> : array<T, N, true> {
+	typedef array<T, N, true> base_type;
+	N size_;
+	vector()
+	: size_(0) {
+	}
+	vector(N const & n)
+	: base_type(n), size_(n) {
+	}
+	void
+	reset(N const & n)
+	{
+		base_type::reset(size_ = n);
+	}
+	void
+	resize(N const & n)
+	{
+		base_type::resize(size_ = n);
+	}
+	N
+	size() const
+	{
+		return size_;
+	}
+};
+
 
 }
 

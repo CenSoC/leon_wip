@@ -50,7 +50,8 @@ protected:
 	io_wrapper(AsyncDriver & io) throw()
 	: io_(io) {
 		io.reset_callbacks();
-		io_wrapper const * const other(io.user_key.release());
+		io_wrapper const * const other(io.user_key.get());
+		io.user_key.release();
 		io.user_key.reset(this);
 		delete other;
 		censoc::llog() << "io_wrapper ctor: " << this << "\n";
@@ -59,7 +60,7 @@ public:
 	virtual 
 	~io_wrapper()
 	{
-		if (io().user_key.get() == this && io().canceled() == false) {
+		if (io().user_key.get() == this) {
 			io().user_key.release();
 			io().reset_callbacks();
 			io().cancel();

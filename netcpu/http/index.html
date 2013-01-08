@@ -2371,7 +2371,11 @@ function tasks_list_type()
 								if (coefficients[i].value < min)
 									min = coefficients[i].value;
 							}
-							var inv_distance = 1.0 / (max - min);
+							var inv_distance;
+							if (max != min)
+								inv_distance = 1.0 / (max - min);
+							else
+								inv_distance = 1;
 							for (var i = 0; i != betas_size; ++i) {
 								coefficients[i].normalised_value = (coefficients[i].value - min) * inv_distance;
 								coefficients[i + betas_size].normalised_value = coefficients[i + betas_size].value * inv_distance;

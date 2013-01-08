@@ -192,6 +192,19 @@ public:
 				time_atom = 120000 + (censoc::rand<uint32_t>::eval() % ncpus) * 15000;
 				systime_stamp = systime_stamp_tmp;
 				return true;
+			} else {
+				// extra case for battery-charge level (if/when applicable)
+				::SYSTEM_POWER_STATUS sps;
+				// Rather optimistic, w/o taking care of 'unknown', error-returns, etc. use-cases all over the place, quick hack.
+				if (::GetSystemPowerStatus(&sps)) {
+					// TODO -- make it more robust if need be later on...
+					if (!sps.ACLineStatus || sps.BatteryFlag != 128 && sps.BatteryLifePercent < 95) {
+						sleep();
+						time_atom = 7 * 60 * 1000; // check in about 7 minutes
+						systime_stamp = systime_stamp_tmp;
+						return true;
+					}
+				}
 			}
 
 			if (am_sleeping == false) {

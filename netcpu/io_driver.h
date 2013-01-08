@@ -623,34 +623,30 @@ public:
 		assert(write_callback_ == ::boost::bind(&async_driver_detail::on_write, this));
 	}
 
-	bool
-	canceled() const
-	{
-		return canceled_;
-	}
-
 	/**
 		@note -- cancelling is final, does not allow restarting io later. if such restarting is needed -- re-create the socket object completely'
 		*/
 	void
 	cancel()
 	{
-		read_is_pending = write_is_pending = false;
+		if (canceled_ == false) {
+			read_is_pending = write_is_pending = false;
 #ifndef NDEBUG
-		on_peek_is_pending = false;
+			on_peek_is_pending = false;
 #endif
 
-		// this is needed due to a likely bug in currently-installed boost::asio (some callbacks, even after an OK close call, get called with !error as opposed to error == canceled)
-		canceled_ = true;
+			// this is needed due to a likely bug in currently-installed boost::asio (some callbacks, even after an OK close call, get called with !error as opposed to error == canceled)
+			canceled_ = true;
 
-		//socket.lowest_layer().cancel(netcpu::ec);
+			//socket.lowest_layer().cancel(netcpu::ec);
 
-		socket.next_layer().close(netcpu::ec);
-		socket.lowest_layer().close(netcpu::ec);
+			socket.next_layer().close(netcpu::ec);
+			socket.lowest_layer().close(netcpu::ec);
 
-		if (keepalive_timer.is_pending() == true)
-			keepalive_timer.cancel();
-		censoc::llog() << "cancelling in async_driver_detail: " << this << ", status: " << netcpu::ec << '\n';
+			if (keepalive_timer.is_pending() == true)
+				keepalive_timer.cancel();
+			censoc::llog() << "cancelling in async_driver_detail: " << this << ", status: " << netcpu::ec << '\n';
+		}
 	}
 
 };
@@ -658,7 +654,7 @@ public:
 struct async_driver : async_driver_detail< ::boost::enable_shared_from_this<async_driver> >
 {
 	typedef async_driver native_protocol;
-	::std::unique_ptr<netcpu::io_wrapper<async_driver> > user_key;
+	censoc::unique_ptr<netcpu::io_wrapper<async_driver> > user_key;
 };
 
 }}}

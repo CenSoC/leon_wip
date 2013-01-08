@@ -237,16 +237,15 @@ main()
 			::censoc::scheduler::sleep_s(10);
 			ping_cpu();
 			ping_exit();
-			// no core should have > 7%
-			// at least ~50% of cores (if on hugely multicore box) should not have > 5%
+			
 			bool bail(false);
 			for (unsigned j(0u), non_idle_size(-1); j != cpus_size && bail == false; ++j) {
 				unsigned const last_idx(idx ? 0u : 1u);
 				uint_fast64_t const cpu_diff(cpu_counts[idx][j] - cpu_counts[last_idx][j]);
 				uint_fast64_t const idle_diff(idle_counts[idx][j] - idle_counts[last_idx][j]);
-				if (idle_diff < cpu_diff - cpu_diff / 15u)
+				if (idle_diff < cpu_diff - cpu_diff / 8u) // no core should have > 12%
 					bail = true;
-				else if (idle_diff < cpu_diff - cpu_diff / 20u) 
+				else if (idle_diff < cpu_diff - cpu_diff / 12u) // at least ~50% of cores (if on hugely multicore box) should not have > 8%
 					if (++non_idle_size == non_idle_end) 
 						bail = true;
 			}
@@ -266,13 +265,13 @@ main()
 			if (
 #if 1
 					// using GetIfEintry et al
-					ip_io_count - tmp_ip_io_count > 50 * 1025 // 5kB per sec
+					ip_io_count - tmp_ip_io_count > 12 * 10 * 1024 // 12kB per sec
 #else
 					// using GetIpStatistics
 					ip_io_count - tmp_ip_io_count > 70 // 70 packets in 10 secs
 #endif
 					||
-					disk_io_count - tmp_disk_io_count > 88 * 1024
+					disk_io_count - tmp_disk_io_count > 150 * 10 * 1024 // 150kB per sec
 					) { 
 				::SetThreadExecutionState(ES_SYSTEM_REQUIRED | ES_CONTINUOUS);
 				continue;

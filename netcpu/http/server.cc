@@ -652,12 +652,6 @@ struct http_adapter_driver : netcpu::message::async_driver_detail<virtual_enable
 		http_protocol::handshake_callback = ::boost::bind(&http_adapter_driver::on_http_handshake, this);
 	}
 
-	bool
-	canceled() const 
-	{
-		return false;
-	}
-
 	void
 	reset_callbacks()
 	{
@@ -670,8 +664,7 @@ struct http_adapter_driver : netcpu::message::async_driver_detail<virtual_enable
 	void
 	cancel()
 	{
-		if (native_protocol::canceled() == false)
-			native_protocol::cancel();
+		native_protocol::cancel();
 		http_protocol::cancel();
 	}
 };
@@ -829,13 +822,13 @@ struct get_tasks_list : io_wrapper<http_adapter_driver> {
 		if (task.coefficients.size()) {
 			rv += ",\"coefficients\":[";
 			for (uint_fast32_t i(0); i != task.coefficients.size(); ++i) {
-				rv += "{\"value\":\"" + 
+				rv += "{\"value\":" + 
 					::boost::lexical_cast< ::std::string>(netcpu::message::deserialise_from_decomposed_floating<double>(task.coefficients[i].value))
-					+ "\",\"from\":\"" + 
+					+ ",\"from\":" + 
 					::boost::lexical_cast< ::std::string>(netcpu::message::deserialise_from_decomposed_floating<double>(task.coefficients[i].from))
-					+ "\",\"range\":\"" + 
+					+ ",\"range\":" + 
 					::boost::lexical_cast< ::std::string>(netcpu::message::deserialise_from_decomposed_floating<double>(task.coefficients[i].range))
-					+ "\"}"; 
+					+ "}"; 
 				if (i < task.coefficients.size() - 1)
 					rv += ',';
 			}

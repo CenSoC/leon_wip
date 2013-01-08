@@ -109,7 +109,11 @@ stdstream<censoc::err>()
 template <printstream_type T>
 struct lexiprint {
 	template <typename From>
-	lexiprint & operator << (From const & x)
+	lexiprint & operator << (From const & 
+#ifndef __WIN32__
+			x
+#endif
+			)
 	{
 #ifndef __WIN32__
 		censoc::stdstream<T>() << eightbit_helper(x);
@@ -117,7 +121,11 @@ struct lexiprint {
 		return *this;
 	}
 	// for ::std::endl et al (which are manipulators)
-	lexiprint & operator << (::std::ostream & (* x) (::std::ostream &))
+	lexiprint & operator << (::std::ostream & (* 
+#ifndef __WIN32__
+				x
+#endif
+				) (::std::ostream &))
 	{
 #ifndef __WIN32__
 		censoc::stdstream<T>() << x;

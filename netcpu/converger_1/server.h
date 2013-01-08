@@ -398,18 +398,19 @@ struct field_interface : netcpu::message::field_interface_base<fstreamer::fields
 	field_interface()
 	: field_interface_base<fstreamer::fields_master_traits>(this) {
 	}
-	void virtual from_wire(::std::istream & f, ::std::vector<uint8_t> & buffer) = 0;
-	void virtual to_wire(::std::ostream & f, ::std::vector<uint8_t> & buffer) const = 0;
+	void virtual from_wire(::std::istream & f, censoc::vector<uint8_t, ::std::size_t> & buffer) = 0;
+	void virtual to_wire(::std::ostream & f, censoc::vector<uint8_t, ::std::size_t> & buffer) const = 0;
 };
 
 
 // todo -- a quick utility hack for the time being...
 void static
-reset_with_capacity(::std::vector<uint8_t> & buffer, unsigned size)
+reset_with_capacity(censoc::vector<uint8_t, ::std::size_t> & buffer, unsigned size)
 {
-	if (buffer.capacity() < size) {
-		buffer.clear(); // do not copy existing members
-		buffer.reserve(sizeof(size));
+	// todo later relpace with 'array with size' semantics
+	if (buffer.size() < size) {
+		buffer.reset(size);
+		assert(buffer.size() == size);
 	}
 }
 
@@ -421,7 +422,7 @@ struct fstream_serializer_multifield : netcpu::message::message_base_noid<fstrea
 	typedef netcpu::message::size_type size_type;
 
 	void virtual
-	from_wire(::std::istream & f, ::std::vector<uint8_t> & buffer)
+	from_wire(::std::istream & f, censoc::vector<uint8_t, ::std::size_t> & buffer)
 	{
 		assert(fields.empty() == false);
 		for (typename netcpu::message::fields_master_type<fstreamer::field_interface>::fields_type::iterator i(fields.begin()); i != fields.end(); ++i) 
@@ -431,7 +432,7 @@ struct fstream_serializer_multifield : netcpu::message::message_base_noid<fstrea
 	}
 
 	void virtual
-	to_wire(::std::ostream & f, ::std::vector<uint8_t> & buffer) const
+	to_wire(::std::ostream & f, censoc::vector<uint8_t, ::std::size_t> & buffer) const
 	{
 		assert(fields.empty() == false);
 		for (typename netcpu::message::fields_master_type<fstreamer::field_interface>::fields_type::const_iterator i(fields.begin()); i != fields.end(); ++i) 
@@ -470,14 +471,14 @@ struct fstream_serializer_scalar : fstreamer::field_interface {
 		this->x = x;
 	}
 	void
-	from_wire(::std::istream & f, ::std::vector<uint8_t> & buffer)
+	from_wire(::std::istream & f, censoc::vector<uint8_t, ::std::size_t> & buffer)
 	{
 		reset_with_capacity(buffer, sizeof(data_type));
 		f.read(reinterpret_cast<char*>(buffer.data()), sizeof(data_type));
 		netcpu::message::from_wire<data_type>::eval(buffer.data(), x);
 	}
 	void
-	to_wire(::std::ostream & f, ::std::vector<uint8_t> & buffer) const
+	to_wire(::std::ostream & f, censoc::vector<uint8_t, ::std::size_t> & buffer) const
 	{
 		reset_with_capacity(buffer, sizeof(data_type));
 		netcpu::message::to_wire<data_type>::eval(buffer.data(), x);
@@ -491,19 +492,20 @@ struct fstream_serializer_array : fstreamer::field_interface {
 	typedef T data_type;
 	typedef typename censoc::param<data_type>::type data_paramtype;
 
-	censoc::array<data_type, size_type> buffer_; 
+	censoc::vector<data_type, ::std::size_t> buffer_; 
 
-	size_type buffer_size;
 	size_type size_;
 
 	fstream_serializer_array()
-	: buffer_size(0), size_(0) {
+	: size_(0) {
 	}
 
 	data_type const &
 	operator()(size_paramtype i) const
 	{
 		assert(i < size_);
+		assert(i < buffer_.size());
+		assert(size_ <= buffer_.size());
 		return buffer_[i];
 	}
 
@@ -511,6 +513,8 @@ struct fstream_serializer_array : fstreamer::field_interface {
 	operator()(size_paramtype i) 
 	{
 		assert(i < size_);
+		assert(i < buffer_.size());
+		assert(size_ <= buffer_.size());
 		return buffer_[i];
 	}
 
@@ -518,6 +522,8 @@ struct fstream_serializer_array : fstreamer::field_interface {
 	operator[](size_paramtype i) const
 	{
 		assert(i < size_);
+		assert(i < buffer_.size());
+		assert(size_ <= buffer_.size());
 		return buffer_[i];
 	}
 
@@ -525,6 +531,8 @@ struct fstream_serializer_array : fstreamer::field_interface {
 	operator[](size_paramtype i) 
 	{
 		assert(i < size_);
+		assert(i < buffer_.size());
+		assert(size_ <= buffer_.size());
 		return buffer_[i];
 	}
 
@@ -532,32 +540,40 @@ struct fstream_serializer_array : fstreamer::field_interface {
 	operator()(size_paramtype i, data_paramtype x)
 	{
 		assert(i < size_);
+		assert(i < buffer_.size());
+		assert(size_ <= buffer_.size());
 		buffer_[i] = x;
 	}
 
 	void
-	from_wire(::std::istream & f, ::std::vector<uint8_t> & buffer)
+	from_wire(::std::istream & f, censoc::vector<uint8_t, ::std::size_t> & buffer)
 	{
+		assert(size_ <= buffer_.size());
 		reset_with_capacity(buffer, sizeof(size_));
 		f.read(reinterpret_cast<char*>(buffer.data()), sizeof(size_));
 		netcpu::message::from_wire<size_type>::eval(buffer.data(), size_);
-		if (buffer_size < size_) 
-			buffer_.reset(buffer_size = size_);
+		if (buffer_.size() < size_) {
+			buffer_.reset(size_);
+			assert(buffer_.size() == size_);
+		}
 		reset_with_capacity(buffer, sizeof(data_type));
 		for (unsigned i(0); i != size_; ++i) {
 			f.read(reinterpret_cast<char*>(buffer.data()), sizeof(data_type));
+			assert(i < buffer_.size());
 			netcpu::message::from_wire<data_type>::eval(buffer.data(), buffer_[i]);
 		}
 	}
 
 	void
-	to_wire(::std::ostream & f, ::std::vector<uint8_t> & buffer) const
+	to_wire(::std::ostream & f, censoc::vector<uint8_t, ::std::size_t> & buffer) const
 	{
+		assert(size_ <= buffer_.size());
 		reset_with_capacity(buffer, sizeof(size_type));
 		netcpu::message::to_wire<size_type>::eval(buffer.data(), size_);
 		f.write(reinterpret_cast<char const *>(buffer.data()), sizeof(size_type));
 		reset_with_capacity(buffer, sizeof(data_type));
 		for (unsigned i(0); i != size_; ++i) {
+			assert(i < buffer_.size());
 			netcpu::message::to_wire<data_type>::eval(buffer.data(), buffer_[i]);
 			f.write(reinterpret_cast<char const *>(buffer.data()), sizeof(data_type));
 		}
@@ -566,9 +582,12 @@ struct fstream_serializer_array : fstreamer::field_interface {
 	void
 	resize(size_type size) 
 	{
+		assert(size_ <= buffer_.size());
 		size_ = size;
-		if (buffer_size < size_) 
-			buffer_.reset(buffer_size = size_);
+		if (buffer_.size() < size_) {
+			buffer_.reset(size_);
+			assert(buffer_.size() == size_);
+		}
 	}
 
 	data_type *
@@ -602,19 +621,21 @@ struct convergence_state_fstreamer_base {
 	typedef fstream_serializer_array<typename netcpu::message::typepair<uint8_t>::wire> wire_byte_arraytype; 
 	typedef netcpu::message::decomposed_floating<fstream_serializer_scalar> wire_float_type; 
 
-	::std::vector<uint8_t> buffer;
-	::std::vector<char> stream_buffer;
+	censoc::vector<uint8_t, ::std::size_t> buffer;
+
+	enum { stream_buffer_size = 1024 * 1024 * 10 };
+	censoc::array<char, ::std::size_t> stream_buffer;
 
 	convergence_state_fstreamer_base()
+	: buffer(1024 * 1024 * 3) // todo later relpace with 'array with size' semantics...
+	, stream_buffer(stream_buffer_size) // todo, later relpace with 'array with size' semantics...
 	{
-		stream_buffer.reserve(1024 * 1024 * 10);
 	}
 
 	void
 	set_stream_buffer(::std::filebuf * fb)
 	{
-		stream_buffer.reserve(1024 * 1024 * 10);
-	  fb->pubsetbuf(stream_buffer.data(), stream_buffer.capacity());
+	  fb->pubsetbuf(stream_buffer.data(), stream_buffer_size);
 	}
 
 	struct header_type : fstream_serializer_multifield {
@@ -1761,6 +1782,7 @@ struct processing_peer : netcpu::io_wrapper<netcpu::message::async_driver> {
 
 #ifndef NDEBUG
 	bool do_assert_processing_peers_i;
+	bool in_dtor;
 #endif
 
 	// grid-related accounting
@@ -1770,6 +1792,7 @@ struct processing_peer : netcpu::io_wrapper<netcpu::message::async_driver> {
 	: netcpu::io_wrapper<netcpu::message::async_driver>(io_driver), processor(processor), scoped_peers_i(processor.scoped_peers, processor.scoped_peers.insert(processor.scoped_peers.end(), this)), processing_peers_i(processor.processing_peers)
 #ifndef NDEBUG
 		, do_assert_processing_peers_i(false) 
+		, in_dtor(false)
 #endif
 	{
 		io().error_callback(&processing_peer::on_error, this);
@@ -1777,6 +1800,13 @@ struct processing_peer : netcpu::io_wrapper<netcpu::message::async_driver> {
 		msg.task_id(ModelId);
 		io().write(msg, &processing_peer::on_write, this);
 		censoc::llog() << "processing_peer ctor is done\n";
+	}
+
+	~processing_peer()
+	{
+#ifndef NDEBUG
+		in_dtor = true;
+#endif
 	}
 
 	void
@@ -1845,6 +1875,7 @@ struct processing_peer : netcpu::io_wrapper<netcpu::message::async_driver> {
 	void 
 	on_read() // for peer-reporting 
 	{
+		assert(in_dtor == false);
 		bool io_was_stale(processor.io_key - io_key_echo_ >= stale_io_limit ? true : false); 
 		if (converger_1::message::bootstrapping_peer_report<N, F>::myid == io().read_raw.id()) {
 			processor.bootstrapping_peer_report_msg.from_wire(io().read_raw);
@@ -1865,6 +1896,7 @@ struct processing_peer : netcpu::io_wrapper<netcpu::message::async_driver> {
 			io().cancel();
 			return;
 		}
+		assert(in_dtor == false);
 		io().read();
 	}
 
@@ -2016,6 +2048,8 @@ struct task : netcpu::task {
 	load_coefficients_info_et_al(netcpu::message::tasks_list & tasks_list, netcpu::message::task_info & task)
 	{
 		if (active_task_processor.get() != NULL) {
+			// todo -- really a quick and nasty hack at the moment. later must refactor interface to the task_processor so as not to do "active_task_processor->" all the time, etc.
+
 			//todo -- the newline escaping for the sake of the JSON formatting should be done elsewhere!!
 			censoc::lexicast< ::std::string> xxx("There are potentially ");
 			xxx << active_task_processor->processing_peers.size() << " processing workers (productivity of each is not yet accounted for).\\n";
@@ -2032,8 +2066,7 @@ struct task : netcpu::task {
 					assert(i->second);
 					total_remaining_complexity_size += i->second;
 				}
-				xxx << "Currently calculated complexity has " << active_task_processor->current_complexity_level->first << " evaluations in total\\n"
-				<< "(with " << total_remaining_complexity_size  << " evaluations awating computation)" << << "\\n";
+				xxx << "Currently calculated complexity has " << active_task_processor->current_complexity_level->first << " evaluations in total (with " << total_remaining_complexity_size  << " evaluations awating computation)\\n";
 
 				unsigned coeffs_at_once(1);
 				for (tmp = active_task_processor->combos_modem.metadata().begin(); tmp != active_task_processor->current_complexity_level; ++tmp, ++coeffs_at_once);
@@ -2046,24 +2079,36 @@ struct task : netcpu::task {
 			::std::string meta_text(xxx);
 			tasks_list.meta_text.resize(meta_text.size());
 			::memcpy(tasks_list.meta_text.data(), meta_text.c_str(), meta_text.size());
-		}
 
-		::std::string const convergence_state_filepath(netcpu::root_path + name() + "/convergence_state.bin");
-		if (::boost::filesystem::exists(convergence_state_filepath) == true) {
-			converger_1::fstreamer::convergence_state_ifstreamer<N> convergence_state;
-			convergence_state.load_header(convergence_state_filepath);
-
-			assert(convergence_state.get_header().coefficients_size());
-			task.coefficients.resize(convergence_state.get_header().coefficients_size());
-
-			for (size_type i(0); i != convergence_state.get_header().coefficients_size(); ++i) {
-				netcpu::message::task_coefficient_info & to(task.coefficients(i));
-				convergence_state.load_coefficient();
-				netcpu::message::serialise_to_decomposed_floating(netcpu::message::deserialise_from_decomposed_floating<float_type>(convergence_state.get_coefficient().value_f), to.value);
-				netcpu::message::serialise_to_decomposed_floating(netcpu::message::deserialise_from_decomposed_floating<float_type>(convergence_state.get_coefficient().value_from), to.from);
-				netcpu::message::serialise_to_decomposed_floating(netcpu::message::deserialise_from_decomposed_floating<float_type>(convergence_state.get_coefficient().rand_range), to.range);
+			if (active_task_processor->am_bootstrapping == false) {
+				task.coefficients.resize(active_task_processor->coefficients_size);
+				for (size_type i(0); i != active_task_processor->coefficients_size; ++i) {
+					converger_1::coefficient_metadata<N, F> & ram(active_task_processor->coefficients_metadata[i]);
+					netcpu::message::task_coefficient_info & to(task.coefficients(i));
+					netcpu::message::serialise_to_decomposed_floating(ram.saved_value(), to.value);
+					netcpu::message::serialise_to_decomposed_floating(ram.value_from(), to.from);
+					netcpu::message::serialise_to_decomposed_floating(ram.rand_range(), to.range);
+				}
 			}
 
+		} else {
+			::std::string const convergence_state_filepath(netcpu::root_path + name() + "/convergence_state.bin");
+			if (::boost::filesystem::exists(convergence_state_filepath) == true) {
+				converger_1::fstreamer::convergence_state_ifstreamer<N> convergence_state;
+				convergence_state.load_header(convergence_state_filepath);
+
+				assert(convergence_state.get_header().coefficients_size());
+				task.coefficients.resize(convergence_state.get_header().coefficients_size());
+
+				for (size_type i(0); i != convergence_state.get_header().coefficients_size(); ++i) {
+					netcpu::message::task_coefficient_info & to(task.coefficients(i));
+					convergence_state.load_coefficient();
+					netcpu::message::serialise_to_decomposed_floating(netcpu::message::deserialise_from_decomposed_floating<float_type>(convergence_state.get_coefficient().value_f), to.value);
+					netcpu::message::serialise_to_decomposed_floating(netcpu::message::deserialise_from_decomposed_floating<float_type>(convergence_state.get_coefficient().value_from), to.from);
+					netcpu::message::serialise_to_decomposed_floating(netcpu::message::deserialise_from_decomposed_floating<float_type>(convergence_state.get_coefficient().rand_range), to.range);
+				}
+
+			}
 		}
 	}
 
