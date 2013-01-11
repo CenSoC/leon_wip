@@ -77,8 +77,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 namespace censoc { namespace netcpu { namespace converger_1 { 
 
-::timespec static start;
-
 template <typename N, typename F>
 struct coefficient_metadata : converger_1::coefficient_metadata_base<N, F> {
 
@@ -856,6 +854,7 @@ struct task_processor : ::boost::noncopyable {
 	censoc::stl::fastsize< ::std::list<converger_1::processing_peer<N, F, Model, ModelId> *>, size_type> processing_peers; // manages processing (io) w.r.t. peers (because peer may be ctored, but it's readiness to do io only comes after reading/processing few meta/res/etc. messages)
 
 	netcpu::message::async_timer server_state_sync_timer;
+	::time_t server_state_sync_timeout_checkpoint;
 
 	// grid-related accounting
 	netcpu::combos_builder<size_type, coefficients_metadata_type> combos_modem;
@@ -877,7 +876,7 @@ struct task_processor : ::boost::noncopyable {
 #ifndef NDEBUG
 	intended_coeffs_at_once(0),
 #endif
-	e_min_complexity(-1), better_find_since_last_recentered_sync(false), redistribute_remaining_complexities(false), peer2peer_assisted_complexity_present(false), io_key(0) { 
+	e_min_complexity(-1), better_find_since_last_recentered_sync(false), server_state_sync_timeout_checkpoint(0), redistribute_remaining_complexities(false), peer2peer_assisted_complexity_present(false), io_key(0) { 
 
 		visited_places.reserve(50000000);
 
@@ -1071,11 +1070,6 @@ struct task_processor : ::boost::noncopyable {
 		complete_server_state_sync_msg();
 
 		server_state_sync_timer.timeout_callback(&task_processor::on_sync_timeout, this);
-
-#if 1
-		if (::clock_gettime(CLOCK_MONOTONIC, &start) == -1)
-			throw ::std::runtime_error(xxx() << "clock_gettime(CLOCK_MONOTONIC...) failed: [" << ::strerror(errno) << "]");
-#endif
 	}
 
 	~task_processor()
@@ -1123,16 +1117,14 @@ struct task_processor : ::boost::noncopyable {
 		do_redistribute_remaining_peers_complexities();
 		redistribute_remaining_complexities = false;
 
-		complete_server_state_sync_msg();
+		complete_server_state_sync_msg(); // todo -- consider moving to 'on_sync_timeout' method (having it here will increment io_key thereby disallowing any further messages from other peers about bootstrapping locations with, potentially, better likelihoods). this, however, is not a simlpe consideration -- as 'reduce_remaining_complexities' is called above which may be computationally taxing (and doing so on other multiple bootstrapping messages may turn out to be of lesser efficiency overall)... so such calls (together with redustribution of remaining_complexities) may also need to bo moved to the on_sync_timeout... together with 'reset_after_bootstrapping' calls on individual coeffs... which means thath theri will have to be some form of a cache for candidate coefficients values which will be used in 'on_sync_timeout' call to actually 'reset after bootstrapping'... This may actually be more elegant overall since the whole 'it works here now' thing only works nicely due to incrementation of the io_key... on the other hand it will take more work/code... anyways -- consider in future. For the time being 'bootstrapping' is really a special case... 
 		assert(server_state_sync_msg.coeffs.size() == coefficients_size);
 
 		sync_peers_to_server_state();
 
 		assert(processing_peers.empty() == false);
 
-		//server_state_sync_timer.timeout(boost::posix_time::seconds(3)); // TODO make it a runtime param
-		if (server_state_sync_timer.is_pending() == false)
-			server_state_sync_timer.timeout(); 
+		post_server_state_sync_timeout();
 	}
 
 	/**
@@ -1144,48 +1136,38 @@ struct task_processor : ::boost::noncopyable {
 		assert(am_bootstrapping == false);
 		assert(::std::isfinite(netcpu::message::deserialise_from_decomposed_floating<float_type>(peer_report_msg.value)) == true);
 		assert(::std::isfinite(e_min) == true);
-		bool immediate_on_sync_timeout(false);
 		if (peer_report_msg.value_complexity() != static_cast<typename netcpu::message::typepair<N>::wire>(-1)) { // ... one must trust processor anyway on a greater scale of things. TODO -- later will queue/cache all of the reported results and have a verification-process done by "trusted" processing peers (done from latest to earliest order -- like a stack really) and if any are seen as wrong, will 'resync' to the best latest correct set of coeffs... TODO for future!
-			censoc::lerr() << "e_min/peer_report_msg.value(): " << e_min / netcpu::message::deserialise_from_decomposed_floating<float_type>(peer_report_msg.value) << ::std::endl;
-			censoc::lerr() << "e_min: " << e_min << ", peer_report_msg.value() " << netcpu::message::deserialise_from_decomposed_floating<float_type>(peer_report_msg.value) << ::std::endl;
 
-			immediate_on_sync_timeout = true;
+			float_type const e_min_in_message(netcpu::message::deserialise_from_decomposed_floating<float_type>(peer_report_msg.value));
 
-			e_min = netcpu::message::deserialise_from_decomposed_floating<float_type>(peer_report_msg.value);
-			e_min_complexity = peer_report_msg.value_complexity();
-			assert(e_min_complexity != static_cast<typename netcpu::message::typepair<N>::wire>(-1));
+			if (e_min_in_message < e_min) { // important, because multiple 'better find found' reports may arrive in-between syncs (and it's ok too -- since there is no point in passing on the better-found location) and their locations will be remembered the visited places... but that means that the currently found best find had better be the best-possible amongst all of the visited places...
+
+				// by the way, the processor is not doing this 'continue looking for better finds after finding the first one' and instead sleeps and awaits the recentering message et. al. because if many finds are found frequently then a potentially slow likelihood function will be spend unneeded CPU time for the stale (previous) center point calculations... and there will be many processors that would be in such a situation (because of high probability of finding a better find)... if, on the other hand, finds are not frequent then this wont make much difference anyways... of course, if there are a few processors and each log likelihood is done very quickly, then the processor may be wiser to continue calculating (in hope of finding better finds during the timeout preiod on the server side)... but generally it is the slower calculations that are of concern w.r.t. optimisation... anyway, a possible todo for the future...
+
+				censoc::lerr() << "e_min/peer_report_msg.value(): " << e_min / netcpu::message::deserialise_from_decomposed_floating<float_type>(peer_report_msg.value) << ::std::endl;
+				censoc::lerr() << "e_min: " << e_min << ", peer_report_msg.value() " << netcpu::message::deserialise_from_decomposed_floating<float_type>(peer_report_msg.value) << ::std::endl;
+
+				e_min = e_min_in_message;
+				e_min_complexity = peer_report_msg.value_complexity();
+				assert(e_min_complexity != static_cast<typename netcpu::message::typepair<N>::wire>(-1));
 #ifndef NDEBUG
-			offset.zero();
-			combos_modem.demodulate(e_min_complexity, coefficients_metadata, coefficients_size);
-			censoc::llog() << '{';
-			for (size_type i(0); i != coefficients_size; ++i) 
-				censoc::llog() << coefficients_metadata[i].value() << (i != coefficients_size - 1 ? ", " : "");
-			censoc::llog() << "}\n";
+				offset.zero();
+				combos_modem.demodulate(e_min_complexity, coefficients_metadata, coefficients_size);
+				censoc::llog() << '{';
+				for (size_type i(0); i != coefficients_size; ++i) 
+					censoc::llog() << coefficients_metadata[i].value() << (i != coefficients_size - 1 ? ", " : "");
+				censoc::llog() << "}\n";
 #endif
 
-			redistribute_remaining_complexities = true;
+				redistribute_remaining_complexities = true;
 
-			better_find_since_last_recentered_sync =  true;
+				better_find_since_last_recentered_sync =  true;
 
-			// a non-true (w.r.t. server_state_sync_msg coeffs values) e_min, but it is here so that if any intermediate (in-between syncs) peers get connected and get sent server_state message -- they will be able to have a quicker 'early exit' (i.e. not spend time finding "better" finds when server already knows about a better one)... although this may not be that much of use -- subsequent 'recentre' message will be sent asap anyway
-			// server_state_sync_msg.value(e_min);
-
-#if 1
-			::timespec end;
-			if (::clock_gettime(CLOCK_MONOTONIC, &end) == -1)
-				throw ::std::runtime_error(xxx() << "clock_gettime(CLOCK_MONOTONIC...) failed: [" << ::strerror(errno) << "]");
-
-			// note, technically speaking, if tv_nsec was an unsigned integral, the following 'end.tv_nsec - start.tv_nsec' may yield large positive 
-			//	(i.e. small negative) number; and whilst it is perfectly ok for complement-2 notation when adding/dealing-with other integrals -- 
-			// any intermediate casting to floating-point would be a disaster (large positive number would not then wrap-around back to normal values but would be treated as actually-large value). 
-			// However, following the timspec specifications as per 'man clock_gettime' (in FreeBSD) and as per POSIX (opengroup) specs, 
-			// one is relying on 'tv_nsec' being a signed number.
-			float_type rv = end.tv_sec - converger_1::start.tv_sec + (end.tv_nsec - converger_1::start.tv_nsec) * static_cast<float_type>(1e-9);
-			censoc::llog() << "ll processing duration secs: [" << rv  << "], mins: [" << rv / 60 << "], hrs: [" << rv / 3600 << "]; resulting value: [" << e_min << "]\n";
-			peer_report_msg.print();
-#endif
-		}
-
+				// a non-true (w.r.t. server_state_sync_msg coeffs values) e_min, but it is here so that if any intermediate (in-between syncs) peers get connected and get sent server_state message -- they will be able to have a quicker 'early exit' (i.e. not spend time finding "better" finds when server already knows about a better one)... although this may not be that much of use -- subsequent 'recentre' message will be sent asap anyway
+				// netcpu::message::serialise_to_decomposed_floating(e_min, server_state_sync_msg.value);
+			}
+		} 
+		
 		//  appropriate the complexities
 		for (size_type i(0); i != peer_report_msg.complexities.size(); ++i) {
 
@@ -1206,17 +1188,26 @@ struct task_processor : ::boost::noncopyable {
 				// todo replace with emplace when later version of c++11 compliant compiler gets delployed
 				visited_places.insert(offset);
 			}
-
 		}
 
 		// this is a 'to be deprecated' diagnostic (as currently this line is the longest visible on screen -- yeah I know, not a good reason, it's just a quick hack, TODO -- delete it altogether)!!!
 		censoc::llog() << "players: " << processing_peers.size() << '\n';
 
-		if (immediate_on_sync_timeout == true)
-			on_sync_timeout();
-		else if (server_state_sync_timer.is_pending() == false) 
-			server_state_sync_timer.timeout(boost::posix_time::seconds(3));
+		post_server_state_sync_timeout();
+	}
 
+	void
+	post_server_state_sync_timeout()
+	{
+		if (server_state_sync_timer.is_pending() == false) {
+			::time_t const tmp(::time(NULL));
+			uint_fast8_t const diff(tmp - server_state_sync_timeout_checkpoint);
+			if (diff > 2)
+				server_state_sync_timer.timeout();
+			else
+				server_state_sync_timer.timeout(boost::posix_time::seconds(3 - diff));
+			server_state_sync_timeout_checkpoint = tmp;
+		}
 	}
 
 	void
@@ -1242,6 +1233,7 @@ struct task_processor : ::boost::noncopyable {
 	void
 	complete_server_state_sync_msg()
 	{
+		assert(better_find_since_last_recentered_sync == false);
 		netcpu::message::serialise_to_decomposed_floating(e_min, server_state_sync_msg.value);
 		server_state_sync_msg.am_bootstrapping(am_bootstrapping == true ? 1 : 0);
 		++io_key;
@@ -1257,9 +1249,9 @@ struct task_processor : ::boost::noncopyable {
 
 		redistribute_remaining_complexities = true;
 
-		//if (e_min != censoc::largish<float_type>() && processing_peers.empty() == true && server_state_sync_timer.is_pending() == false)
-		if (am_bootstrapping == false && server_state_sync_timer.is_pending() == false)
-			server_state_sync_timer.timeout(boost::posix_time::seconds(3)); // TODO -- make the timeout a  runtime parameter
+		//if (e_min != censoc::largish<float_type>() && processing_peers.empty() == true)
+		if (am_bootstrapping == false)
+			post_server_state_sync_timeout();
 
 		return processing_peers.insert(processing_peers.end(), &x);
 	}
@@ -1600,14 +1592,14 @@ struct task_processor : ::boost::noncopyable {
 
 #if 0
 		// call timer again...
-		if (server_state_sync_timer.is_pending() == false) // could have been called from 'on_peer_report' immediately (not via timer) -- so the timer is still pending/going independently...
-			server_state_sync_timer.timeout(boost::posix_time::seconds(3)); // TODO make it a runtime param
+		post_server_state_sync_timeout();
 #endif
 	}
 
 	void
 	save_convergence_state()
 	{
+		assert(better_find_since_last_recentered_sync == false);
 
 		censoc::llog() << "Writing convergence state to disk...\n";
 
@@ -1782,7 +1774,6 @@ struct processing_peer : netcpu::io_wrapper<netcpu::message::async_driver> {
 
 #ifndef NDEBUG
 	bool do_assert_processing_peers_i;
-	bool in_dtor;
 #endif
 
 	// grid-related accounting
@@ -1792,7 +1783,6 @@ struct processing_peer : netcpu::io_wrapper<netcpu::message::async_driver> {
 	: netcpu::io_wrapper<netcpu::message::async_driver>(io_driver), processor(processor), scoped_peers_i(processor.scoped_peers, processor.scoped_peers.insert(processor.scoped_peers.end(), this)), processing_peers_i(processor.processing_peers)
 #ifndef NDEBUG
 		, do_assert_processing_peers_i(false) 
-		, in_dtor(false)
 #endif
 	{
 		io().error_callback(&processing_peer::on_error, this);
@@ -1802,12 +1792,6 @@ struct processing_peer : netcpu::io_wrapper<netcpu::message::async_driver> {
 		censoc::llog() << "processing_peer ctor is done\n";
 	}
 
-	~processing_peer()
-	{
-#ifndef NDEBUG
-		in_dtor = true;
-#endif
-	}
 
 	void
 	on_error(::std::string const &) 
@@ -1875,7 +1859,6 @@ struct processing_peer : netcpu::io_wrapper<netcpu::message::async_driver> {
 	void 
 	on_read() // for peer-reporting 
 	{
-		assert(in_dtor == false);
 		bool io_was_stale(processor.io_key - io_key_echo_ >= stale_io_limit ? true : false); 
 		if (converger_1::message::bootstrapping_peer_report<N, F>::myid == io().read_raw.id()) {
 			processor.bootstrapping_peer_report_msg.from_wire(io().read_raw);
@@ -1896,7 +1879,6 @@ struct processing_peer : netcpu::io_wrapper<netcpu::message::async_driver> {
 			io().cancel();
 			return;
 		}
-		assert(in_dtor == false);
 		io().read();
 	}
 

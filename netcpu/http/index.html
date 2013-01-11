@@ -2000,17 +2000,9 @@ function canvas_painter_type(canvas, coefficients, task_name, model_id, betas_si
 	this.task_name = task_name;
 	this.coefficients = coefficients;
 
-	this.max = -Number.MAX_VALUE;
-	this.min = Number.MAX_VALUE;
-
-	for (var i = 0; i != betas_size; ++i) {
-		if (coefficients[i].normalised_value > this.max)
-			this.max = coefficients[i].normalised_value;
-		if (coefficients[i].normalised_value < this.min)
-			this.min = coefficients[i].normalised_value;
-	}
-
-	this.range = (this.max += this.normal_trunc * .7) - (this.min -= this.normal_trunc * .7);
+	this.max = 1 + this.normal_trunc * .7;
+	this.min = -this.normal_trunc * .7;
+	this.range = this.max - this.min;
 
 	this.coefficient_circle_radius = Math.min(0.8 * window.innerHeight, 7 * 20) / 20;
 	this.coefficient_circle_padding = this.coefficient_circle_radius * 5;
@@ -2031,43 +2023,40 @@ function canvas_painter_type(canvas, coefficients, task_name, model_id, betas_si
 		return this.height - (value - this.min) * this.height_over_range;
 	}
 
-	for (var i = 0; i != this.betas_size; ++i) {
+	if (this.model_id > 1)
+		for (var i = 0; i != this.betas_size; ++i) {
+			var top = this.value_to_y_coord(this.coefficients[i].normalised_value + this.normal_trunc * this.coefficients[i + this.betas_size].normalised_value);
+			var bottom = this.value_to_y_coord(this.coefficients[i].normalised_value - this.normal_trunc * this.coefficients[i + this.betas_size].normalised_value);
 
-		//todo -- may be need to scale the top and bottom by the variance/std-dev thingy
+			var grd = this.ctx.createLinearGradient(0, top, 0, bottom);
 
-		var top = this.value_to_y_coord(this.coefficients[i].normalised_value + this.normal_trunc * this.coefficients[i + this.betas_size].normalised_value);
-		var bottom = this.value_to_y_coord(this.coefficients[i].normalised_value - this.normal_trunc * this.coefficients[i + this.betas_size].normalised_value);
+			var steps_size = 10; 
+			var color_stop_step = 1.0 / steps_size; 
+			var color_stop = 0.0;
+			while (color_stop <= 1.0) {
+				var distance = (color_stop * this.normal_trunc * 2 - this.normal_trunc) ; // / this.coefficients[i + this.betas_size].normalised_value; 
+				grd.addColorStop(color_stop, "rgba(255, 0, 0, " + 
+						.88 * (Math.exp(distance * distance / -2)).toFixed(5) +
+						")"); 
+				color_stop += color_stop_step;
+			}
 
-		var grd = this.ctx.createLinearGradient(0, top, 0, bottom);
-
-		var steps_size = 10; 
-		var color_stop_step = 1.0 / steps_size; 
-		var color_stop = 0.0;
-		while (color_stop <= 1.0) {
-			var distance = (color_stop * this.normal_trunc * 2 - this.normal_trunc) ; // / this.coefficients[i + this.betas_size].normalised_value; 
-			grd.addColorStop(color_stop, "rgba(255, 0, 0, " + 
-					.88 * (Math.exp(distance * distance / -2)).toFixed(5) +
-					")"); 
-			color_stop += color_stop_step;
+			this.coefficients[i].render_top = top;
+			this.coefficients[i].render_bottom = bottom;
+			this.coefficients[i].render_gradient = grd;
 		}
-
-		this.coefficients[i].render_top = top;
-		this.coefficients[i].render_bottom = bottom;
-		this.coefficients[i].render_gradient = grd;
-		this.coefficients[i].render_value_y = this.value_to_y_coord(this.coefficients[i].normalised_value);
-
+	for (var i = 0; i != this.betas_size; ++i) {
+		this.coefficients[i].render_value_y = this.coefficients[i].tmp_y = this.value_to_y_coord(this.coefficients[i].normalised_value);
 		this.coefficient_centre_stepsize = this.coefficient_circle_radius * 2 + this.coefficient_circle_padding;
 	}
 
-	this.repaint = function() 
+	this.do_paint = function() 
 	{
 		//this.checked = false;
 		//ctx.translate(canvas.width / 2, canvas.height);
 		//ctx.rotate(Math.PI / -2);
 		//ctx.font="14pt mono";
 		//ctx.fillText("To do...",10,10);
-
-		this.ctx.clearRect(0, 0, this.width, this.height);
 
 		this.ctx.fillStyle = "#000000";
 		this.ctx.strokeStyle = "#000000";
@@ -2079,32 +2068,14 @@ function canvas_painter_type(canvas, coefficients, task_name, model_id, betas_si
 		this.ctx.stroke();
 		*/
 
-		var coefficient_centre;
-
-		if (this.model_id != 1) {
-
-			this.ctx.fillStyle = "#aaaaff";
-			coefficient_centre = this.coefficient_circle_radius;
-			this.ctx.beginPath();
-			for (var i = 0; i != this.betas_size; ++i, coefficient_centre += this.coefficient_centre_stepsize) {
-				this.ctx.fillStyle = this.coefficients[i].render_gradient;
-				this.ctx.fillRect(coefficient_centre - this.coefficient_circle_radius, this.coefficients[i].render_top, this.coefficient_circle_radius * 2, this.coefficients[i].render_bottom - this.coefficients[i].render_top);
-				//this.ctx.closePath();
-			}
-
-		}
 
 		this.ctx.strokeStyle = "#a0a0b0";
 		this.ctx.lineWidth = 0.8;
 		this.ctx.beginPath();
-		this.coefficients[0].tmp_y = this.value_to_y_coord(this.coefficients[0].normalised_value + normals[(normals_i * this.coefficients.length) % normals.length] * this.coefficients[this.betas_size].normalised_value);
 		this.ctx.moveTo(this.coefficient_circle_radius, this.coefficients[0].tmp_y);
-		coefficient_centre = this.coefficient_circle_radius * 3 + this.coefficient_circle_padding;
-		for (var i = 1; i < this.betas_size; ++i, coefficient_centre += this.coefficient_centre_stepsize) {
-			var y = this.value_to_y_coord(this.coefficients[i].normalised_value + normals[(i + normals_i * this.coefficients.length) % normals.length] * this.coefficients[i + this.betas_size].normalised_value);
-			this.coefficients[i].tmp_y = y;
+		var coefficient_centre = this.coefficient_circle_radius * 3 + this.coefficient_circle_padding;
+		for (var i = 1; i < this.betas_size; ++i, coefficient_centre += this.coefficient_centre_stepsize)
 			this.ctx.lineTo(coefficient_centre, this.coefficients[i].tmp_y);
-		}
 		this.ctx.stroke();
 		this.ctx.closePath();
 
@@ -2162,7 +2133,30 @@ function canvas_painter_type(canvas, coefficients, task_name, model_id, betas_si
 		this.ctx.closePath();
 	}
 
-	this.repaint();
+	this.repaint = function() 
+	{
+		if (this.model_id > 1) {
+
+			this.ctx.clearRect(0, 0, this.width, this.height);
+
+			this.ctx.fillStyle = "#aaaaff";
+			var coefficient_centre = this.coefficient_circle_radius;
+			//this.ctx.beginPath();
+			for (var i = 0; i != this.betas_size; ++i, coefficient_centre += this.coefficient_centre_stepsize) {
+				this.ctx.fillStyle = this.coefficients[i].render_gradient;
+				this.ctx.fillRect(coefficient_centre - this.coefficient_circle_radius, this.coefficients[i].render_top, this.coefficient_circle_radius * 2, this.coefficients[i].render_bottom - this.coefficients[i].render_top);
+				//this.ctx.closePath();
+			}
+			for (var i = 0; i < this.betas_size; ++i)
+				this.coefficients[i].tmp_y = this.value_to_y_coord(this.coefficients[i].normalised_value + normals[(i + normals_i * this.betas_size) % normals.length] * this.coefficients[i + this.betas_size].normalised_value);
+			this.do_paint();
+		} 
+	}
+
+	if (this.model_id > 1)
+		this.repaint();
+	else
+		this.do_paint();
 }
 
 function tasks_list_type()
@@ -2342,7 +2336,7 @@ function tasks_list_type()
 			checkbox.task_complete = (obj.tasks[i].state == "complete" ? true : false);
 			checkbox.row = tr;
 			checkbox.table = tbl;
-			checkbox.model_id = obj.tasks[i].name.split(/[_\-x]/g)[1];
+			checkbox.model_id = parseInt(obj.tasks[i].name.split(/[_\-x]/g)[1]);
 			checkbox.onchange = function()
 			{
 				if (this.checked == true) {
@@ -2361,7 +2355,7 @@ function tasks_list_type()
 							td.appendChild(div);
 						}
 
-						var process_normalised_values = function(betas_size, coefficients, inv_distance)
+						var calculate_normalised_betas = function(betas_size, coefficients, inv_distance)
 						{
 							var max = -Number.MAX_VALUE;
 							var min = Number.MAX_VALUE;
@@ -2376,10 +2370,9 @@ function tasks_list_type()
 								inv_distance = 1.0 / (max - min);
 							else
 								inv_distance = 1;
-							for (var i = 0; i != betas_size; ++i) {
+							for (var i = 0; i != betas_size; ++i) 
 								coefficients[i].normalised_value = (coefficients[i].value - min) * inv_distance;
-								coefficients[i + betas_size].normalised_value = coefficients[i + betas_size].value * inv_distance;
-							}
+							return inv_distance;
 						}
 						var generate_headings = function(txt, tr_, betas_size) 
 						{
@@ -2401,21 +2394,25 @@ function tasks_list_type()
 
 						var betas_size = 0;
 						var inv_distance;
-						switch (parseInt(this.model_id)) {
+						switch (this.model_id) {
 						case 1:
 							betas_size = this.coefficients.length;
-							process_normalised_values(betas_size, this.coefficients);
+							calculate_normalised_betas(betas_size, this.coefficients);
 							generate_headings("&beta;", tr_, betas_size);
 						break;
 						case 2:
 							betas_size = this.coefficients.length / 2;
-							process_normalised_values(betas_size, this.coefficients);
+							inv_distance = calculate_normalised_betas(betas_size, this.coefficients);
+							for (var i = 0; i != betas_size; ++i)
+								this.coefficients[i + betas_size].normalised_value = this.coefficients[i + betas_size].value * inv_distance;
 							generate_headings("&beta;", tr_, betas_size);
 							generate_headings("&eta;", tr_, betas_size);
 						break;
 						case 3:
 							betas_size = (this.coefficients.length - 1) / 2;
-							process_normalised_values(betas_size, this.coefficients);
+							inv_distance = calculate_normalised_betas(betas_size, this.coefficients);
+							for (var i = 0; i != betas_size; ++i)
+								this.coefficients[i + betas_size].normalised_value = this.coefficients[i + betas_size].value * inv_distance;
 							generate_headings("&beta;", tr_, betas_size);
 							generate_headings("&eta;", tr_, betas_size);
 							td_ = document.createElement("td");
@@ -2425,7 +2422,9 @@ function tasks_list_type()
 						case 4: {
 							betas_size = (this.coefficients.length - 2) / 2;
 							var phi = this.coefficients[this.coefficients.length - 1].value;
-							process_normalised_values(betas_size, this.coefficients);
+							inv_distance = calculate_normalised_betas(betas_size, this.coefficients);
+							for (var i = 0; i != betas_size; ++i)
+								this.coefficients[i + betas_size].normalised_value = this.coefficients[i + betas_size].value * inv_distance;
 							generate_headings("&beta;", tr_, betas_size);
 							generate_headings("&eta;", tr_, betas_size);
 							td_ = document.createElement("td");
@@ -2632,7 +2631,7 @@ function tasks_list_type()
 		}
 		for (var i = 5; i != 8; ++i) {
 			obj.tasks[i] = new function() {
-				this.name = i + "_4-1x2";
+				this.name = i + "_1-1x2";
 				this.state = "complete";
 				this.coefficients = [];
 				this.coefficients.length = 6;
