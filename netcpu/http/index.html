@@ -258,6 +258,14 @@ table, th, td {
 	text-align:left;
 	padding: 3pt;
 	border: 1pt solid black;
+	font-style:normal;
+}
+
+.terrain_elevation_value {
+	font-style:normal;
+	font-size:9pt;
+	font-family: mono;
+	color: black;
 }
 
 
@@ -2330,8 +2338,10 @@ function tasks_list_type()
 			checkbox.pid = this;
 			if (obj.meta_text && !i)
 				checkbox.meta_text = obj.meta_text;
-			if (obj.tasks[i].coefficients)
+			if (obj.tasks[i].coefficients) {
 				checkbox.coefficients = obj.tasks[i].coefficients;
+				checkbox.e_min_value = obj.tasks[i].value; 
+			}
 			checkbox.task_name = obj.tasks[i].name;
 			checkbox.task_complete = (obj.tasks[i].state == "complete" ? true : false);
 			checkbox.row = tr;
@@ -2345,15 +2355,15 @@ function tasks_list_type()
 					//td.className = "centered_td";
 					td.colSpan = 5;
 
-					if (this.coefficients) {
+					if (this.meta_text) {
+						var div = document.createElement("div");
+						//div.className = "active_task_meta_text";
+						//div.appendChild(document.createTextNode(this.meta_text));
+						div.innerHTML = "<pre class='active_task_meta_text'>" + this.meta_text + "\n(do not try to click/reload all the bloody time as numbers may update rarely -- like in a few minutes or so)</pre>";
+						td.appendChild(div);
+					}
 
-						if (this.meta_text) {
-							var div = document.createElement("div");
-							//div.className = "active_task_meta_text";
-							//div.appendChild(document.createTextNode(this.meta_text));
-							div.innerHTML = "<pre class='active_task_meta_text'>" + this.meta_text + "\n(do not try to click/reload all the bloody time as numbers may update rarely -- like in a few minutes or so)</pre>";
-							td.appendChild(div);
-						}
+					if (this.coefficients) {
 
 						var calculate_normalised_betas = function(betas_size, coefficients, inv_distance)
 						{
@@ -2390,6 +2400,8 @@ function tasks_list_type()
 						var tr_ = document.createElement("tr");
 
 						var td_ = document.createElement("td");
+						td_.className = "terrain_elevation_value";
+						td_.appendChild(document.createTextNode("Terrain minimisation: " + parseFloat(parseFloat(this.e_min_value).toFixed(3))));
 						tr_.appendChild(td_);
 
 						var betas_size = 0;
@@ -2618,6 +2630,7 @@ function tasks_list_type()
 		obj.tasks.length = 8;
 		for (var i = 0; i != 5; ++i) {
 			obj.tasks[i] = new function() {
+				this.value = -11.2;
 				this.name = i + "_3-1x2";
 				this.state = "pending";
 				this.coefficients = [
@@ -2631,6 +2644,7 @@ function tasks_list_type()
 		}
 		for (var i = 5; i != 8; ++i) {
 			obj.tasks[i] = new function() {
+				this.value = -11.2;
 				this.name = i + "_1-1x2";
 				this.state = "complete";
 				this.coefficients = [];

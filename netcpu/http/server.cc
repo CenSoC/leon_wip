@@ -818,7 +818,7 @@ struct get_tasks_list : io_wrapper<http_adapter_driver> {
 	::std::string
 	task_info_2_json(netcpu::message::task_info const & task)
 	{
-		::std::string rv("{\"name\":\"" + ::std::string(task.name.data(), task.name.size()) + "\",\"state\":\"" + (task.state() == netcpu::message::task_info::state_type::pending ? "pending" : "complete") + '\"');
+		::std::string rv("{\"name\":\"" + ::std::string(task.name.data(), task.name.size()) + "\",\"state\":\"" + (task.state() == netcpu::message::task_info::state_type::pending ? "pending" : "complete") + "\",\"value\":" + ::boost::lexical_cast< ::std::string>(netcpu::message::deserialise_from_decomposed_floating<double>(task.value)));
 		if (task.coefficients.size()) {
 			rv += ",\"coefficients\":[";
 			for (uint_fast32_t i(0); i != task.coefficients.size(); ++i) {

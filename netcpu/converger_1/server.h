@@ -2063,6 +2063,7 @@ struct task : netcpu::task {
 			::memcpy(tasks_list.meta_text.data(), meta_text.c_str(), meta_text.size());
 
 			if (active_task_processor->am_bootstrapping == false) {
+				netcpu::message::serialise_to_decomposed_floating(active_task_processor->e_min, task.value);
 				task.coefficients.resize(active_task_processor->coefficients_size);
 				for (size_type i(0); i != active_task_processor->coefficients_size; ++i) {
 					converger_1::coefficient_metadata<N, F> & ram(active_task_processor->coefficients_metadata[i]);
@@ -2079,9 +2080,11 @@ struct task : netcpu::task {
 				converger_1::fstreamer::convergence_state_ifstreamer<N> convergence_state;
 				convergence_state.load_header(convergence_state_filepath);
 
+				// todo -- define explicit assignment op. (currently implicitly the members of decomposed floating are ::boost::noncopyable) instead of the whole deserialise and then serialise thing
+
+				netcpu::message::serialise_to_decomposed_floating(netcpu::message::deserialise_from_decomposed_floating<float_type>(convergence_state.get_header().value), task.value);
 				assert(convergence_state.get_header().coefficients_size());
 				task.coefficients.resize(convergence_state.get_header().coefficients_size());
-
 				for (size_type i(0); i != convergence_state.get_header().coefficients_size(); ++i) {
 					netcpu::message::task_coefficient_info & to(task.coefficients(i));
 					convergence_state.load_coefficient();
