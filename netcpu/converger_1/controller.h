@@ -302,8 +302,8 @@ struct task_loader_detail : netcpu::io_wrapper<AsyncDriver> {
 		if (!meta_msg.complexity_size())
 			throw netcpu::message::exception("must supply vaild minimum --complexity_size value of > 0 (in fact, likely to need magnitude times more than no. of coefficients)");
 
-		if (netcpu::message::deserialise_from_decomposed_floating<float_type>(meta_msg.improvement_ratio_min) <= 1)
-			throw netcpu::message::exception("must supply vaild --minimpr value of greater than 1");
+		if (netcpu::message::deserialise_from_decomposed_floating<float_type>(meta_msg.improvement_ratio_min) < 1)
+			throw netcpu::message::exception("must supply vaild --minimpr value of no less than 1");
 
 		if (netcpu::message::deserialise_from_decomposed_floating<float_type>(meta_msg.shrink_slowdown) < 0 || netcpu::message::deserialise_from_decomposed_floating<float_type>(meta_msg.shrink_slowdown) >= 1)
 			throw netcpu::message::exception("must supply vaild --shrink_slowdown value: 0 <= x < 1");

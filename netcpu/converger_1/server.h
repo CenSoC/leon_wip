@@ -1467,8 +1467,6 @@ struct task_processor : ::boost::noncopyable {
 			assert(better_find_since_last_recentered_sync == false);
 
 			am_bootstrapping = true;
-			float_type e_min_debug(e_min);
-			e_min = censoc::largish<float_type>();
 
 			offset.one();
 			assert(offset.size());
@@ -1513,7 +1511,7 @@ struct task_processor : ::boost::noncopyable {
 				assert(tmp_max != 0);
 				//censoc::llog() 
 				::std::cout
-					<< "TODO -- WRITE DONE CRITERIA -- CURRENT RUN OF CONVERGENCE HAS ENDED!, e_min: " << e_min_debug << '\n';
+					<< "TODO -- WRITE DONE CRITERIA -- CURRENT RUN OF CONVERGENCE HAS ENDED!, e_min: " << e_min << '\n';
 				//censoc::llog() 
 				::std::cout
 					<< "raw coeffs are:\n";
@@ -1539,6 +1537,8 @@ struct task_processor : ::boost::noncopyable {
 				netcpu::pending_tasks.front()->markcompleted();
 				return;
 			}
+
+			e_min = censoc::largish<float_type>();
 
 
 			size_type init_coeffs_atonce_size(intended_coeffs_at_once);
