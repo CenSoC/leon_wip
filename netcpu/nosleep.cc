@@ -67,6 +67,8 @@ counters_type static cpu_counts;
 uint_fast64_t static ip_io_count;
 uint_fast64_t static disk_io_count;
 
+unsigned static pinged_whilst_inactive_counter(0);
+
 void static
 ping_exit()
 {
@@ -74,6 +76,10 @@ ping_exit()
 	while (::PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
 		if (msg.message == WM_QUIT)
 			::ExitProcess(0);
+		else if (msg.message == WM_POWERBROADCAST && msg.wParam == PBT_APMRESUMEAUTOMATIC) {
+			::SetThreadExecutionState(ES_SYSTEM_REQUIRED | ES_CONTINUOUS);
+			pinged_whilst_inactive_counter = 0;
+		}
 }
 
 // NOTE -- SHOULD LATER USE PDH PERFORMANCE DATA HELPING LIB (LIKE PDHADDCOUNTER ET AL), BUT THIS IS QUICKER TO HACK TO ROUGHLY TEST THE CONCEPT (NO TIME NOW TO HACK RELEVANT DECLARATIONS/STRUCTS SUPPORT WITHIN MINGW32 WHICH CURRENTLY DOES NOT HAVE EXPLICIT HEADERS/LIB FOR IT'S PDH QUERY/COUNTERS... ALTHOUGH MINGW64, WHICH CAN BE MADE TO BUILD 32BIT RUNTIME AS WELL, DOES APPARENTLY SUPPORT PDH... WILL NEED TO MIGRATE LATER ON...)
@@ -200,6 +206,24 @@ ping_io()
 
 }
 
+void static
+long_sleep()
+{
+	pinged_whilst_inactive_counter = 0;
+	::SetProcessWorkingSetSize(::GetCurrentProcess(), -1, -1);
+	for (unsigned i(0); i != 57 * 6; ++i) {
+		::censoc::scheduler::sleep_s(10);
+		ping_exit();
+	}
+}
+
+void static
+long_sleep_whilst_active()
+{
+	::SetThreadExecutionState(ES_SYSTEM_REQUIRED | ES_CONTINUOUS);
+	long_sleep();
+}
+
 int
 main()
 {
@@ -224,14 +248,9 @@ main()
 	if (!non_idle_end)
 		++non_idle_end;
 
+	::SetThreadExecutionState(ES_SYSTEM_REQUIRED | ES_CONTINUOUS);
 	while (!0) {
 		try {
-			::SetProcessWorkingSetSize(::GetCurrentProcess(), -1, -1);
-
-			for (unsigned i(0); i != 57 * 6; ++i) {
-				::censoc::scheduler::sleep_s(10);
-				ping_exit();
-			}
 
 			ping_cpu();
 			::censoc::scheduler::sleep_s(10);
@@ -249,10 +268,8 @@ main()
 					if (++non_idle_size == non_idle_end) 
 						bail = true;
 			}
-			if (bail == true) {
-				::SetThreadExecutionState(ES_SYSTEM_REQUIRED | ES_CONTINUOUS);
-				continue;
-			} 
+			if (bail == true)
+				long_sleep_whilst_active();
 
 			// one could have done with only 1 call to 'ping_io' (if calling GetSystemTime or similar and then calculating the amount if time spent in the sleep state)... but will leave for future todo.
 			// mainly because:  the code would not get to this point unless there is no CPU activity anyway (i.e. there is plenty of cpu cycles available to do this additional code); and current model offers lesser additional code to write (meaning lesser issues to deal with -- a bonus w.r.t. lose(r)os environment).
@@ -272,11 +289,12 @@ main()
 #endif
 					||
 					disk_io_count - tmp_disk_io_count > 150 * 10 * 1024 // 150kB per sec
-					) { 
-				::SetThreadExecutionState(ES_SYSTEM_REQUIRED | ES_CONTINUOUS);
-				continue;
+				 ) 
+				long_sleep_whilst_active();
+			if (++pinged_whilst_inactive_counter == 10) {
+				::SetThreadExecutionState(ES_CONTINUOUS);
+				long_sleep();
 			}
-			::SetThreadExecutionState(ES_CONTINUOUS);
 		} catch (::std::exception const & e) {
 			::std::cerr << "Runtime error: [" << e.what() << "]\n";
 		} catch (...) {
