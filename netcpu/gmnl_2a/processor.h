@@ -504,10 +504,11 @@ public:
 						betavars_cache[eta_cache_respondent_column_begin + j] = stage3_etavars_cache[eta_cache_respondent_column_begin + j] = censoc::largish<float_type>();
 						// note -- not resetting 'stage3_composite_equation_tau_cached' because this code should automatically re-run on next iteration. BUT this is only due to the facet that there is no 'main/transient' cache variants for betavars_ and composite_equation_tau_ caches!!!
 						return;
-					} else
+					} else {
 						// TODO -- later introduce main/transient (or a buffer/multiple of) caches!!! (no time for right now)
 						betavars_cache[eta_cache_respondent_column_begin + j] = coefficients[j].value();
 						stage3_etavars_cache[eta_cache_respondent_column_begin + j] = etavar[j].value();
+					}
 				}
 			}
 			stage3_composite_equation_tau_cached[i_modulo] = tau.value();
