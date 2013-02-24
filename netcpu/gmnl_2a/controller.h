@@ -76,7 +76,7 @@ struct model_traits {
 	size_type
 	coefficients_size() const
 	{
-		return dataset_loader.x_unique.size() * 2 + 2;
+		return dataset_loader.x_unique.size() * 2 + 4;
 	}
 
 	bool

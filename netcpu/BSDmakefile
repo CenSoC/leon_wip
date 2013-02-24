@@ -51,6 +51,10 @@ LIB_YUCK_I = -mwindows -lws2_32 -lgdi32
 LIB_YUCK_II = -lole32
 LIB_YUCK_III = -lntdll
 LIB_YUCK_IV = -liphlpapi 
+# temporary hacking -- until lto and linker plugins are working on mingw64 and latest gcc wrt catching exceptions on static-linked apps
+.if ${TARGET_XXX:C/^x86_64-.*-mingw32$/x86_64/1} == "x86_64"
+POSTFASTFLAGS_YUCK = -fno-lto -fno-whole-program -fno-use-linker-plugin
+.endif
 .endif
 
 .ifndef LIBS_DEFINED
@@ -60,8 +64,9 @@ LIB_YUCK_IV = -liphlpapi
 server :
 	make LIBS_DEFINED="-lboost_filesystem -lboost_system -lssl -lcrypto -lz" ${.TARGET}.exe
 
+# -liconv
 http/server :
-	make LIBS_DEFINED="-lboost_regex -lboost_filesystem -lboost_system -larchive -liconv -lssl -lcrypto -lz" ${.TARGET}.exe
+	make LIBS_DEFINED="-lboost_regex -lboost_filesystem -lboost_system -larchive -lssl -lcrypto -lz" ${.TARGET}.exe
 
 finite_math : 
 	make LIBS_DEFINED=" " POSTFLAGS="-fno-lto -fno-whole-program -fno-finite-math-only" ${.TARGET}.o
@@ -175,7 +180,7 @@ INCS = -I${CENSOC_HOME}
 
 # -std=c++98
 # -std=c++0x
-FLAGS_COMMON = -std=c++0x -pipe -pedantic -static -ffor-scope -fstrict-aliasing -fstrict-overflow -DLITTLE_ENDIAN -DEIGEN_NO_EXCEPTIONS -Wall -Wunused -Wno-parentheses -Wextra -Wstrict-overflow -Wstrict-overflow=5 ${INCS} ${LIBS}
+FLAGS_COMMON = -std=c++11 -pipe -pedantic -static -ffor-scope -fstrict-aliasing -fstrict-overflow -DLITTLE_ENDIAN -DEIGEN_NO_EXCEPTIONS -Wall -Wunused -Wno-parentheses -Wextra -Wstrict-overflow -Wstrict-overflow=5 ${INCS} ${LIBS}
 
 FLAGS_DEBUG = ${FLAGS_COMMON} -ggdb -DNDEBUG_XSLOW
 #FLAGS_DEBUG = ${FLAGS_COMMON} -ggdb 
@@ -188,6 +193,11 @@ FLAGS_SMALL = -O0 ${FLAGS_COMMON} -s -DNDEBUG -D NDEBUG
 # some flags such as no-threadsafe-statics may not be needed as the whole thing (e.g. gcc, openssl, boost) should be bootstrapped to single-threaded memory model anyway...
 # NOTE -- the  -ftree-loop-if-convert-stores is only safe for single-threaded design!
 # note -- -floop-interchange may be thesame as -ftree-loop-linear... todo: read the doc more ...
+
+# NOTE -- it would actually be better if this switch was ACTIVE, yet my current building machine hasn't got a sufficient amount of RAM (< 4 Gig)for the build to be practically-feasible (i.e. the swap kicks in and the build take waaaaay tooooo long)... > 8 Gig (e.g. 12 Gig, or 16) would have been much better.
+# alas, such is life, so until a more capacity-expanded machine becomes available, this switch activation remains a TODO status.
+# -fipa-pta 
+
 FLAGS_FAST_COMMON = -Ofast ${FLAGS_COMMON} -s \
 -fexcess-precision=fast \
 -ftree-loop-if-convert-stores  -floop-parallelize-all -floop-flatten -fgraphite-identity -floop-block -floop-strip-mine -floop-interchange -fipa-struct-reorg \
@@ -198,23 +208,39 @@ FLAGS_FAST_COMMON = -Ofast ${FLAGS_COMMON} -s \
 -fno-rtti \
 -maccumulate-outgoing-args -fomit-frame-pointer -momit-leaf-frame-pointer \
 -fvect-cost-model -ftracer -ftree-loop-ivcanon -ftree-loop-distribution -ftree-loop-im -fivopts -fdelete-null-pointer-checks \
--fsee -fipa-cp -fipa-pta -fipa-matrix-reorg -fvariable-expansion-in-unroller -funroll-loops -ftree-loop-linear -funsafe-loop-optimizations -ftree-vectorize -DNDEBUG -D NDEBUG \
---param max-reload-search-insns=8000 --param max-cselib-memory-locations=8000 --param max-gcse-memory=230000000 -fgcse-sm -fgcse-las -fgcse-after-reload --param max-sched-ready-insns=500 \
---param max-crossjump-edges=15000 --param max-delay-slot-insn-search=15000 --param max-delay-slot-live-search=15000 --param scev-max-expr-size=15000 --param max-iterations-to-track=15000 --param max-cse-path-length=15000 --param max-cse-insns=15000 --param max-reload-search-insns=15000 --param max-sched-region-blocks=15000 --param max-sched-region-insns=15000 \
+-fsee -fipa-cp -fipa-matrix-reorg -fvariable-expansion-in-unroller -funroll-loops -ftree-loop-linear -funsafe-loop-optimizations -ftree-vectorize -DNDEBUG -D NDEBUG \
+--param max-reload-search-insns=500 --param max-cselib-memory-locations=2500 --param max-gcse-memory=250000000 -fgcse-sm -fgcse-las -fgcse-after-reload --param max-sched-ready-insns=500 \
+--param max-crossjump-edges=500 --param max-delay-slot-insn-search=500 --param max-delay-slot-live-search=1500 --param scev-max-expr-size=100 --param max-iterations-to-track=5000 --param max-cse-path-length=50 --param max-cse-insns=5000 --param max-reload-search-insns=500 --param max-sched-region-blocks=50 --param max-sched-region-insns=500 \
 -ffast-math \
 -fmerge-all-constants \
 -fno-pic \
 -fmodulo-sched \
+${POSTFASTFLAGS_YUCK} \
 
 
 #-ftree-vectorizer-verbose=2 \
 #-fsection-anchors \
 
-
-
-FLAGS_FAST_E6550 = ${FLAGS_FAST_COMMON} -finline-limit=8888888 --param inline-unit-growth=8888888 --param large-function-growth=88888888 \
+FLAGS_FAST_E6550 = ${FLAGS_FAST_COMMON} -finline-limit=1000 --param inline-unit-growth=250 --param large-function-growth=88888888 \
 -msahf -mrecip --param l1-cache-size=64 --param l1-cache-line-size=64 --param l2-cache-size=4096 \
--mfpmath=sse+387 -march=native -DEIGEN_TUNE_FOR_CPU_CACHE_SIZE=1048576
+-march=native -DEIGEN_TUNE_FOR_CPU_CACHE_SIZE=1048576
+
+
+# -mfpmath=sse+387
+
+# why the option -mfpmath=sse+387 is not used. Whist the benefit appears to be in getting extra registers by utilising both of the instruction sets, the dangers are:
+# i) gcc alters __FLT_EVAL_METHOD__ which in turn, on some systems (e.g. linux, mingw) alters the type of float_t and double_t whilst on other systems appears to be irrelevant w.r.t. the size of float_t et al (e.g. FreeBSD 8.2)
+# ii) in optimization scenarios where both of the fpu instruction sets are deployed, gcc may use routines which expect 387 behaviour storage (intermediates are at least 80 bits wide), and some of such routines may well reference float_t, perhaps expecting it to be default-sized of at least 80 bits... implying that all float_t and double_t may need to be defined as 'long double' (as indeed is the case in linux, et al machine or bits math.h and defaults.h et al). 
+# Whilst this 'loung double' may work by hacking math.h in mingw et al (to add cases for __FLT_EVAL_METHOD__ == -1, as gcc defines scenarios where both sse and 387 fp math is used) -- and such was in fact the practice in previous revisions in this repository; this may not always work with other routines expecting the float_t being of different (hardware default) __FLT_EVAL_METHOD__ usecase (e.g. == 0 on x86_64, whilst == 2 on x86). And whilst this may work for scalars, passing things like arrays of float_t may definitely break. The issue of breakage may not become apparent until the certain optimization corner-cases bring them to light (as indeed have happened during migration from 4.6.2 to 4.7.2 -- perhaps newer compiler had the ability to see extra places to optimize the code which enabled it to utilize 387 instruction set a bit more often... who knows... it's not really important in this context).
+# iii) the point "ii" is further re-emphasised by the libraries which may have been compiled w/o the mixed -mfpmath values -- esp if such library routines accept float_t arrays/pointers.
+# 
+# So the decision is to just use the default, one, instruction set as per relevant platform.
+# Besides:
+# i) having redefined float_t and double_t to long double on x86_64 may not be performance/memory/cache efficient (i.e. actually make some casses run slower).
+# ii) the compiler should be able to use 387 registers (e.g. in x86 and x86_64 architectures) as extra memory even for non fp-calculating needs, as extra memory (in some casses).
+
+
+
 
 FLAGS_FAST_CORE2 = ${FLAGS_FAST_COMMON} -msahf -mrecip -mfpmath=sse,387 -march=core2 
 

@@ -46,7 +46,7 @@ MYDIR=`dirname ${MYPATH}`
 
 # the 443 is for mingw64, the other one is for the rest
 
-GCC_VERSION="4.6.2"
+GCC_VERSION="4.7.2"
 
 # MINGW32 
 TOP=/usr/home/${USER}/mingw32

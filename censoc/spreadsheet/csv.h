@@ -83,6 +83,7 @@ public:
 	csv(::std::istream & is, typename Base::ctor const & base_ctor)
 	: Base(base_ctor), current_row_i(-1) {
 
+		// TODO -- find out a more standard-guaranteed way. may not be so easy (whilst it is possible to generate own streambuf inheriting types which have access to setg and setp calls, some streams like ofstream/istream have pre-defined filebuf objects which have setg/setp as protected...) 
 	  is.rdbuf()->pubsetbuf(buf, buf_size);
 
 		size_type rows_reservations_size(1000); // todo -- make tunable

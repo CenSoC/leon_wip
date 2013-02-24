@@ -44,7 +44,7 @@ USER=`whoami`
 MYPATH=`realpath ${0}`
 MYDIR=`dirname ${MYPATH}`
 
-GCC_VERSION="4.6.2"
+GCC_VERSION="4.7.2"
 
 TOP=/usr/home/${USER}/mingw64
 TARGET_XXX="x86_64-w64-mingw32"

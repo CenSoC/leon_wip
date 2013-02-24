@@ -40,8 +40,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <stdexcept>
 
-#include <Eigen/Core>
-
 #include "lexicast.h"
 
 #ifndef CENSOC_CDFINVN_H
@@ -49,7 +47,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 namespace censoc {
 
-// temporary deactivation of 'self-assigning default hook' -- until further research/learning w.r.t. lazy evaluations in Eigen and aliasing side-effects is done.
 // at the moment the user-code is taxed with explicit type-provisioning for hooking
 #if 0
 struct cdfinvn_hook_default {

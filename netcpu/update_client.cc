@@ -556,7 +556,7 @@ run(char const * ownpath)
 
 		if (::boost::filesystem::exists(excluded_cpus_path) == true) {
 			::std::ifstream excluded_cpus_file(excluded_cpus_path.string().c_str()); 
-			if (excluded_cpus_file == false)
+			if (!excluded_cpus_file)
 				throw ::std::runtime_error("cannot access file=(" + excluded_cpus_path.string() + ")");
 			::std::string excluded_cpus_file_line;
 			::std::string csv_token;

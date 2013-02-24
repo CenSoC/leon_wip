@@ -174,7 +174,7 @@ void
 eightbit_helper(::std::stringstream & ss, Rv & rv)
 {
 	ss >> rv;
-	if (ss == false)
+	if (!ss)
 		throw ::std::runtime_error(lexicast< ::std::string>("failed in lexical numeric conversion from: [") << ss.str() << "] to: [" << rv << "]");
 }
 void 
@@ -182,7 +182,7 @@ eightbit_helper(::std::stringstream & ss, int8_t & rv)
 {
 	int16_t tmp;
 	ss >> tmp;
-	if (ss == false || tmp > ::boost::integer_traits<int8_t>::const_max || tmp < ::boost::integer_traits<int8_t>::const_min)
+	if (!ss || tmp > ::boost::integer_traits<int8_t>::const_max || tmp < ::boost::integer_traits<int8_t>::const_min)
 		throw ::std::runtime_error(lexicast< ::std::string>("failed in lexical numeric conversion from: [") << ss.str() << "] to: [" << rv << "]");
 	rv = static_cast<int8_t>(tmp);
 }
@@ -191,7 +191,7 @@ eightbit_helper(::std::stringstream & ss, uint8_t & rv)
 {
 	uint16_t tmp;
 	ss >> tmp;
-	if (ss == false || tmp > ::boost::integer_traits<int8_t>::const_max)
+	if (!ss || tmp > ::boost::integer_traits<int8_t>::const_max)
 		throw ::std::runtime_error(lexicast< ::std::string>("failed in lexical numeric conversion from: [") << ss.str() << "] to: [" << rv << "]");
 	rv = static_cast<uint8_t>(tmp);
 }

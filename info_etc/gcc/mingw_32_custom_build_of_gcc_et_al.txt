@@ -59,7 +59,8 @@ cp /usr/lib/libc.so /usr/home/${USER}/binutils/libdl.so
 export LIBRARY_PATH=/usr/home/${USER}/binutils/${LIBRARY_PATH:+:}${LIBRARY_PATH}
 export LD_LIBRARY_PATH=/usr/home/${USER}/binutils/${LD_LIBRARY_PATH:+:}${LD_LIBRARY_PATH}
 
-./configure --prefix=/usr/home/${USER}/mingw32/binutils/installed/ --with-gmp=/usr/home/${USER}/gmp/installed --with-ppl=/usr/home/${USER}/ppl/installed --with-cloog=/usr/home/${USER}/cloog/installed --with-mpfr=/usr/home/${USER}/mpfr/installed --with-mpc=/usr/home/${USER}/mpc/installed --target=i686-w64-mingw32 --enable-lto --enable-gold --enable-plugins
+# TODO: if elf-foo becomes ever appropriate, add --enable-gold=default
+./configure --prefix=/usr/home/${USER}/mingw32/binutils/installed/ --with-gmp=/usr/home/${USER}/gmp/installed --with-ppl=/usr/home/${USER}/ppl/installed --with-cloog=/usr/home/${USER}/cloog/installed --with-mpfr=/usr/home/${USER}/mpfr/installed --with-mpc=/usr/home/${USER}/mpc/installed --target=i686-w64-mingw32 --enable-lto --enable-plugins
 
 gmake -j 2
 gmake install
@@ -68,8 +69,8 @@ export PATH=/usr/home/${USER}/mingw32/binutils/installed/bin${PATH:+:}${PATH}
 
 2) 
 
-install runtime headers (mingw-w64-v2.0)
-cd mingw-w64-v2.0/mingw-w64-headers
+install runtime headers (mingw-w64-v2.0.7)
+cd mingw-w64-v2.0.7/mingw-w64-headers
 ./configure --host=i686-w64-mingw32 --prefix=/usr/home/${USER}/mingw32/gcc/installed
 gmake install
 
@@ -78,15 +79,16 @@ cd to the gcc dir
 mkdir objdir
 cd objdir
 
-../gcc-4.6.2/configure --prefix=/usr/home/${USER}/mingw32/gcc/installed --program-prefix="" --disable-threads --enable-languages=c,c++,lto --enable-lto --disable-sjlj-exceptions --disable-libgomp --disable-nls --with-system-zlib --with-libiconv-prefix=/usr/local  --with-gmp=/usr/home/${USER}/gmp/installed --with-ppl=/usr/home/${USER}/ppl/installed --with-cloog=/usr/home/${USER}/cloog/installed --with-mpfr=/usr/home/${USER}/mpfr/installed --with-mpc=/usr/home/${USER}/mpc/installed --disable-libgcj --target=i686-w64-mingw32 --disable-multilib --disable-shared --with-dwarf2 --enable-gold --enable-plugins
+# TODO: if elf-foo becomes ever appropriate, add --enable-gold=default
+../gcc-4.7.2/configure --prefix=/usr/home/${USER}/mingw32/gcc/installed --program-prefix="" --disable-threads --enable-languages=c,c++,lto --enable-lto --disable-sjlj-exceptions --disable-libgomp --disable-nls --with-system-zlib --with-libiconv-prefix=/usr/local  --with-gmp=/usr/home/${USER}/gmp/installed --with-ppl=/usr/home/${USER}/ppl/installed --with-cloog=/usr/home/${USER}/cloog/installed --with-mpfr=/usr/home/${USER}/mpfr/installed --with-mpc=/usr/home/${USER}/mpc/installed --with-ld=/usr/home/${USER}/mingw32/binutils/installed/bin/i686-w64-mingw32-ld --with-as=/usr/home/${USER}/mingw32/binutils/installed/bin/i686-w64-mingw32-as --disable-libgcj --target=i686-w64-mingw32 --disable-multilib --disable-shared --with-dwarf2 --enable-plugins --enable-plugin
 
 gmake -j 2 all-gcc
 gmake install-gcc
 
 
-make runtime crt (mingw-w64-v2.0)
+make runtime crt (mingw-w64-v2.0.7)
 start a new lose_32 environment shell (but dont close the current one)
-cd mingw-w64-v2.0/mingw-w64-crt
+cd mingw-w64-v2.0.7/mingw-w64-crt
 ./configure --disable-multilib --host=i686-w64-mingw32 --prefix=/usr/home/${USER}/mingw32/gcc/installed
 gmake -j 2
 gmake install
@@ -97,23 +99,8 @@ finish building gcc in objdir
 gmake -j 2
 gmake install
 
-paranoid step (mask any chances of sys-installed binutils being seen):
-exit shell and start the default bash (the one with which binuitls were made) and reinstall (over the existing installation) the empty pregram-prefix one...
-delete binutils sources and untar again -- clean start...
-
-export LIBRARY_PATH=/usr/home/${USER}/cloog/installed/lib:/usr/home/${USER}/ppl/installed/lib:/usr/home/${USER}/gmp/installed/lib:/usr/home/${USER}/mpc/installed/lib:/usr/home/${USER}/mpfr/installed/lib${LIBRARY_PATH:+:}${LIBRARY_PATH}
-export LD_LIBRARY_PATH=/usr/home/${USER}/cloog/installed/lib:/usr/home/${USER}/ppl/installed/lib:/usr/home/${USER}/gmp/installed/lib:/usr/home/${USER}/mpc/installed/lib:/usr/home/${USER}/mpfr/installed/lib${LD_LIBRARY_PATH:+:}${LD_LIBRARY_PATH}
-
-export LIBRARY_PATH=/usr/home/${USER}/binutils/${LIBRARY_PATH:+:}${LIBRARY_PATH}
-export LD_LIBRARY_PATH=/usr/home/${USER}/binutils/${LD_LIBRARY_PATH:+:}${LD_LIBRARY_PATH}
-./configure --prefix=/usr/home/${USER}/mingw32/binutils/installed/  --with-gmp=/usr/home/${USER}/gmp/installed --with-ppl=/usr/home/${USER}/ppl/installed --with-cloog=/usr/home/${USER}/cloog/installed --with-mpfr=/usr/home/${USER}/mpfr/installed --with-mpc=/usr/home/${USER}/mpc/installed --target=i686-w64-mingw32 --program-prefix="" --enable-lto --enable-gold --enable-plugins
-
-gmake -j 2
-gmake install
-
-
 3) start shell in mingw32 mode and build openssl
-edit Configure and add -DUNICODE -D_UNICODE to mingw target
+edit Configure and add -DUNICODE -D_UNICODE to mingw target (much like the ones already present in mingw64 target)
 ./Configure --prefix=/usr/home/${USER}/mingw32/openssl/installed/ no-threads no-shared mingw
 gmake depend
 gmake -j 2
@@ -126,22 +113,39 @@ start a new bash instance (non-custom)
 
 vim boost/config/user.hpp
 define (uncomment) BOOST_DISABLE_THREADS
-define BOOST_ASIO_DISABLE_IOCP (may need to actually add this line)
 
-then start shell in relevant mingw32 mode,
+#define BOOST_SP_DISABLE_THREADS 
+#define BOOST_ASIO_DISABLE_IOCP 
+#define BOOST_NO_RTTI
+#define BOOST_NO_TYPEID
 
-./bjam toolset=gcc cxxflags="-std=c++0x" variant=release link=static threading=single --without-thread --without-wave --without-mpi --without-python --without-graph --without-graph_parallel --without-program_options --without-signals --without-test --without-serialization --layout=versioned install
+then start shell in relevant mingw33 mode,
+
+./bjam toolset=gcc cxxflags="-std=c++11 -flto " variant=release link=static threading=single --without-thread --without-wave --without-mpi --without-python --without-graph --without-graph_parallel --without-program_options --without-signals --without-test --without-serialization --layout=versioned install
+
+to rename versioned libs in the installed dir, can try something like this:
+first to test:
+find . -iname "*-mgw47*" -exec sh -c 'echo moving {} to `echo {} | sed  s/-mgw47-.*/.a/g`' \;  
+and then the actual deed:
+find . -iname "*-mgw47*" -exec sh -c 'mv {} `echo {} | sed  s/-mgw47-.*/.a/g`' \;
+
+in the installed include dir would also need to move include/boost-1_52/boost (or simiral) to include/boost and rmdir the versioned (now empty) boost-1_52 dir
 
 
 5) build zlib
 ./configure --prefix=/usr/home/${USER}/mingw32/zlib/installed/ --static
 edit Makefile and delete all that relates to word starting with:
 SHAREDLIB...
+
+also add -flto to gcc flags:
+
 gmake -j 2
 gmake install
 
 "./i686-w64-mingw32/include/math.h" file may need to have double_t et al defined (when compiling in optimized mode, because then SSE mix math is in effect) and copied-over file has an issue with (__FLT_EVAL_METHOD__) being set to -1 via TARGET_FLT_EVAL_METHOD ... so something like this:
 # elif (__FLT_EVAL_METHOD__ == -1)    
-typedef float float_t;
-typedef double double_t;
+typedef long double float_t;
+typedef long double double_t;
+
+BUT -- THIS IS VERY DANGEROUS AND SHOULD NOT BE DONE BY DEFAULT (SEE NETCPU/BSDMAKEFILE COMMENTS AS TO WHY).
 

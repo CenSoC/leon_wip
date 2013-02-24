@@ -83,8 +83,8 @@ public:
 	: last_array_i(steps * static_cast<size_type>(::std::log(::std::numeric_limits<F>::max()))), array_size(last_array_i + 1) {
 		pos_array.reset(new float_type[array_size]);
 		neg_array.reset(new float_type[array_size]);
-		float_type * const __restrict pos(pos_array.get());
-		float_type * const __restrict neg(neg_array.get());
+		CENSOC_RESTRICTED_CONST_PTR(float_type, pos, pos_array.get());
+		CENSOC_RESTRICTED_CONST_PTR(float_type, neg, neg_array.get());
 		pos[0] = neg[0] = 1;
 		for (size_type i(1); i != array_size; ++i) {
 			float_type tmp(::std::exp(static_cast<float_type>(i) / steps));

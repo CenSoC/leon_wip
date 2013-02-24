@@ -41,8 +41,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <cmath>
 #include <stdexcept>
 
-#include <Eigen/Core>
-
 #include "aligned_alloc.h"
 #include "cdfinvn.h"
 
@@ -79,8 +77,8 @@ class halton : public Base {
 			}
 #endif
 			for (N i(0); i != h.respondents; ++i) {
-				F * const __restrict dst(h.nonsigma() + h.repetitions_column_stride_size * (nonsigma_column_i + i * h.attributes_size));
-				F const * const __restrict src(x + 10 + i * h.repetitions);
+				CENSOC_RESTRICTED_CONST_PTR(F, dst, h.nonsigma() + h.repetitions_column_stride_size * (nonsigma_column_i + i * h.attributes_size));
+				CENSOC_RESTRICTED_CONST_PTR(F const, src, x + 10 + i * h.repetitions);
 				for (N j(0); j != h.repetitions; ++j)
 					dst[j] = src[j];
 			}
@@ -111,8 +109,8 @@ class halton : public Base {
 #endif
 
 			for (N i(0); i != h.respondents; ++i) {
-				F * const __restrict dst(h.sigma() + h.repetitions_column_stride_size * i);
-				F const * const __restrict src(x + 10 + i * h.repetitions);
+				CENSOC_RESTRICTED_CONST_PTR(F, dst, h.sigma() + h.repetitions_column_stride_size * i);
+				CENSOC_RESTRICTED_CONST_PTR(F const, src, x + 10 + i * h.repetitions);
 				for (N j(0); j != h.repetitions; ++j)
 					dst[j] = src[j];
 			}
@@ -186,6 +184,7 @@ public:
 		censoc::aligned_alloc<F> raw;
 		F * const raw_tmp(raw.alloc(raw_size));
 
+		// 1 to start the prime-number based sequence (hence discarded); 10 is to skip first ten primes;
 		N const raw_start(censoc::DefaultAlign - 11);
 		N const raw_ptr_size(raw_size - raw_start);
 		F * const raw_ptr(raw_tmp + raw_start);
@@ -227,6 +226,7 @@ private:
 		assert(prime > 1);
 		assert(vector_size > 1);
 		assert(vector[0] == 0);
+		assert(!((uintptr_t)vector % censoc::DefaultAlign));
 
 		N i(1), segment_size(1);
 		do {
@@ -236,11 +236,11 @@ private:
 
 				// TODO -- in the following, do check that the original/theoretical/verbose design (j/s^i) did indeed group as (j / (s^i)); otherwise replacing it with (j * s^(-1)) will not work...
 				// if so, then re-calculate another array of the static inverted primes (this way can also replace the division by mult).
-				typename censoc::aligned<F>::type const tmp(j * ::std::pow(static_cast<F>(prime), -static_cast<F>(i)));
-				F * const __restrict dst(vector + segment_size);
-				F const * const __restrict src(vector);
+				CENSOC_ALIGNED_RESTRICTED_CONST_PTR_FROM_LOCAL_SCALAR(F const, tmp, j * ::std::pow(static_cast<F>(prime), -static_cast<F>(i)));
+				CENSOC_RESTRICTED_CONST_PTR(F, dst, vector + segment_size);
+				CENSOC_ALIGNED_RESTRICTED_CONST_PTR(F const, src, vector);
 				for (N k(0); k != growth_size; ++k)
-					dst[k] = src[k] + tmp;
+					dst[k] = src[k] + *tmp;
 
 				if ((segment_size += growth_size) == static_cast<N>(vector_size))
 					return;

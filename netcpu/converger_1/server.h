@@ -327,7 +327,7 @@ public:
 		value_from_ = value_from;
 		rand_range_ = rand_range;
 
-		set_grid_resolutions(grid_resolutions);
+		base_type::set_grid_resolutions(grid_resolutions);
 
 		rebuild_index_offset();
 
@@ -347,7 +347,7 @@ public:
 		value_from_ = constrain_from_;
 		rand_range_ = constrain_to_ - constrain_from_;
 
-		set_grid_resolutions(grid_resolutions);
+		base_type::set_grid_resolutions(grid_resolutions);
 
 		rebuild_index_offset();
 
@@ -425,7 +425,7 @@ struct fstream_serializer_multifield : netcpu::message::message_base_noid<fstrea
 		assert(fields.empty() == false);
 		for (typename netcpu::message::fields_master_type<fstreamer::field_interface>::fields_type::iterator i(fields.begin()); i != fields.end(); ++i) 
 			(*i)->from_wire(f, buffer);
-		if (f == false)
+		if (!f)
 			throw ::std::runtime_error("could not read a multifield serialized block from file");
 	}
 
@@ -435,7 +435,7 @@ struct fstream_serializer_multifield : netcpu::message::message_base_noid<fstrea
 		assert(fields.empty() == false);
 		for (typename netcpu::message::fields_master_type<fstreamer::field_interface>::fields_type::const_iterator i(fields.begin()); i != fields.end(); ++i) 
 			(*i)->to_wire(f, buffer);
-		if (f == false)
+		if (!f)
 			throw ::std::runtime_error("could not write a multifield serialized block to file");
 	}
 };
@@ -633,6 +633,7 @@ struct convergence_state_fstreamer_base {
 	void
 	set_stream_buffer(::std::filebuf * fb)
 	{
+		// TODO -- find out a more standard-guaranteed way. may not be so easy (whilst it is possible to generate own streambuf inheriting types which have access to setg and setp calls, some streams like ofstream/istream have pre-defined filebuf objects which have setg/setp as protected...) 
 	  fb->pubsetbuf(stream_buffer.data(), stream_buffer_size);
 	}
 
@@ -883,7 +884,7 @@ struct task_processor : ::boost::noncopyable {
 		netcpu::message::read_wrapper wrapper;
 
 		::std::ifstream res_file((netcpu::root_path + netcpu::pending_tasks.front()->name() + "/res.msg").c_str(), ::std::ios::binary);
-		if (res_file == false)
+		if (!res_file)
 			throw ::std::runtime_error("missing res message during load");
 
 		netcpu::message::fstream_to_wrapper(res_file, wrapper);
@@ -895,7 +896,7 @@ struct task_processor : ::boost::noncopyable {
 		assert(res_msg.float_res() == converger_1::message::float_res<F>::value);
 
 		::std::ifstream meta_file((netcpu::root_path + netcpu::pending_tasks.front()->name() + "/meta.msg").c_str(), ::std::ios::binary);
-		if (meta_file == false)
+		if (!meta_file)
 			throw ::std::runtime_error("missing meta message during load");
 
 		netcpu::message::fstream_to_wrapper(meta_file, wrapper);
@@ -907,7 +908,7 @@ struct task_processor : ::boost::noncopyable {
 		assert(shrink_slowdown >= 0 && shrink_slowdown < 1);
 
 		::std::ifstream bulk_file((netcpu::root_path + netcpu::pending_tasks.front()->name() + "/bulk.msg").c_str(), ::std::ios::binary);
-		if (bulk_file == false)
+		if (!bulk_file)
 			throw ::std::runtime_error("missing bulk message during load");
 
 		// load the wrapper from file
@@ -2051,7 +2052,7 @@ struct task : netcpu::task {
 				xxx << "Currently calculated complexity has " << active_task_processor->current_complexity_level->first << " evaluations in total (with " << total_remaining_complexity_size  << " evaluations awating computation)\\n";
 
 				unsigned coeffs_at_once(1);
-				for (tmp = active_task_processor->combos_modem.metadata().begin(); tmp != active_task_processor->current_complexity_level; ++tmp, ++coeffs_at_once);
+				for (typename ::std::map<size_type, ::std::vector<size_type> >::const_iterator tmp(active_task_processor->combos_modem.metadata().begin()); tmp != active_task_processor->current_complexity_level; ++tmp, ++coeffs_at_once);
 				xxx << "The aforementioned complexity is robust with respect to " << coeffs_at_once << "-coefficient(s)-@-once terrain diagonality.\\n";
 			}
 
@@ -2168,7 +2169,7 @@ struct task_loader_detail : netcpu::io_wrapper<netcpu::message::async_driver> {
 		{
 			::std::ofstream res_file((res_filepath + ".tmp").c_str(), ::std::ios::binary | ::std::ios::trunc);
 			res_file.write(reinterpret_cast<char const *>(io().read_raw.head()), io().read_raw.size());
-			if (res_file == false)
+			if (!res_file)
 				throw ::std::runtime_error("could not write " + res_filepath + ".tmp");
 		}
 		::rename((res_filepath + ".tmp").c_str(), res_filepath.c_str());
@@ -2211,7 +2212,7 @@ struct task_loader_detail : netcpu::io_wrapper<netcpu::message::async_driver> {
 		{
 			::std::ofstream meta_file((meta_filepath + ".tmp").c_str(), ::std::ios::binary | ::std::ios::trunc);
 			meta_file.write(reinterpret_cast<char const *>(io().read_raw.head()), io().read_raw.size());
-			if (meta_file == false)
+			if (!meta_file)
 				throw ::std::runtime_error("could not write " + meta_filepath + ".tmp");
 		}
 		::rename((meta_filepath + ".tmp").c_str(), meta_filepath .c_str());
@@ -2255,7 +2256,7 @@ struct task_loader_detail : netcpu::io_wrapper<netcpu::message::async_driver> {
 		{
 			::std::ofstream bulk_file((bulk_filepath + ".tmp").c_str(), ::std::ios::binary | ::std::ios::trunc);
 			bulk_file.write(reinterpret_cast<char const *>(io().read_raw.head()), io().read_raw.size());
-			if (bulk_file == false)
+			if (!bulk_file)
 				throw ::std::runtime_error("could not write " + bulk_filepath + ".tmp");
 		}
 		::rename((bulk_filepath + ".tmp").c_str(), bulk_filepath.c_str());

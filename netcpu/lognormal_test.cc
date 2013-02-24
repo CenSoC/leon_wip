@@ -45,22 +45,20 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include <iostream>
+#include <vector>
 
 #include <sys/types.h>
 
 #include <boost/asio.hpp>
-
-#include <Eigen/Core>
 
 #include <censoc/finite_math.h>
 #include <censoc/rand.h>
 #include <censoc/cdfinvn.h>
 
 typedef double float_type;
-typedef ::Eigen::Array<float_type, ::Eigen::Dynamic, 1> vector_column_type;
 
 struct postcdfinvn {
-	vector_column_type normal;
+	::std::vector<float_type> normal;
 	template <typename TMP>
 	void inline 
 	hook(TMP const & x, unsigned /* x_size */) 
@@ -96,7 +94,7 @@ struct exponent_replacement {
 };
 
 void static
-do_one(unsigned draws_size, float_type width, vector_column_type const & uniform)
+do_one(unsigned draws_size, float_type width, ::std::vector<float_type> const & uniform)
 {
 
 	::censoc::cdfinvn<float_type, unsigned, postcdfinvn> cdfinvn;  
@@ -117,10 +115,29 @@ do_one(unsigned draws_size, float_type width, vector_column_type const & uniform
 	::std::cout << "norm below mean(=" << below / below_size << ")\n";
 	::std::cout << "exp above mean(=" << exp_above / exp_above_size << ")\n";
 	::std::cout << "exp below mean(=" << exp_below / exp_below_size << ")\n";
-	::std::cout << "exp_mean(=" << (cdfinvn.normal * width).exp().sum() / draws_size << ")\n\n";
+	{
+		float_type sum(0);
+		for (unsigned i(0); i != cdfinvn.normal.size(); ++i)
+			sum += ::std::exp(cdfinvn.normal[i] * width);
+		sum /= draws_size;
+		::std::cout << "exp_mean(=" << sum << ")\n\n";
+	}
+	{
+		// short hack for the custom mean...
+		exponent_replacement er;
+		float_type sum(0);
+		for (unsigned i(0); i != cdfinvn.normal.size(); ++i)
+			sum += er(cdfinvn.normal[i] * width);
+		sum /= draws_size;
+		::std::cout << "custom_mean(=" << sum << ")\n\n";
+	}
+}
 
-	// short hack for the custom mean...
-	::std::cout << "custom_mean(=" << (cdfinvn.normal * width).unaryExpr(exponent_replacement()).sum() / draws_size << ")\n\n";
+void static
+mirror(::std::vector<float_type> & v, unsigned const draws_half_size)
+{
+	for (unsigned i(0); i != draws_half_size; ++i)
+		v[i + draws_half_size] =  1 - v[draws_half_size];
 }
 
 void static
@@ -129,7 +146,7 @@ run(unsigned draws_size, float_type width)
 
 	::std::cout << "=======\n\n";
 	::std::cout << ">>> draws(=" << draws_size <<"), width(=" << width << ")\n\n";
-	vector_column_type uniform(draws_size);
+	::std::vector<float_type> uniform(draws_size);
 	assert(!(draws_size % 2));
 
 	float_type const from(::censoc::cdfn<float_type, -4>::eval());
@@ -142,20 +159,20 @@ run(unsigned draws_size, float_type width)
 	::std::cout << "uniform/even coverage towards the outer grid boundary\n";
 	for (unsigned i(0); i != draws_half_size; ++i)
 		uniform[i] = to - (step_size * i) - step_size;
-	uniform.tail(draws_half_size) = (uniform.head(draws_half_size) * -1) + 1;
+	mirror(uniform, draws_half_size);
 	do_one(draws_size, width, uniform);
 
 	::std::cout << "uniform/even coverage towards the inner grid boundary\n";
 	for (unsigned i(0); i != draws_half_size; ++i)
 		uniform[i] = to - (step_size * i);
-	uniform.tail(draws_half_size) = (uniform.head(draws_half_size) * -1) + 1;
+	mirror(uniform, draws_half_size);
 	do_one(draws_size, width, uniform);
 
 	::std::cout << "uniform/even coverage balanced on the middle of the grid boundary\n";
 	float_type const step_half_size(step_size *.5);
 	for (unsigned i(0); i != draws_half_size; ++i)
 		uniform[i] = to - (step_size * i) - step_half_size;
-	uniform.tail(draws_half_size) = (uniform.head(draws_half_size) * -1) + 1;
+	mirror(uniform, draws_half_size);
 	do_one(draws_size, width, uniform);
 
 	::std::cout << "trully random\n";

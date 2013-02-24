@@ -943,28 +943,31 @@ function new_task_type()
 				break;
 			case 1:
 				for (var i = 0; i != Object.keys(this.pid.attributes).length; i++)
-					this.pid.coefficients.push("<sup>&beta;</sup><sub>" + (i + 1) + "</sub>");
+					this.pid.coefficients.push("<b>&beta;</b><sub>" + (i + 1) + "</sub>");
 				break;
 			case 2:
 				for (var i = 0; i != Object.keys(this.pid.attributes).length; i++)
-					this.pid.coefficients.push("<sup>&beta;</sup><sub>" + (i + 1) + "</sub>");
+					this.pid.coefficients.push("<b>&beta;</b><sub>" + (i + 1) + "</sub>");
 				for (var i = 0; i != Object.keys(this.pid.attributes).length; i++)
-					this.pid.coefficients.push("<sup>&eta;</sup><sub>" + (i + 1) + "</sub>");
+					this.pid.coefficients.push("<b>&sigma;</b><sub>&beta;<sub>" + (i + 1) + "</sub></sub>");
 				break;
 			case 3:
 				for (var i = 0; i != Object.keys(this.pid.attributes).length; i++)
-					this.pid.coefficients.push("<sup>&beta;</sup><sub>" + (i + 1) + "</sub>");
+					this.pid.coefficients.push("<b>&beta;</b><sub>" + (i + 1) + "</sub>");
 				for (var i = 0; i != Object.keys(this.pid.attributes).length; i++)
-					this.pid.coefficients.push("<sup>&eta;</sup><sub>" + (i + 1) + "</sub>");
+					this.pid.coefficients.push("<b>&sigma;</b><sub>&beta;<sub>" + (i + 1) + "</sub></sub>");
 				this.pid.coefficients.push("&tau;");
 				break;
 			case 4:
 				for (var i = 0; i != Object.keys(this.pid.attributes).length; i++)
-					this.pid.coefficients.push("<sup>&beta;</sup><sub>" + (i + 1) + "</sub>");
+					this.pid.coefficients.push("<b>&beta;</b><sub>" + (i + 1) + "</sub>");
 				for (var i = 0; i != Object.keys(this.pid.attributes).length; i++)
-					this.pid.coefficients.push("<sup>&eta;</sup><sub>" + (i + 1) + "</sub>");
+					this.pid.coefficients.push("<b>&sigma;</b><sub>&beta;<sub>" + (i + 1) + "</sub></sub>");
 				this.pid.coefficients.push("&tau;");
-				this.pid.coefficients.push("&phi;");
+				this.pid.coefficients.push("<i>&mu;(&Phi;)</i>");
+				// this.pid.coefficients.push("<i>&Phi;&#772;</i>");
+				this.pid.coefficients.push("&sigma;<sub><i>&Phi;</i></sub>");
+				this.pid.coefficients.push("&rho;<sub>&tau;<i>&Phi;</i></sub>");
 				break;
 		}
 		this.pid.populate_complexity_tables();
@@ -2384,12 +2387,12 @@ function tasks_list_type()
 								coefficients[i].normalised_value = (coefficients[i].value - min) * inv_distance;
 							return inv_distance;
 						}
-						var generate_headings = function(txt, tr_, betas_size) 
+						var generate_headings = function(txt, tr_, betas_size, post_txt = "") 
 						{
 							for (var i = 0; i != betas_size; ++i) {
 								td_ = document.createElement("td");
 								td.className = "help_content_title";
-								td_.innerHTML = "<sup>" + txt + "</sup><sub>" + (i + 1) + "</sub>";
+								td_.innerHTML = txt + "<sub>" + (i + 1) + "</sub>" + post_txt;
 								tr_.appendChild(td_);
 							}
 						}
@@ -2410,40 +2413,46 @@ function tasks_list_type()
 						case 1:
 							betas_size = this.coefficients.length;
 							calculate_normalised_betas(betas_size, this.coefficients);
-							generate_headings("&beta;", tr_, betas_size);
+							generate_headings("<b>&beta;</b>", tr_, betas_size);
 						break;
 						case 2:
 							betas_size = this.coefficients.length / 2;
 							inv_distance = calculate_normalised_betas(betas_size, this.coefficients);
 							for (var i = 0; i != betas_size; ++i)
 								this.coefficients[i + betas_size].normalised_value = this.coefficients[i + betas_size].value * inv_distance;
-							generate_headings("&beta;", tr_, betas_size);
-							generate_headings("&eta;", tr_, betas_size);
+							generate_headings("<b>&beta;</b>", tr_, betas_size);
+							generate_headings("<b>&sigma;</b><sub>&beta;", tr_, betas_size, "</sub>");
 						break;
 						case 3:
 							betas_size = (this.coefficients.length - 1) / 2;
 							inv_distance = calculate_normalised_betas(betas_size, this.coefficients);
 							for (var i = 0; i != betas_size; ++i)
 								this.coefficients[i + betas_size].normalised_value = this.coefficients[i + betas_size].value * inv_distance;
-							generate_headings("&beta;", tr_, betas_size);
-							generate_headings("&eta;", tr_, betas_size);
+							generate_headings("<b>&beta;</b>", tr_, betas_size);
+							generate_headings("<b>&sigma;</b><sub>&beta;", tr_, betas_size, "</sub>");
 							td_ = document.createElement("td");
 							td_.innerHTML = "&tau;";
 							tr_.appendChild(td_);
 						break;
 						case 4: {
-							betas_size = (this.coefficients.length - 2) / 2;
+							betas_size = (this.coefficients.length - 4) / 2;
 							var phi = this.coefficients[this.coefficients.length - 1].value;
 							inv_distance = calculate_normalised_betas(betas_size, this.coefficients);
 							for (var i = 0; i != betas_size; ++i)
 								this.coefficients[i + betas_size].normalised_value = this.coefficients[i + betas_size].value * inv_distance;
-							generate_headings("&beta;", tr_, betas_size);
-							generate_headings("&eta;", tr_, betas_size);
+							generate_headings("<b>&beta;</b>", tr_, betas_size);
+							generate_headings("<b>&sigma;</b><sub>&beta;", tr_, betas_size, "</sub>");
 							td_ = document.createElement("td");
 							td_.innerHTML = "&tau;";
 							tr_.appendChild(td_);
 							td_ = document.createElement("td");
-							td_.innerHTML = "&phi;";
+							td_.innerHTML = "<i>&mu;(&Phi;)</i>";
+							tr_.appendChild(td_);
+							td_ = document.createElement("td");
+							td_.innerHTML = "&sigma;<sub><i>&Phi;</i></sub>";
+							tr_.appendChild(td_);
+							td_ = document.createElement("td");
+							td_.innerHTML = "&rho;<sub>&tau;<i>&Phi;</i></sub>";
 							tr_.appendChild(td_);
 						}
 						break;
@@ -2812,26 +2821,27 @@ function timer_callback()
 <body onload="main();" onclick="batch_fill_context_menu.hide();">
 <div class="help_content" id="help_model_content">
 <br>
-Available models: (<a href="http://en.wikipedia.org/wiki/Multinomial_logit" target="_blank">Logit</a>, <a href="http://en.wikipedia.org/wiki/Mixed_logit" target="_blank">Mixed logit</a>, <a href="http://www.censoc.uts.edu.au/researchoutput/wp09-002.pdf" target="_blank">GMNL-II</a>, <a href="https://github.com/downloads/CenSoC/leon_wip/GMNL2a.pdf" target="_blank">Gmnl2a</a>). <br>Wherever applicable: 
+Available models: <a href="http://en.wikipedia.org/wiki/Multinomial_logit" target="_blank">Logit</a>, <a href="http://en.wikipedia.org/wiki/Mixed_logit" target="_blank">Mixed logit</a>, <a href="http://www.censoc.uts.edu.au/researchoutput/wp09-002.pdf" target="_blank">GMNL-II</a>, <a href="https://github.com/downloads/CenSoC/leon_wip/GMNL2a.pdf" target="_blank">Gmnl2a</a> (although Gmnl2a is currently under a very heavy development and it is very likely indeed that the aforementioned documentation hyperlink will be "out of sync" with the actual code... this should be resolved automatically in due time). 
+<p>Wherever applicable: 
 <ul>
-<li>Normal distribution is used for &beta; variances. 
+<li>Normal distribution is used for <b>&sigma;</b><sub>&beta;</sub> (a.k.a. <b>&eta;</b> in some of the aforementioned model-documentation hyperlinks). Such distributions are not covariant (i.e. only a diagonal variance-covariance matrix is used). 
 </li>
 <li>Custom distribution (similar to lognormal of e^<sup>x</sup>, but not quite) is used for the scale parameter: 
 <ul>
 <li>1 + x for x &gt; 0 and</li>
 <li>1 / (1 - x) for x &lt; 0</li> 
 </ul>
-where x is drawn from the normal distribution.
+where x ~ <i>&Nu;</i>(0, 1)
 </li>
 <li>
-From mathematical standpoint, &eta; symbols do not denote variance but rather standard deviation (normal distribution of variance value one is scaled (widenede/narrowed) by the value contained in corresponding &eta;. 
+From a mathematical standpoint, <b>&sigma;</b><sub>&beta;</sub> symbol(s) do not denote variance but rather standard deviation: unit normal distribution scaled (widened/narrowed by the <b>&sigma;</b><sub>&beta;</sub>). 
 </li>
 </ul>
-Additionally, Gmnl2a may not preserve the "ratio" between attributes, nor their relationship with the zero-crossing. Consequently, one may not necessarily benefit from survey analysis which aims at identifying certainty-vs-uncertainty of attributes or attributes' inter-proportional relationship (e.g. willingness to pay). What remains is simply a differential relationship (in a normalised, scaled to peak @ 1, form) -- how one attribute is more/less valued with respect to others. 
+Additionally, Gmnl2a may not preserve the "absolute values ratio" between attributes, nor their relationship with the zero-crossing. Consequently, one may not necessarily benefit from survey analysis which aims at identifying certainty-vs-uncertainty of attributes or attributes' inter-proportional relationship (e.g. willingness to pay, e.g. "division by zero" may occur). What remains is simply a differential relationship (in a normalised, scaled and offset to start from 0 and peak at 1, form) -- i.e. how one attribute is more/less valued with respect to others. An explicit use-case would be to evaluate Gmnl2a model and see if variances (<b>&sigma;</b><sub>&beta;</sub> a.k.a. <b>&eta;</b>) are consistently lower than those obtained from mixed logit analysis, if so then such information can be used to better identify class(es) of respondents with more similar/homogeneous preferences.
 <p>See relevant sections of the overall <a href="https://github.com/CenSoC/leon_wip" target="_blank">source-code</a> repository for more details.
 </div>
 <div class="help_content" id="help_dataset_content" >
-File must be in a .CSV (coma separated values) format. Layout requirements are:
+File must be in a .CSV (coma separated values) format. Layout requirements are similar to what, in some circles, is known as a "stacked data format". Namely they are:
 <ul>
 <li>
 Each alternative's data is a row.

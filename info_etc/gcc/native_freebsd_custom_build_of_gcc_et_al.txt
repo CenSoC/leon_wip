@@ -72,7 +72,7 @@ export LIBRARY_PATH=/usr/home/${USER}/cloog/installed/lib:/usr/home/${USER}/ppl/
 export LD_LIBRARY_PATH=/usr/home/${USER}/cloog/installed/lib:/usr/home/${USER}/ppl/installed/lib:/usr/home/${USER}/gmp/installed/lib:/usr/home/${USER}/mpc/installed/lib:/usr/home/${USER}/mpfr/installed/lib${LD_LIBRARY_PATH:+:}${LD_LIBRARY_PATH}
 
 
-note: --enable-plugins on freebsd binutils is not working out-of-the-box (needs -ldl which is from linux-spec, freebsd has this functionality in -lc already)...
+note: --enable-plugins on freebsd binutils is not working out-of-the-box (needs -ldl which is from linux-spec, freebsd has this functionality in -lc already)... Until a proper patch (appears to have been submitted earlier by someone) is accepted into source tree, the following quick-hack is applicable
 
 cp /usr/lib/libc.a /usr/home/${USER}/binutils/libdl.a
 cp /usr/lib/libc.so /usr/home/${USER}/binutils/libdl.so
@@ -80,6 +80,9 @@ export LIBRARY_PATH=/usr/home/${USER}/binutils/${LIBRARY_PATH:+:}${LIBRARY_PATH}
 export LD_LIBRARY_PATH=/usr/home/${USER}/binutils/${LD_LIBRARY_PATH:+:}${LD_LIBRARY_PATH}
 
 # note: --enable-gold on freebsd default compiler causes internal compiler error (v. 4.2.1) 
+# and even though it is possible to re-build binuitls with 'gold' support in a 'repeated step' (e.g. after newly build latest gcc compiler, start custom freebsd shell and then ALSO add the above lines for exporting LIBRARY_PATH and LD_LIBRARY_PATH then reextract binutils sources and reinstall over the top), the ld.gold has serious problems when compiling static binaries (e.g. on gcc 4.7.2) w.r.t. catching excpetions... to that effect there is already an identified bug (not by me): http://sourceware.org/bugzilla/show_bug.cgi?id=14271
+# so will wait for a fix... in the meantime, the latest ld.bfd supports -plugin functionality anyway...
+# todo: add the --enable-gold=default 
 ./configure --prefix=/usr/home/${USER}/binutils/installed/ --with-gmp=/usr/home/${USER}/gmp/installed --with-ppl=/usr/home/${USER}/ppl/installed --with-cloog=/usr/home/${USER}/cloog/installed --with-mpfr=/usr/home/${USER}/mpfr/installed --with-mpc=/usr/home/${USER}/mpc/installed --enable-lto --enable-plugins 
 
 gmake -j 2
@@ -107,22 +110,104 @@ diff -r ./gcc-4.6.1/libgcc/config.host ./gcc-4.6.1-hacked/libgcc/config.host
 
 ... or, if all else fails and one needs to do things asap, can try: on freebsd copy /usr/lib/crtbeginT.o to installed/lib/gcc/x86_64.../crtbegin.o (mv original one for safekeeping purposes)
 
-./configure --prefix=/usr/home/${USER}/gcc/installed --disable-threads --enable-languages=c,c++,lto --enable-lto --disable-sjlj-exceptions --disable-libgomp --disable-nls --with-system-zlib --with-libiconv-prefix=/usr/local --with-gmp=/usr/home/${USER}/gmp/installed --with-ppl=/usr/home/${USER}/ppl/installed --with-cloog=/usr/home/${USER}/cloog/installed --with-mpfr=/usr/home/${USER}/mpfr/installed --with-mpc=/usr/home/${USER}/mpc/installed --disable-libgcj --disable-multilib --disable-shared --with-dwarf2 --enable-gold --enable-plugins
+========================================================
+
+NOTE -- gcc 4.7.2 has some variation w.r.t. line numbers and whether the files (e.g. config.gcc have the relevant lines, so deal with such issues as they become relevant/apparent)
+
+for example:
+
+diff -C 5 -r gcc-4.7.2/gcc/config/i386/freebsd.h ../gcc-4.7.2/gcc/config/i386/freebsd.h
+*** gcc-4.7.2/gcc/config/i386/freebsd.h	Fri Dec 16 04:52:02 2011
+--- ../gcc-4.7.2/gcc/config/i386/freebsd.h	Sat Feb  9 13:14:32 2013
+***************
+*** 69,79 ****
+  #define STARTFILE_SPEC \
+    "%{!shared: \
+       %{pg:gcrt1.o%s} %{!pg:%{p:gcrt1.o%s} \
+  		       %{!p:%{profile:gcrt1.o%s} \
+  			 %{!profile:crt1.o%s}}}} \
+!    crti.o%s %{!shared:crtbegin.o%s} %{shared:crtbeginS.o%s}"
+  
+  /* Provide a ENDFILE_SPEC appropriate for FreeBSD.  Here we tack on
+     the magical crtend.o file (see crtstuff.c) which provides part of 
+  	the support for getting C++ file-scope static object constructed 
+  	before entering `main', followed by a normal "finalizer" file, 
+--- 69,79 ----
+  #define STARTFILE_SPEC \
+    "%{!shared: \
+       %{pg:gcrt1.o%s} %{!pg:%{p:gcrt1.o%s} \
+  		       %{!p:%{profile:gcrt1.o%s} \
+  			 %{!profile:crt1.o%s}}}} \
+!    crti.o%s %{static:crtbeginT.o%s;shared:crtbeginS.o%s;:crtbegin.o%s}"
+  
+  /* Provide a ENDFILE_SPEC appropriate for FreeBSD.  Here we tack on
+     the magical crtend.o file (see crtstuff.c) which provides part of 
+  	the support for getting C++ file-scope static object constructed 
+  	before entering `main', followed by a normal "finalizer" file, 
+diff -C 5 -r gcc-4.7.2/gcc/config.gcc ../gcc-4.7.2/gcc/config.gcc
+*** gcc-4.7.2/gcc/config.gcc	Wed Sep 12 19:03:54 2012
+--- ../gcc-4.7.2/gcc/config.gcc	Sat Feb  9 14:23:16 2013
+***************
+*** 586,595 ****
+--- 586,596 ----
+        exit 1
+        ;;
+    esac
+    fbsd_tm_file="${fbsd_tm_file} freebsd-spec.h freebsd.h freebsd-stdint.h"
+    extra_options="$extra_options rpath.opt freebsd.opt"
++   extra_parts="crtbegin.o crtbeginT.o crtend.o crtbeginS.o crtendS.o"
+    case ${target} in
+      *-*-freebsd[345].*)
+        :;;
+      *)
+        default_use_cxa_atexit=yes;;
+diff -C 5 -r gcc-4.7.2/libgcc/config.host ../gcc-4.7.2/libgcc/config.host
+*** gcc-4.7.2/libgcc/config.host	Wed Sep  5 22:19:47 2012
+--- ../gcc-4.7.2/libgcc/config.host	Sat Feb  9 14:18:30 2013
+***************
+*** 177,187 ****
+  *-*-freebsd*)
+    # This is the generic ELF configuration of FreeBSD.  Later
+    # machine-specific sections may refine and add to this
+    # configuration.
+    tmake_file="$tmake_file t-freebsd t-crtstuff-pic t-libgcc-pic t-eh-dw2-dip t-slibgcc t-slibgcc-gld t-slibgcc-elf-ver"
+!   extra_parts="crtbegin.o crtend.o crtbeginS.o crtendS.o"
+    case ${target_thread_file} in
+      posix)
+        tmake_file="${tmake_file} t-freebsd-thread"
+        # Before 5.0, FreeBSD can't bind shared libraries to -lc
+        # when "optionally" threaded via weak pthread_* checks.
+--- 177,187 ----
+  *-*-freebsd*)
+    # This is the generic ELF configuration of FreeBSD.  Later
+    # machine-specific sections may refine and add to this
+    # configuration.
+    tmake_file="$tmake_file t-freebsd t-crtstuff-pic t-libgcc-pic t-eh-dw2-dip t-slibgcc t-slibgcc-gld t-slibgcc-elf-ver"
+!   extra_parts="crtbegin.o crtbeginT.o crtend.o crtbeginS.o crtendS.o"
+    case ${target_thread_file} in
+      posix)
+        tmake_file="${tmake_file} t-freebsd-thread"
+        # Before 5.0, FreeBSD can't bind shared libraries to -lc
+        # when "optionally" threaded via weak pthread_* checks.
+
+========================================================
+
+# TODO: as per notes above, later on (when appropriate) add the following option:
+# --enable-gold=default 
+./configure --prefix=/usr/home/${USER}/gcc/installed --disable-threads --enable-languages=c,c++,lto --enable-lto --disable-sjlj-exceptions --disable-libgomp --disable-nls --with-system-zlib --with-libiconv-prefix=/usr/local --with-gmp=/usr/home/${USER}/gmp/installed --with-ppl=/usr/home/${USER}/ppl/installed --with-cloog=/usr/home/${USER}/cloog/installed --with-mpfr=/usr/home/${USER}/mpfr/installed --with-mpc=/usr/home/${USER}/mpc/installed --with-ld=/usr/home/${USER}/binutils/installed/bin/ld --with-as=/usr/home/${USER}/binutils/installed/bin/as --disable-libgcj --disable-multilib --disable-shared --with-dwarf2 --enable-plugins --enable-plugin
+
+(or better yet do the configure from objdir: e.g. ../gcc-4.7.2/configure ...)
 
 gmake -j 2
 gmake install
 
-then start the new compiler environment shell (custom_env_freebsd...)
+start native freebsd shell
 
-# binutils...
-# try to rebuild binutils with enabled gold...
-delete binutils sources, re-extract, then
-./configure --prefix=/usr/home/${USER}/binutils/installed/ --with-gmp=/usr/home/${USER}/gmp/installed --with-ppl=/usr/home/${USER}/ppl/installed --with-cloog=/usr/home/${USER}/cloog/installed --with-mpfr=/usr/home/${USER}/mpfr/installed --with-mpc=/usr/home/${USER}/mpc/installed --enable-lto --enable-gold --enable-plugins 
-gmake -j2 
-gmake install
-
+(NB. Optional step -- Here, if deciding to still use GCC and gold linker -- rebuild the binutils with gold (existing compiler on freebsd is crashes out with internal compiler error and newer versions of GCC are not distributed pre-installed on FreeBSD due to some GPL v3 (or similar) issues...) or may be in the near future Clang/LLVM will become comparable with compiled apps performance/optimization anyways...)
 
 8) build openssl
+no point in adding -flto to ./Configure at this time as openssl libs barfs with asm's invalid operand for 'div' when compiled with -flto in gcc 4.7.2 (no time to investigate any further, a TODO for later on)
+so just run
 ./Configure --prefix=/usr/home/${USER}/openssl/installed/ no-threads no-shared BSD-x86_64
 gmake depend
 gmake -j 2
@@ -134,12 +219,17 @@ gmake install
 
 vim boost/config/user.hpp
 define (uncomment) BOOST_DISABLE_THREADS
-define BOOST_ASIO_DISABLE_IOCP (may need to actually add this line)
+
+#define BOOST_SP_DISABLE_THREADS 
+#define BOOST_ASIO_DISABLE_IOCP 
+#define BOOST_NO_RTTI
+#define BOOST_NO_TYPEID
+
 define (uncomment) WIN32 nonsense
 
-./bjam toolset=gcc cxxflags="-std=c++0x" variant=release link=static threading=single --without-thread --without-wave --without-mpi --without-python --without-graph --without-graph_parallel --without-program_options --without-signals --without-test --without-serialization --layout=versioned install
+./bjam toolset=gcc cxxflags="-std=c++11 -flto " variant=release link=static threading=single --without-thread --without-wave --without-mpi --without-python --without-graph --without-graph_parallel --without-program_options --without-signals --without-test --without-serialization --layout=versioned install
 
-now, because the layout was versioned (otherwise link=static would not work), need to do some extra steps:
+now, because the layout was versioned (otherwise link=static would not work in some previous versions of boost and I havent got the time to re-test on the most current downloaded one), need to do some extra steps:
 
 in installed bost/installed/include/ 
 mv boost_vXYZ/boost .
@@ -148,6 +238,13 @@ rmdir boost_vXYZ
 in installed boost/installed/lib
 rename relevant boost libs (and delete built _mt_ variants -- multithreaded ones)
 rename -s/-gcc46-1_48// *.a
+
+or if rename utility is not installed:
+to rename versioned libs in the installed dir, can try something like this:
+first to test:
+find . -iname "*-gcc47*" -exec sh -c 'echo moving {} to `echo {} | sed  s/-gcc47-.*/.a/g`' \;  
+and then the actual deed:
+find . -iname "*-gcc47*" -exec sh -c 'mv {} `echo {} | sed  s/-gcc47-.*/.a/g`' \;
 
 
 10) build gdb
@@ -159,6 +256,9 @@ gmake install
 ./configure --prefix=/usr/home/${USER}/zlib/installed/ --static
 edit Makefile and delete all that relates to:
 SHAREDLIB etc.
+
+also add -flto to gcc flags:
+
 gmake -j 2
 gmake install
 

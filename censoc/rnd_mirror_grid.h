@@ -42,8 +42,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdexcept>
 #include <algorithm>
 
-#include <Eigen/Core>
-
 #include "cdfinvn.h"
 #include "rand.h"
 #include "aligned_alloc.h"

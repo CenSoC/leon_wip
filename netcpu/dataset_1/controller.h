@@ -41,8 +41,10 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <string>
 
 #include <boost/tokenizer.hpp>
-#include <boost/iostreams/device/array.hpp>
-#include <boost/iostreams/stream.hpp>
+
+// does not currently (boost v.1_52) work with -fno-rtti switch (calls typeid), but I really dont wanna enable the damn thing, so will currently write an alternative code
+// #include <boost/iostreams/device/array.hpp>
+// #include <boost/iostreams/stream.hpp>
 
 #include <censoc/lexicast.h>
 
@@ -206,7 +208,7 @@ struct composite_matrix_loader {
 
 	// CLI -- quick-n-dirty
 	::std::string filepath; 
-	::std::string filedata; 
+	censoc::vector<char, size_type> filedata; // not string because need a 'data()' pointer to non-const array as per requirement of a workaround in 'setg' call
 	//size_type sheet_i;
 	size_type respondent_i;
 	size_type choice_set_i;
@@ -245,7 +247,8 @@ struct composite_matrix_loader {
 		//	censoc::llog() << "Loading sheet: " << sheet_i << '\n';
 		//	--sheet_i; // user talks in 1-based terms
 		} else if (name == "--filedata") {
-			filedata = value;
+			filedata.reset(value.size());
+			::memcpy(filedata.data(),  value.data(), value.size());
 			censoc::llog() << "received actual csv data: " << filedata.size() << " bytes\n";
 		} else if (name == "--x") {
 			x_elements.push_back(::std::list<size_type>());
@@ -539,11 +542,19 @@ public:
 				throw netcpu::message::exception(xxx() << "Failed to open csv file(=" << filepath << ")");
 			rawgrid_type grid_obj(is, typename grid_base::ctor(ute));
 			verify_args_sub(grid_obj, meta_msg, bulk_msg);
-		} else if (filedata.empty() == false) {
-			::boost::iostreams::stream< ::boost::iostreams::array_source> data(filedata.data(), filedata.size());
+		} else if (filedata.size()) {
+			// does not currently (boost v.1_52) work with -fno-rtti switch (calls typeid), but I really dont wanna enable the damn thing, so there
+			//::boost::iostreams::stream< ::boost::iostreams::array_source> data(filedata.data(), filedata.size());
+			// instead doing this:
+			struct : ::std::streambuf {
+				using ::std::streambuf::setg;
+		  } buf;
+			buf.setg(filedata.data(), filedata.data(), filedata.data() + filedata.size()); 
+			::std::istream data(&buf);
+
 			rawgrid_type grid_obj(data, typename grid_base::ctor(ute));
 			verify_args_sub(grid_obj, meta_msg, bulk_msg);
-		} else if ((filepath.empty() == false && filedata.empty() == false) || (filepath.empty() == true && filedata.empty() == true))
+		} else if (filepath.empty() == false && filedata.size() || filepath.empty() == true && !filedata.size())
 			throw netcpu::message::exception("must either supply the filepath for the csv file or the filedata itself");
 	}
 };

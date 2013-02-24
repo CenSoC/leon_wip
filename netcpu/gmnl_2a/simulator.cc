@@ -88,14 +88,14 @@ simulate()
 	netcpu::message::read_wrapper msg_wire;
 
 	::std::ifstream meta_msg_file("meta.msg", ::std::ios::binary);
-	if (meta_msg_file == false)
+	if (!meta_msg_file)
 		throw ::std::runtime_error("missing meta message during load");
 	netcpu::message::fstream_to_wrapper(meta_msg_file, msg_wire);
 	meta_msg_type meta_msg;
 	meta_msg.from_wire(msg_wire);
 
 	::std::ifstream bulk_msg_file("bulk.msg", ::std::ios::binary);
-	if (bulk_msg_file == false)
+	if (!bulk_msg_file)
 		throw ::std::runtime_error("missing bulk message during load");
 	netcpu::message::fstream_to_wrapper(bulk_msg_file, msg_wire);
 	bulk_msg_type bulk_msg;
@@ -304,7 +304,7 @@ simulate()
 	bulk_msg.to_wire(write_raw);
 	::std::ofstream new_bulk_msg_file("new_bulk.msg", ::std::ios::binary | ::std::ios::trunc);
 	new_bulk_msg_file.write(reinterpret_cast<char const *>(write_raw.head()), write_raw.size());
-	if (new_bulk_msg_file == false)
+	if (!new_bulk_msg_file)
 		throw ::std::runtime_error("could not write new_bulk.msg");
 }
 
@@ -328,7 +328,7 @@ main()
 		censoc::init_fpu_check();
 
 		::std::ifstream msg_file("res.msg", ::std::ios::binary);
-		if (msg_file == false)
+		if (!msg_file)
 			throw ::std::runtime_error("missing res message during load");
 
 		netcpu::message::read_wrapper msg_wire;

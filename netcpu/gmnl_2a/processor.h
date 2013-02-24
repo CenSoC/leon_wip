@@ -152,7 +152,7 @@ struct task_processor : censoc::exp_lookup::exponent_evaluation_choice<EF, typen
 
 	size_type const max_alternatives;
 	size_type const repetitions;
-	extended_float_type const repetitions_inv;
+	float_type const accumulated_probability_log_repetitions_offset;
 	size_type float_repetitions_column_stride_size;
 	size_type extended_float_repetitions_column_stride_size;
 
@@ -165,6 +165,21 @@ struct task_processor : censoc::exp_lookup::exponent_evaluation_choice<EF, typen
 	float_type * sigma_bar_tau_cached_main;
 	float_type * sigma_bar_tau_cached_tmp;
 
+	float_type * phi_covariance_cached_main;
+	float_type * phi_covariance_cached_tmp;
+
+	float_type * phi_scaled_covariance_cached_main;
+	float_type * phi_scaled_covariance_cached_tmp;
+	float_type * phi_variance_cached_main;
+	float_type * phi_variance_cached_tmp;
+
+	float_type * complete_phi_mean_cached_main;
+	float_type * complete_phi_mean_cached_tmp;
+	float_type * complete_phi_variance_cached_main;
+	float_type * complete_phi_variance_cached_tmp;
+	float_type * complete_phi_covariance_cached_main;
+	float_type * complete_phi_covariance_cached_tmp;
+
 #ifndef NDEBUG
 	uint8_t * debug_choice_sets_alternatives_end;
 	int8_t * debug_matrix_composite_end;
@@ -175,17 +190,33 @@ struct task_processor : censoc::exp_lookup::exponent_evaluation_choice<EF, typen
 
 	float_type * matrix_haltons_sigma;
 	float_type * matrix_haltons_nonsigma;
+	float_type * phi_draws;
 
 	extended_float_type * respondent_probability_cache;
 	extended_float_type * repetitions_cache_rowwise_tmp;
 	float_type * stage3_composite_equation_tau_cached; // not reusing the 'sigma_bar_tau_cached' ptr because composite equation (eta_cache et al) is one single cache (not main/tmp kind)
-	float_type * stage3_composite_equation_phi_cached; 
+	float_type * stage3_composite_equation_phi_mean_cached; 
+	float_type * stage3_composite_equation_phi_variance_cached; 
+	float_type * stage3_composite_equation_phi_covariance_cached; 
 	float_type * etavars_cache;
 	float_type * betavars_cache;
 	float_type * stage3_etavars_cache;
 	float_type * sigma_cache;  
 	float_type * sigma_cache_main;  // TODO -- make the main one a part of the global Map memory block
 	float_type * sigma_cache_tmp; 
+
+	float_type * phi_covariance_draws_cache;
+	float_type * phi_covariance_draws_cache_main;
+	float_type * phi_covariance_draws_cache_tmp;
+
+	float_type * phi_scaled_draws_cache;
+	float_type * phi_scaled_draws_cache_main;
+	float_type * phi_scaled_draws_cache_tmp;
+
+	float_type * complete_phi_draws_cache;
+	float_type * complete_phi_draws_cache_main;
+	float_type * complete_phi_draws_cache_tmp;
+
 	float_type * eta_cache_x;
 	float_type * eta_cache;
 	float_type * ev_cache_tmp_or_censor_cache_tmp;
@@ -197,9 +228,12 @@ struct task_processor : censoc::exp_lookup::exponent_evaluation_choice<EF, typen
 
 	// TODO -- later deprecate message.h typedef size_type and pass it via the template arg!!!
 	task_processor(meta_msg_type const & meta_msg)	
-	: max_alternatives(meta_msg.model.dataset.max_alternatives()), repetitions(meta_msg.model.repetitions()), repetitions_inv(1 / static_cast<extended_float_type>(repetitions)), x_size(meta_msg.model.dataset.x_size()), draws_sets_size(meta_msg.model.draws_sets_size()), 
+	: max_alternatives(meta_msg.model.dataset.max_alternatives()), repetitions(meta_msg.model.repetitions()), accumulated_probability_log_repetitions_offset(::std::log(static_cast<float_type>(repetitions))), x_size(meta_msg.model.dataset.x_size()), draws_sets_size(meta_msg.model.draws_sets_size()), 
 #ifndef NDEBUG
 	sigma_cache(NULL),
+	phi_covariance_draws_cache(NULL),
+	phi_scaled_draws_cache(NULL),
+	complete_phi_draws_cache(NULL),
 #endif
 	reduce_exp_complexity(meta_msg.model.reduce_exp_complexity())
 	{
@@ -223,29 +257,44 @@ struct task_processor : censoc::exp_lookup::exponent_evaluation_choice<EF, typen
 		else
 			extended_float_repetitions_column_stride_size = repetitions;
 
-		// MUST note -- was_fpu_ok has, currently, respondent_probability_cache is, eventually (below), passed in many cases. this is because: 
-		// a) the contiguous memory layout of the necessary data/caches. 
-		// b) the explicit '__restrict' pointers are copied from respondent_probability_cache (i.e. it, in itself, is still declared as non __strict)
-		// if such a memory layout allocation strategy changes, then one must become more specific w.r.t. arguments passed to 'was_fpu_ok' at various cases
-
 		//---
 		respondent_probability_cache = static_cast<extended_float_type*>(0);
 		//
 		repetitions_cache_rowwise_tmp = respondent_probability_cache + extended_float_repetitions_column_stride_size;
 		set_pointer(sigma_cache_main, repetitions_cache_rowwise_tmp + extended_float_repetitions_column_stride_size);
 		sigma_cache_tmp = sigma_cache_main + float_repetitions_column_stride_size * draws_sets_size;
-
-		eta_cache_x = sigma_cache_tmp + float_repetitions_column_stride_size * draws_sets_size;
+		phi_covariance_draws_cache_main = sigma_cache_tmp + float_repetitions_column_stride_size * draws_sets_size;
+		phi_covariance_draws_cache_tmp = phi_covariance_draws_cache_main + float_repetitions_column_stride_size * draws_sets_size;
+		phi_scaled_draws_cache_main = phi_covariance_draws_cache_tmp + float_repetitions_column_stride_size * draws_sets_size;
+		phi_scaled_draws_cache_tmp = phi_scaled_draws_cache_main + float_repetitions_column_stride_size * draws_sets_size;
+		complete_phi_draws_cache_main = phi_scaled_draws_cache_tmp + float_repetitions_column_stride_size * draws_sets_size;
+		complete_phi_draws_cache_tmp = complete_phi_draws_cache_main + float_repetitions_column_stride_size * draws_sets_size;
+		eta_cache_x = complete_phi_draws_cache_tmp + float_repetitions_column_stride_size * draws_sets_size;
 		eta_cache = eta_cache_x + float_repetitions_column_stride_size * draws_sets_size * x_size;
 		ev_cache_tmp_or_censor_cache_tmp = eta_cache + float_repetitions_column_stride_size * draws_sets_size * x_size;
 		set_pointer(ev_cache, ev_cache_tmp_or_censor_cache_tmp + float_repetitions_column_stride_size * max_alternatives);
 		set_pointer(matrix_haltons_nonsigma, ev_cache + extended_float_repetitions_column_stride_size);
 		matrix_haltons_sigma = matrix_haltons_nonsigma + float_repetitions_column_stride_size * x_size * draws_sets_size;
-		sigma_bar_tau_cached_main = matrix_haltons_sigma + float_repetitions_column_stride_size * draws_sets_size - (float_repetitions_column_stride_size_modulo ? repetitions_column_stride_size_extend_by : 0);
+		phi_draws = matrix_haltons_sigma + float_repetitions_column_stride_size * draws_sets_size;
+		sigma_bar_tau_cached_main = phi_draws + float_repetitions_column_stride_size * draws_sets_size - (float_repetitions_column_stride_size_modulo ? repetitions_column_stride_size_extend_by : 0);
 		sigma_bar_tau_cached_tmp = sigma_bar_tau_cached_main + draws_sets_size;
-		stage3_composite_equation_tau_cached = sigma_bar_tau_cached_tmp + draws_sets_size;
-		stage3_composite_equation_phi_cached = stage3_composite_equation_tau_cached + draws_sets_size;
-		etavars_cache = stage3_composite_equation_phi_cached + draws_sets_size;
+		phi_covariance_cached_main = sigma_bar_tau_cached_tmp + draws_sets_size;
+		phi_covariance_cached_tmp = phi_covariance_cached_main + draws_sets_size;
+		phi_scaled_covariance_cached_main = phi_covariance_cached_tmp + draws_sets_size;
+		phi_scaled_covariance_cached_tmp = phi_scaled_covariance_cached_main + draws_sets_size;
+		phi_variance_cached_main = phi_scaled_covariance_cached_tmp + draws_sets_size;
+		phi_variance_cached_tmp = phi_variance_cached_main + draws_sets_size;
+		complete_phi_mean_cached_main = phi_variance_cached_tmp + draws_sets_size;
+		complete_phi_mean_cached_tmp = complete_phi_mean_cached_main + draws_sets_size;
+		complete_phi_variance_cached_main = complete_phi_mean_cached_tmp + draws_sets_size;
+		complete_phi_variance_cached_tmp = complete_phi_variance_cached_main + draws_sets_size;
+		complete_phi_covariance_cached_main = complete_phi_variance_cached_tmp + draws_sets_size;
+		complete_phi_covariance_cached_tmp = complete_phi_covariance_cached_main + draws_sets_size;
+		stage3_composite_equation_tau_cached = complete_phi_covariance_cached_tmp + draws_sets_size;
+		stage3_composite_equation_phi_mean_cached = stage3_composite_equation_tau_cached + x_size * draws_sets_size;
+		stage3_composite_equation_phi_variance_cached = stage3_composite_equation_phi_mean_cached + x_size * draws_sets_size;
+		stage3_composite_equation_phi_covariance_cached = stage3_composite_equation_phi_variance_cached + x_size * draws_sets_size;
+		etavars_cache = stage3_composite_equation_phi_covariance_cached + x_size * draws_sets_size;
 		betavars_cache = etavars_cache + x_size * draws_sets_size;
 		stage3_etavars_cache = betavars_cache + x_size * draws_sets_size;
 		//
@@ -256,16 +305,37 @@ struct task_processor : censoc::exp_lookup::exponent_evaluation_choice<EF, typen
 		post_offset_pointer(repetitions_cache_rowwise_tmp);
 		post_offset_pointer(sigma_cache_main);
 		post_offset_pointer(sigma_cache_tmp);
+		post_offset_pointer(phi_covariance_draws_cache_main);
+		post_offset_pointer(phi_covariance_draws_cache_tmp);
+		post_offset_pointer(phi_scaled_draws_cache_main);
+		post_offset_pointer(phi_scaled_draws_cache_tmp);
+		post_offset_pointer(complete_phi_draws_cache_main);
+		post_offset_pointer(complete_phi_draws_cache_tmp);
 		post_offset_pointer(eta_cache_x);
 		post_offset_pointer(eta_cache);
 		post_offset_pointer(ev_cache_tmp_or_censor_cache_tmp);
 		post_offset_pointer(ev_cache);
 		post_offset_pointer(matrix_haltons_nonsigma);
 		post_offset_pointer(matrix_haltons_sigma);
+		post_offset_pointer(phi_draws);
 		post_offset_pointer(sigma_bar_tau_cached_main);
 		post_offset_pointer(sigma_bar_tau_cached_tmp);
+		post_offset_pointer(phi_covariance_cached_main);
+		post_offset_pointer(phi_covariance_cached_tmp);
+		post_offset_pointer(phi_scaled_covariance_cached_main);
+		post_offset_pointer(phi_scaled_covariance_cached_tmp);
+		post_offset_pointer(phi_variance_cached_main);
+		post_offset_pointer(phi_variance_cached_tmp);
+		post_offset_pointer(complete_phi_mean_cached_main);
+		post_offset_pointer(complete_phi_mean_cached_tmp);
+		post_offset_pointer(complete_phi_variance_cached_main);
+		post_offset_pointer(complete_phi_variance_cached_tmp);
+		post_offset_pointer(complete_phi_covariance_cached_main);
+		post_offset_pointer(complete_phi_covariance_cached_tmp);
 		post_offset_pointer(stage3_composite_equation_tau_cached);
-		post_offset_pointer(stage3_composite_equation_phi_cached);
+		post_offset_pointer(stage3_composite_equation_phi_mean_cached);
+		post_offset_pointer(stage3_composite_equation_phi_variance_cached);
+		post_offset_pointer(stage3_composite_equation_phi_covariance_cached);
 		post_offset_pointer(etavars_cache);
 		post_offset_pointer(betavars_cache);
 		post_offset_pointer(stage3_etavars_cache);
@@ -279,6 +349,15 @@ struct task_processor : censoc::exp_lookup::exponent_evaluation_choice<EF, typen
 		{
 			haltons_ctor.sigma = matrix_haltons_sigma;
 			haltons_ctor.nonsigma = matrix_haltons_nonsigma;
+			haltons_type haltons(haltons_ctor);
+			// TODO --  put "should sleep" test (for the time-being) during halton generation as well (and combos builder)!!!
+			haltons.init(draws_sets_size, repetitions, x_size, float_repetitions_column_stride_size);
+		}
+		
+		// phi
+		{
+			haltons_ctor.sigma = phi_draws;
+			haltons_ctor.nonsigma = NULL;
 			haltons_type haltons(haltons_ctor);
 			// TODO --  put "should sleep" test (for the time-being) during halton generation as well (and combos builder)!!!
 			haltons.init(draws_sets_size, repetitions, x_size, float_repetitions_column_stride_size);
@@ -305,7 +384,7 @@ public:
 	size_type
 	get_coefficients_size() const noexcept
 	{	
-		return x_size * 2 + 2;
+		return x_size * 2 + 4;
 	}
 
 	void 
@@ -313,19 +392,62 @@ public:
 	{
 		// tmp-based testing: force recalculation of all caches:                                                                                                                   
 		// NOTE -- this is ONLY working because of not required for alignment for such variables/caches (otherwise repetetions_stride size thingy must be taken into account)
-		float_type * const __restrict a(stage3_composite_equation_tau_cached);
-		float_type * const __restrict b(stage3_composite_equation_phi_cached);
-		float_type * const __restrict c(sigma_bar_tau_cached_main);
-		float_type * const __restrict d(sigma_bar_tau_cached_tmp);
-		for (size_type i(0); i != draws_sets_size; ++i)
-			a[i] = b[i] = c[i] = d[i] = censoc::largish<float_type>();
+		CENSOC_RESTRICTED_CONST_PTR(float_type, sigma_bar_tau_cached_main_, sigma_bar_tau_cached_main);
+		CENSOC_RESTRICTED_CONST_PTR(float_type, sigma_bar_tau_cached_tmp_, sigma_bar_tau_cached_tmp);
 
-		float_type * const __restrict aa(etavars_cache);
-		float_type * const __restrict bb(stage3_etavars_cache);
-		float_type * const __restrict cc(betavars_cache);
+		CENSOC_RESTRICTED_CONST_PTR(float_type, phi_covariance_cached_main_, phi_covariance_cached_main);
+		CENSOC_RESTRICTED_CONST_PTR(float_type, phi_covariance_cached_tmp_, phi_covariance_cached_tmp);
+
+		CENSOC_RESTRICTED_CONST_PTR(float_type, phi_scaled_covariance_cached_main_, phi_scaled_covariance_cached_main);
+		CENSOC_RESTRICTED_CONST_PTR(float_type, phi_scaled_covariance_cached_tmp_, phi_scaled_covariance_cached_tmp);
+		CENSOC_RESTRICTED_CONST_PTR(float_type, phi_variance_cached_main_, phi_variance_cached_main);
+		CENSOC_RESTRICTED_CONST_PTR(float_type, phi_variance_cached_tmp_, phi_variance_cached_tmp);
+
+		CENSOC_RESTRICTED_CONST_PTR(float_type, complete_phi_mean_cached_main_, complete_phi_mean_cached_main);
+		CENSOC_RESTRICTED_CONST_PTR(float_type, complete_phi_mean_cached_tmp_, complete_phi_mean_cached_tmp);
+		CENSOC_RESTRICTED_CONST_PTR(float_type, complete_phi_variance_cached_main_, complete_phi_variance_cached_main);
+		CENSOC_RESTRICTED_CONST_PTR(float_type, complete_phi_variance_cached_tmp_, complete_phi_variance_cached_tmp);
+		CENSOC_RESTRICTED_CONST_PTR(float_type, complete_phi_covariance_cached_main_, complete_phi_covariance_cached_main);
+		CENSOC_RESTRICTED_CONST_PTR(float_type, complete_phi_covariance_cached_tmp_, complete_phi_covariance_cached_tmp);
+
+		for (size_type i(0); i != draws_sets_size; ++i)
+			sigma_bar_tau_cached_main_[i] =
+			sigma_bar_tau_cached_tmp_[i] =
+
+			phi_covariance_cached_main_[i] =
+			phi_covariance_cached_tmp_[i] =
+
+			phi_scaled_covariance_cached_main_[i] =
+			phi_scaled_covariance_cached_tmp_[i] =
+			phi_variance_cached_main_[i] =
+			phi_variance_cached_tmp_[i] =
+
+			complete_phi_mean_cached_main_[i] =
+			complete_phi_mean_cached_tmp_[i] =
+			complete_phi_variance_cached_main_[i] =
+			complete_phi_variance_cached_tmp_[i] =
+			complete_phi_covariance_cached_main_[i] =
+			complete_phi_covariance_cached_tmp_[i] =
+
+			censoc::largish<float_type>();
+
+		CENSOC_RESTRICTED_CONST_PTR(float_type, stage3_composite_equation_tau_cached_, stage3_composite_equation_tau_cached);
+		CENSOC_RESTRICTED_CONST_PTR(float_type, stage3_composite_equation_phi_mean_cached_, stage3_composite_equation_phi_mean_cached);
+		CENSOC_RESTRICTED_CONST_PTR(float_type, stage3_composite_equation_phi_variance_cached_, stage3_composite_equation_phi_variance_cached);
+		CENSOC_RESTRICTED_CONST_PTR(float_type, stage3_composite_equation_phi_covariance_cached_, stage3_composite_equation_phi_covariance_cached);
+		CENSOC_RESTRICTED_CONST_PTR(float_type, etavars_cache_, etavars_cache);
+		CENSOC_RESTRICTED_CONST_PTR(float_type, betavars_cache_, betavars_cache);
+		CENSOC_RESTRICTED_CONST_PTR(float_type, stage3_etavars_cache_, stage3_etavars_cache);
 		size_type const i_end(draws_sets_size * x_size);
 		for (size_type i(0); i != i_end; ++i) 
-			aa[i] = bb[i] = cc[i] = censoc::largish<float_type>();
+			stage3_composite_equation_tau_cached_[i] =
+			stage3_composite_equation_phi_mean_cached_[i] =
+			stage3_composite_equation_phi_variance_cached_[i] =
+			stage3_composite_equation_phi_covariance_cached_[i] =
+			etavars_cache_[i] =
+			betavars_cache_[i] =
+			stage3_etavars_cache_[i] =
+			censoc::largish<float_type>();
 	}
 
 	void
@@ -384,6 +506,8 @@ public:
 		assert(result.is_valid() == false);
 
 		coefficient_metadata_paramtype tau(coefficients[2 * x_size]);
+		coefficient_metadata_paramtype phi_variance(coefficients[2 * x_size + 2]);
+		coefficient_metadata_paramtype phi_covariance(coefficients[2 * x_size + 3]);
 
 		// note -- theta is also accessed directly as an offset from 'coefficients' array
 
@@ -391,8 +515,8 @@ public:
 
 		float_type accumulated_probability(0); 
 
-		uint8_t const * __restrict choice_sets_alternatives_ptr(choice_sets_alternatives.get());
-		int8_t const * __restrict matrix_composite_ptr(matrix_composite.get());
+		CENSOC_RESTRICTED_PTR(uint8_t const, choice_sets_alternatives_ptr, choice_sets_alternatives.get());
+		CENSOC_RESTRICTED_PTR(int8_t const, matrix_composite_ptr, matrix_composite.get());
 
 		coefficient_metadata_type const * const etavar(coefficients + x_size);
 
@@ -437,23 +561,149 @@ public:
 					sigma_cache = sigma_cache_tmp;
 				}
 
-
 				{
 					// calculate scaled distribution draws
 					float_type const tau_value(tau.value());
-					float_type const * const __restrict matrix_haltons_sigma_(matrix_haltons_sigma + i_modulo * float_repetitions_column_stride_size);
-					float_type * const __restrict sigma_cache_(sigma_cache + i_modulo * float_repetitions_column_stride_size);
+					CENSOC_ALIGNED_RESTRICTED_CONST_PTR(float_type const, matrix_haltons_sigma_, matrix_haltons_sigma + i_modulo * float_repetitions_column_stride_size);
+					CENSOC_ALIGNED_RESTRICTED_CONST_PTR(float_type, sigma_cache_, sigma_cache + i_modulo * float_repetitions_column_stride_size);
 					for (size_type r(0); r != repetitions; ++r) {
 						float_type const tmp(tau_value * matrix_haltons_sigma_[r]);
 						sigma_cache_[r] = tmp < 0 ? 1 / (1 - tmp) : tmp + 1;
 					}
+
+					// experimental mean-normalisation
+					CENSOC_ALIGNED_RESTRICTED_CONST_PTR_FROM_LOCAL_SCALAR(float_type, accumulator, 0);
+					for (size_type r(0); r != repetitions; ++r)
+						*accumulator += sigma_cache_[r];
+					assert(*accumulator != 0);
+					*accumulator = repetitions / *accumulator;
+					for (size_type r(0); r != repetitions; ++r)
+						sigma_cache_[r] *= *accumulator;
 				}
 
-				if (censoc::was_fpu_ok(respondent_probability_cache, &censoc::init_fpu_check_anchor) == false) { // No point in caching -- otherwise may reuse it detrementally on subsequent iteration(s) [when such may not have fpu exceptions flag set then)
+				if (censoc::was_fpu_ok(sigma_cache, &censoc::init_fpu_check_anchor) == false) { // No point in caching -- otherwise may reuse it detrementally on subsequent iteration(s) [when such may not have fpu exceptions flag set then)
 					sigma_bar_tau_cached[i_modulo] = censoc::largish<float_type>();
 					return;
 				} else
 					sigma_bar_tau_cached[i_modulo] = tau.value();
+			}
+
+			assert(phi_covariance.value() != censoc::largish<float_type>());
+			if (phi_covariance_cached_main[i_modulo] == phi_covariance.value())
+				phi_covariance_draws_cache = phi_covariance_draws_cache_main;
+			else if (phi_covariance_cached_tmp[i_modulo] == phi_covariance.value())
+				phi_covariance_draws_cache = phi_covariance_draws_cache_tmp;
+			else {
+				float_type * phi_covariance_cached;
+				if (phi_covariance.value_modified() == false) {
+					phi_covariance_cached = phi_covariance_cached_main;
+					phi_covariance_draws_cache = phi_covariance_draws_cache_main;
+				} else {
+					phi_covariance_cached = phi_covariance_cached_tmp;
+					phi_covariance_draws_cache = phi_covariance_draws_cache_tmp;
+				}
+
+				{
+					// calculate covariate distribution draws
+					CENSOC_ALIGNED_RESTRICTED_CONST_PTR_FROM_LOCAL_SCALAR(float_type const, sigma_portion_value, phi_covariance.value());
+					CENSOC_ALIGNED_RESTRICTED_CONST_PTR_FROM_LOCAL_SCALAR(float_type const, phi_portion_value, 1 - phi_covariance.value());
+					CENSOC_ALIGNED_RESTRICTED_CONST_PTR(float_type const, sigma_draws_, matrix_haltons_sigma + i_modulo * float_repetitions_column_stride_size);
+					CENSOC_ALIGNED_RESTRICTED_CONST_PTR(float_type const, phi_draws_, phi_draws + i_modulo * float_repetitions_column_stride_size);
+					CENSOC_ALIGNED_RESTRICTED_CONST_PTR(float_type, phi_covariance_draws_cache_, phi_covariance_draws_cache + i_modulo * float_repetitions_column_stride_size);
+					for (size_type r(0); r != repetitions; ++r)
+						phi_covariance_draws_cache_[r] = *sigma_portion_value * sigma_draws_[r] + *phi_portion_value * phi_draws_[r];
+				}
+
+				if (censoc::was_fpu_ok(phi_covariance_draws_cache, &censoc::init_fpu_check_anchor) == false) { // No point in caching -- otherwise may reuse it detrementally on subsequent iteration(s) [when such may not have fpu exceptions flag set then)
+					phi_covariance_cached[i_modulo] = censoc::largish<float_type>();
+					return;
+				} else
+					phi_covariance_cached[i_modulo] = phi_covariance.value();
+			}
+
+			assert(phi_covariance.value() != censoc::largish<float_type>());
+			assert(phi_variance.value() != censoc::largish<float_type>());
+			if (phi_scaled_covariance_cached_main[i_modulo] == phi_covariance.value() && phi_variance_cached_main[i_modulo] == phi_variance.value())
+				phi_scaled_draws_cache = phi_scaled_draws_cache_main;
+			else if (phi_scaled_covariance_cached_tmp[i_modulo] == phi_covariance.value() && phi_variance_cached_tmp[i_modulo] == phi_variance.value())
+				phi_scaled_draws_cache = phi_scaled_draws_cache_tmp;
+			else {
+				float_type * phi_scaled_covariance_cached;
+				float_type * phi_variance_cached;
+				if (phi_covariance.value_modified() == false && phi_variance.value_modified() == false) {
+					phi_variance_cached = phi_variance_cached_main;
+					phi_scaled_covariance_cached = phi_scaled_covariance_cached_main;
+					phi_scaled_draws_cache = phi_scaled_draws_cache_main;
+				} else {
+					phi_variance_cached = phi_variance_cached_tmp;
+					phi_scaled_covariance_cached = phi_scaled_covariance_cached_tmp;
+					phi_scaled_draws_cache = phi_scaled_draws_cache_tmp;
+				}
+
+				{
+					// calculate scaled distribution draws
+					CENSOC_ALIGNED_RESTRICTED_CONST_PTR_FROM_LOCAL_SCALAR(float_type const, phi_variance_value, phi_variance.value());
+					CENSOC_ALIGNED_RESTRICTED_CONST_PTR(float_type const, phi_covariance_draws_cache_, phi_covariance_draws_cache + i_modulo * float_repetitions_column_stride_size);
+					CENSOC_ALIGNED_RESTRICTED_CONST_PTR(float_type, phi_scaled_draws_cache_, phi_scaled_draws_cache + i_modulo * float_repetitions_column_stride_size);
+					for (size_type r(0); r != repetitions; ++r)
+						phi_scaled_draws_cache_[r] = *phi_variance_value * phi_covariance_draws_cache_[r];
+				}
+
+				if (censoc::was_fpu_ok(phi_scaled_draws_cache, &censoc::init_fpu_check_anchor) == false) { // No point in caching -- otherwise may reuse it detrementally on subsequent iteration(s) [when such may not have fpu exceptions flag set then)
+					phi_scaled_covariance_cached[i_modulo] = phi_variance_cached[i_modulo] = censoc::largish<float_type>();
+					return;
+				} else {
+					phi_scaled_covariance_cached[i_modulo] = phi_covariance.value();
+					phi_variance_cached[i_modulo] = phi_variance.value();
+				}
+			}
+
+			coefficient_metadata_paramtype const phi_mean(coefficients[2 * x_size + 1]);
+			assert(phi_variance.value() != censoc::largish<float_type>());
+			assert(phi_mean.value() != censoc::largish<float_type>());
+			if (complete_phi_mean_cached_main[i_modulo] == phi_mean.value() 
+			&& complete_phi_variance_cached_main[i_modulo] == phi_variance.value()
+			&& complete_phi_covariance_cached_main[i_modulo] == phi_covariance.value()
+			)
+				complete_phi_draws_cache = complete_phi_draws_cache_main;
+			else if (complete_phi_mean_cached_tmp[i_modulo] == phi_mean.value() 
+			&& complete_phi_variance_cached_tmp[i_modulo] == phi_variance.value()
+			&& complete_phi_covariance_cached_tmp[i_modulo] == phi_covariance.value()
+			)
+				complete_phi_draws_cache = complete_phi_draws_cache_tmp;
+			else {
+				float_type * complete_phi_mean_cached;
+				float_type * complete_phi_variance_cached;
+				float_type * complete_phi_covariance_cached;
+				if (phi_mean.value_modified() == false && phi_variance.value_modified() == false && phi_covariance.value_modified() == false) {
+					complete_phi_mean_cached = complete_phi_mean_cached_main;
+					complete_phi_variance_cached = complete_phi_variance_cached_main;
+					complete_phi_covariance_cached = complete_phi_covariance_cached_main;
+					complete_phi_draws_cache = complete_phi_draws_cache_main;
+				} else {
+					complete_phi_mean_cached = complete_phi_mean_cached_tmp;
+					complete_phi_variance_cached = complete_phi_variance_cached_tmp;
+					complete_phi_covariance_cached = complete_phi_covariance_cached_tmp;
+					complete_phi_draws_cache = complete_phi_draws_cache_tmp;
+				}
+
+				{
+					// calculate offset distribution draws
+					CENSOC_ALIGNED_RESTRICTED_CONST_PTR(float_type const, phi_scaled_draws_cache_, phi_scaled_draws_cache + i_modulo * float_repetitions_column_stride_size);
+					CENSOC_ALIGNED_RESTRICTED_CONST_PTR_FROM_LOCAL_SCALAR(float_type const, phi_mean_value, phi_mean.value());
+					CENSOC_ALIGNED_RESTRICTED_CONST_PTR(float_type, complete_phi_draws_cache_, complete_phi_draws_cache + i_modulo * float_repetitions_column_stride_size);
+					for (size_type r(0); r != repetitions; ++r)
+							complete_phi_draws_cache_[r] = *phi_mean_value + phi_scaled_draws_cache_[r];
+				}
+
+				if (censoc::was_fpu_ok(complete_phi_draws_cache, &censoc::init_fpu_check_anchor) == false) { // No point in caching -- otherwise may reuse it detrementally on subsequent iteration(s) [when such may not have fpu exceptions flag set then)
+					complete_phi_mean_cached[i_modulo] = complete_phi_variance_cached[i_modulo] = complete_phi_covariance_cached[i_modulo] = censoc::largish<float_type>();
+					return;
+				} else {
+					complete_phi_mean_cached[i_modulo] = phi_mean.value();
+					complete_phi_variance_cached[i_modulo] = phi_variance.value();
+					complete_phi_covariance_cached[i_modulo] = phi_covariance.value();
+				}
 			}
 
 			for (size_type set_ones_i(0); set_ones_i != repetitions; ++set_ones_i)
@@ -468,13 +718,13 @@ public:
 
 			for (size_type j(0); j != x_size; ++j) {
 				if (etavars_cache[eta_cache_respondent_column_begin + j] != etavar[j].value()) {
-					float_type * const __restrict eta_cache_ptr_x(eta_cache_x + (eta_cache_respondent_column_begin + j) * float_repetitions_column_stride_size);
-					float_type const * const __restrict matrix_haltons_nonsigma_ptr(matrix_haltons_nonsigma + (eta_cache_respondent_column_begin + j) * float_repetitions_column_stride_size);
-					typename censoc::aligned<float_type>::type const etavar_value(etavar[j].value());
+					CENSOC_ALIGNED_RESTRICTED_CONST_PTR(float_type, eta_cache_x_, eta_cache_x + (eta_cache_respondent_column_begin + j) * float_repetitions_column_stride_size);
+					CENSOC_ALIGNED_RESTRICTED_CONST_PTR(float_type const, matrix_haltons_nonsigma_, matrix_haltons_nonsigma + (eta_cache_respondent_column_begin + j) * float_repetitions_column_stride_size);
+					CENSOC_ALIGNED_RESTRICTED_CONST_PTR_FROM_LOCAL_SCALAR(float_type const, etavar_value, etavar[j].value());
 					for (size_type r(0); r != repetitions; ++r)
-						eta_cache_ptr_x[r] = matrix_haltons_nonsigma_ptr[r] * etavar_value;
+						eta_cache_x_[r] = matrix_haltons_nonsigma_[r] * *etavar_value;
 
-					if (censoc::was_fpu_ok(respondent_probability_cache, &censoc::init_fpu_check_anchor) == false) { // No point in caching -- otherwise may reuse it detrementally on subsequent iteration(s) [when such may not have fpu exceptions flag set then)
+					if (censoc::was_fpu_ok(eta_cache_x, &censoc::init_fpu_check_anchor) == false) { // No point in caching -- otherwise may reuse it detrementally on subsequent iteration(s) [when such may not have fpu exceptions flag set then)
 						etavars_cache[eta_cache_respondent_column_begin + j] = censoc::largish<float_type>();
 						// note -- not resetting 'betavars_cache' because this code should automatically re-run on next iteration. BUT this is only due to the fact that there is no 'main/transient' cache variants for etavars_ and betavars_ caches!!!
 						return;
@@ -485,34 +735,38 @@ public:
 				}
 			}
 
-			typename censoc::aligned<float_type>::type const phi_value(coefficients[2 * x_size + 1].value());
 			// now, one could further break-up the sigma * (eta + coeff) into "eta + coeff" cache and then into "sigma * xxx"... (i.e. have "stage3_composite_equation_tau_cached" multiplication be processed separately/later) but each of such caches is rather huge... will leave for further considerations... especially given that only thing which will be saved is the addition (in face of the already-needed multiplication)
 			for (size_type j(0); j != x_size; ++j) {
-				if (stage3_composite_equation_tau_cached[i_modulo] != tau.value() || stage3_composite_equation_phi_cached[i_modulo] != phi_value || betavars_cache[eta_cache_respondent_column_begin + j] != coefficients[j].value()
-				|| stage3_etavars_cache[eta_cache_respondent_column_begin + j] != etavar[j].value()
+				size_type const coefficient_column(eta_cache_respondent_column_begin + j);
+				if (stage3_composite_equation_tau_cached[coefficient_column] != tau.value() 
+						|| stage3_composite_equation_phi_mean_cached[coefficient_column] != phi_mean.value() 
+						|| stage3_composite_equation_phi_variance_cached[coefficient_column] != phi_variance.value() 
+						|| stage3_composite_equation_phi_covariance_cached[coefficient_column] != phi_covariance.value() 
+						|| betavars_cache[coefficient_column] != coefficients[j].value()
+						|| stage3_etavars_cache[coefficient_column] != etavar[j].value()
 				) {
-					float_type * const __restrict eta_cache_ptr(eta_cache + (eta_cache_respondent_column_begin + j) * float_repetitions_column_stride_size);
-					float_type const * const __restrict eta_cache_ptr_x(eta_cache_x + (eta_cache_respondent_column_begin + j) * float_repetitions_column_stride_size);
-					float_type const * const __restrict sigma_cache_ptr(sigma_cache + i_modulo * float_repetitions_column_stride_size);
-					typename censoc::aligned<float_type>::type const coefficient_value(coefficients[j].value()); 
-					float_type const * const __restrict coefficient_value_ptr(&coefficient_value); // todo -- rather being paranoid w.r.t. 'restrict' semantics
-					float_type const * const __restrict phi_value_ptr(&phi_value);
+					CENSOC_ALIGNED_RESTRICTED_CONST_PTR(float_type, eta_cache_, eta_cache + coefficient_column * float_repetitions_column_stride_size);
+					CENSOC_ALIGNED_RESTRICTED_CONST_PTR(float_type const, eta_cache_x_, eta_cache_x + coefficient_column * float_repetitions_column_stride_size);
+					CENSOC_ALIGNED_RESTRICTED_CONST_PTR(float_type const, sigma_cache_, sigma_cache + i_modulo * float_repetitions_column_stride_size);
+					CENSOC_ALIGNED_RESTRICTED_CONST_PTR(float_type const, complete_phi_draws_cache_, complete_phi_draws_cache + i_modulo * float_repetitions_column_stride_size);
+					CENSOC_ALIGNED_RESTRICTED_CONST_PTR_FROM_LOCAL_SCALAR(float_type const, coefficient_value, coefficients[j].value()); 
 					for (size_type r(0); r != repetitions; ++r)
-						eta_cache_ptr[r] = sigma_cache_ptr[r] * (eta_cache_ptr_x[r] + *coefficient_value_ptr) + *phi_value_ptr;
+						eta_cache_[r] = sigma_cache_[r] * (eta_cache_x_[r] + *coefficient_value) + complete_phi_draws_cache_[r];
 
-					if (censoc::was_fpu_ok(respondent_probability_cache, &censoc::init_fpu_check_anchor) == false) { // No point in caching -- otherwise may reuse it detrementally on subsequent iteration(s) [when such may not have fpu exceptions flag set then)
-						betavars_cache[eta_cache_respondent_column_begin + j] = stage3_etavars_cache[eta_cache_respondent_column_begin + j] = censoc::largish<float_type>();
-						// note -- not resetting 'stage3_composite_equation_tau_cached' because this code should automatically re-run on next iteration. BUT this is only due to the facet that there is no 'main/transient' cache variants for betavars_ and composite_equation_tau_ caches!!!
+					if (censoc::was_fpu_ok(eta_cache, &censoc::init_fpu_check_anchor) == false) { // No point in caching -- otherwise may reuse it detrementally on subsequent iteration(s) [when such may not have fpu exceptions flag set then)
+						stage3_composite_equation_tau_cached[coefficient_column] = stage3_composite_equation_phi_mean_cached[coefficient_column] = stage3_composite_equation_phi_variance_cached[coefficient_column] = stage3_composite_equation_phi_covariance_cached[coefficient_column] = betavars_cache[coefficient_column] = stage3_etavars_cache[coefficient_column] = censoc::largish<float_type>();
 						return;
 					} else {
 						// TODO -- later introduce main/transient (or a buffer/multiple of) caches!!! (no time for right now)
-						betavars_cache[eta_cache_respondent_column_begin + j] = coefficients[j].value();
-						stage3_etavars_cache[eta_cache_respondent_column_begin + j] = etavar[j].value();
+						stage3_composite_equation_tau_cached[coefficient_column] = tau.value();
+						stage3_composite_equation_phi_mean_cached[coefficient_column] = phi_mean.value();
+						stage3_composite_equation_phi_variance_cached[coefficient_column] = phi_variance.value();
+						stage3_composite_equation_phi_covariance_cached[coefficient_column] = phi_covariance.value();
+						betavars_cache[coefficient_column] = coefficients[j].value();
+						stage3_etavars_cache[coefficient_column] = etavar[j].value();
 					}
 				}
 			}
-			stage3_composite_equation_tau_cached[i_modulo] = tau.value();
-			stage3_composite_equation_phi_cached[i_modulo] = phi_value;
 
 			for (size_type t(0); t != respondents_choice_sets[i]; ++t) {
 
@@ -528,8 +782,8 @@ public:
 				for (size_type a(0); a != alternatives; ++a) {
 					assert(matrix_composite_ptr < debug_end_of_row_in_composite_matrix);
 					int const control(*matrix_composite_ptr++);
-					float_type * const __restrict dst(ev_cache_tmp_or_censor_cache_tmp + a * float_repetitions_column_stride_size);
-					float_type const * const __restrict src(eta_cache + eta_cache_respondent_column_begin * float_repetitions_column_stride_size);
+					CENSOC_ALIGNED_RESTRICTED_CONST_PTR(float_type, dst, ev_cache_tmp_or_censor_cache_tmp + a * float_repetitions_column_stride_size);
+					CENSOC_ALIGNED_RESTRICTED_CONST_PTR(float_type const, src, eta_cache + eta_cache_respondent_column_begin * float_repetitions_column_stride_size);
 					switch (control) {
 					case 0:
 					for (size_type tmp_i(0); tmp_i != repetitions; ++tmp_i) 
@@ -554,8 +808,8 @@ public:
 					for (size_type a(0); a != alternatives; ++a) {
 					assert(matrix_composite_ptr < debug_end_of_row_in_composite_matrix);
 					int const control(*matrix_composite_ptr++);
-						float_type * const __restrict dst(ev_cache_tmp_or_censor_cache_tmp + a * float_repetitions_column_stride_size);
-						float_type const * const __restrict src(eta_cache + (eta_cache_respondent_column_begin + x) * float_repetitions_column_stride_size);
+						CENSOC_ALIGNED_RESTRICTED_CONST_PTR(float_type, dst, ev_cache_tmp_or_censor_cache_tmp + a * float_repetitions_column_stride_size);
+						CENSOC_ALIGNED_RESTRICTED_CONST_PTR(float_type const, src, eta_cache + (eta_cache_respondent_column_begin + x) * float_repetitions_column_stride_size);
 						//assert(control == 0 || control == -1 || control == 1);
 						switch (control) {
 						case 1:
@@ -591,10 +845,10 @@ public:
 						// TODO -- consider fixing this, the way it is now is rather stupid wrt cpu-caching
 
 						// calculate 'exp' and aggregate across rows/alternatives
-						extended_float_type * const __restrict accum(repetitions_cache_rowwise_tmp);
+						CENSOC_ALIGNED_RESTRICTED_CONST_PTR(extended_float_type, accum, repetitions_cache_rowwise_tmp);
 						{ // a = 0, first alternative
-						extended_float_type * const __restrict dst(ev_cache);
-						float_type const * const __restrict src(ev_cache_tmp_or_censor_cache_tmp);
+						CENSOC_ALIGNED_RESTRICTED_CONST_PTR(extended_float_type, dst, ev_cache);
+						CENSOC_ALIGNED_RESTRICTED_CONST_PTR(float_type const, src, ev_cache_tmp_or_censor_cache_tmp);
 						for (size_type r(0); r != repetitions; ++r) {
 							extended_float_type const tmp(exponent_evaluation_choice_base::eval(src[r]));
 							accum[r] = tmp;
@@ -603,8 +857,8 @@ public:
 						}
 						}
 						for (size_type a(1); a != alternatives; ++a) {
-							extended_float_type * const __restrict dst(ev_cache);
-							float_type const * const __restrict src(ev_cache_tmp_or_censor_cache_tmp + a * float_repetitions_column_stride_size);
+							CENSOC_ALIGNED_RESTRICTED_CONST_PTR(extended_float_type, dst, ev_cache);
+							CENSOC_ALIGNED_RESTRICTED_CONST_PTR(float_type const, src, ev_cache_tmp_or_censor_cache_tmp + a * float_repetitions_column_stride_size);
 							for (size_type r(0); r != repetitions; ++r) {
 								extended_float_type const tmp(exponent_evaluation_choice_base::eval(src[r]));
 								accum[r] += tmp;
@@ -614,19 +868,19 @@ public:
 						}
 
 						{
-						extended_float_type * const __restrict dst(respondent_probability_cache);
-						extended_float_type const * const __restrict src(ev_cache);
+						CENSOC_ALIGNED_RESTRICTED_CONST_PTR(extended_float_type, dst, respondent_probability_cache);
+						CENSOC_ALIGNED_RESTRICTED_CONST_PTR(extended_float_type const, src, ev_cache);
 						for (size_type r(0); r != repetitions; ++r)
 							dst[r] *=  src[r] / accum[r];
 						}
 
 					} else {
 
-						extended_float_type * const __restrict accum(repetitions_cache_rowwise_tmp);
+						CENSOC_ALIGNED_RESTRICTED_CONST_PTR(extended_float_type, accum, repetitions_cache_rowwise_tmp);
 						{ // a =0, first alternative
 							if (chosen_alternative) {
-								float_type const * const __restrict src_a(ev_cache_tmp_or_censor_cache_tmp);
-								float_type const * const __restrict src_b(ev_cache_tmp_or_censor_cache_tmp + chosen_alternative * float_repetitions_column_stride_size);
+								CENSOC_ALIGNED_RESTRICTED_CONST_PTR(float_type const, src_a, ev_cache_tmp_or_censor_cache_tmp);
+								CENSOC_ALIGNED_RESTRICTED_CONST_PTR(float_type const, src_b, ev_cache_tmp_or_censor_cache_tmp + chosen_alternative * float_repetitions_column_stride_size);
 								for (size_type r(0); r != repetitions; ++r)
 									accum[r] = exponent_evaluation_choice_base::eval(src_a[r] - src_b[r]); 
 							} else for (size_type r(0); r != repetitions; ++r)
@@ -636,8 +890,8 @@ public:
 						}
 						for (size_type a(1); a != alternatives; ++a) {
 							if (a != chosen_alternative) {
-								float_type const * const __restrict src_a(ev_cache_tmp_or_censor_cache_tmp + a * float_repetitions_column_stride_size);
-								float_type const * const __restrict src_b(ev_cache_tmp_or_censor_cache_tmp + chosen_alternative * float_repetitions_column_stride_size);
+								CENSOC_ALIGNED_RESTRICTED_CONST_PTR(float_type const, src_a, ev_cache_tmp_or_censor_cache_tmp + a * float_repetitions_column_stride_size);
+								CENSOC_ALIGNED_RESTRICTED_CONST_PTR(float_type const, src_b, ev_cache_tmp_or_censor_cache_tmp + chosen_alternative * float_repetitions_column_stride_size);
 								for (size_type r(0); r != repetitions; ++r)
 									accum[r] += exponent_evaluation_choice_base::eval(src_a[r] - src_b[r]); 
 							} else for (size_type r(0); r != repetitions; ++r)
@@ -645,7 +899,7 @@ public:
 						}
 
 						{
-						extended_float_type * const __restrict dst(respondent_probability_cache);
+						CENSOC_ALIGNED_RESTRICTED_CONST_PTR(extended_float_type, dst, respondent_probability_cache);
 						for (size_type r(0); r != repetitions; ++r)
 							dst[r] /=  accum[r];
 						}
@@ -654,13 +908,12 @@ public:
 
 			} // end loop for each choiceset, for a given respondent
 
-			// prob should be between 0 and 1, so log is expected to be no greater than 0 (e.g. negative). so it is OK to use this value for early-exit test below...
 			{
-				extended_float_type * const __restrict dst(respondent_probability_cache);
-				extended_float_type sum(dst[0]);
-				for (size_type r(1); r != repetitions; ++r)
-					sum += dst[r];
-				accumulated_probability -= ::std::log(sum * repetitions_inv);
+				CENSOC_ALIGNED_RESTRICTED_CONST_PTR(extended_float_type const, src, respondent_probability_cache);
+				CENSOC_ALIGNED_RESTRICTED_CONST_PTR_FROM_LOCAL_SCALAR(extended_float_type, sum, 0);
+				for (size_type r(0); r != repetitions; ++r)
+					*sum += src[r];
+				accumulated_probability += accumulated_probability_log_repetitions_offset - ::std::log(*sum);
 			}
 
 			// note -- using the log of likelihood (instead of 'running products' way of the raw likelihood) in order to programmatically prevent underflow in cases of large number of respondents/observations being present in dataset.
@@ -697,13 +950,25 @@ public:
 		uint_fast64_t anticipated_ram_utilization(
 			sizeof(float_type) * (
 				draws_sets_size * 2 // sigma_bar_tau_cached (main and tmp)
+				+ draws_sets_size * 2 // phi_covariance_cached_{main,tmp}
+				+ draws_sets_size * 2 // phi_scaled_covariance_cached_{main,tmp}
+				+ draws_sets_size * 2 // phi_variance_cached_{main,tmp}
+				+ draws_sets_size * 2 // complete_phi_mean_cached_{main,tmp}
+				+ draws_sets_size * 2 // complete_phi_variance_cached_{main,tmp}
+				+ draws_sets_size * 2 // complete_phi_covariance_cached_{main,tmp}
 				+ draws_sets_size * repetitions // sigma haltons (now a vector)
+				+ draws_sets_size * repetitions // phi haltons (a vector)
 				+ repetitions * x_size * draws_sets_size // non sigma haltons 
-				+ draws_sets_size // stage3_composite_equation_tau_cached
-				+ draws_sets_size // stage3_composite_equation_phi_cached
+				+ x_size * draws_sets_size // stage3_composite_equation_tau_cached
+				+ x_size * draws_sets_size // stage3_composite_equation_phi_mean_cached
+				+ x_size * draws_sets_size // stage3_composite_equation_phi_variance_cached
+				+ x_size * draws_sets_size // stage3_composite_equation_phi_covariance_cached
 				+ x_size * draws_sets_size // etavars_cache
 				+ x_size * draws_sets_size // betavars_cache
 				+ 2 * repetitions * draws_sets_size // sigma_cache {main, tmp}
+				+ 2 * repetitions * draws_sets_size // phi_covariance_draws_cache {main, tmp}
+				+ 2 * repetitions * draws_sets_size // phi_scaled_draws_cache {main, tmp}
+				+ 2 * repetitions * draws_sets_size // complete_phi_draws_cache_{main, tmp}
 				+ 2 * repetitions * x_size * draws_sets_size // eta_cache and eta_cache_x
 				+ repetitions * max_alternatives // ev_cache_tmp_or_censor_cache_tmp
 			) 

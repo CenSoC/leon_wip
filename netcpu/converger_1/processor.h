@@ -46,8 +46,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <boost/type_traits.hpp>
 // #include <boost/aligned_storage.hpp>
 
-#include <Eigen/Core>
-
 #include <censoc/type_traits.h>
 #include <censoc/lexicast.h>
 #include <censoc/rand.h>
@@ -184,7 +182,7 @@ public:
 	void
 	sync(Vector const & grid_resolutions, size_paramtype value_i, bool const range_ended, float_paramtype value_f, float_paramtype value_from, float_paramtype rand_range) 
 	{
-		set_grid_resolutions(grid_resolutions);
+		base_type::set_grid_resolutions(grid_resolutions);
 		value_from_ = value_from;
 		rand_range_ = rand_range;
 		if ((this->range_ended = range_ended) == false)
@@ -250,12 +248,6 @@ struct task_processor_detail : netcpu::io_wrapper<netcpu::message::async_driver>
 
 	typedef typename converger_1::key_typepair::ram key_type;
 	BOOST_STATIC_ASSERT(::boost::is_unsigned<key_type>::value);
-
-	/*
-	Rethinking the whole row-major layout. Mainly because the composite matrix (z ~ x ~ y) appears to be used only '1 row at a time' anyway -- thus even a row-based matrix should not cause performance issues when it is only used to generate 'row views'.
-	*/
-	typedef ::Eigen::Matrix<float_type, ::Eigen::Dynamic, ::Eigen::Dynamic> matrix_columnmajor_type;
-	typedef ::Eigen::Matrix<int, ::Eigen::Dynamic, ::Eigen::Dynamic, ::Eigen::AutoAlign | ::Eigen::RowMajor> int_matrix_rowmajor_type;
 
 	typedef converger_1::coefficient_metadata<N, F> coefficient_metadata_type;
 	typedef typename censoc::param<coefficient_metadata_type>::type coefficient_metadata_paramtype;
@@ -499,7 +491,7 @@ struct task_processor_detail : netcpu::io_wrapper<netcpu::message::async_driver>
 				for (unsigned i(0);;++i) {
 					::std::ofstream bulk_msg_file(bulk_msg_path.c_str(), ::std::ios::binary | ::std::ios::trunc);
 					bulk_msg_file.write(reinterpret_cast<char const *>(io().read_raw.head()), io().read_raw.size());
-					if (bulk_msg_file == false) {
+					if (!bulk_msg_file) {
 						censoc::scheduler::sleep_s(1);
 						if (i != 33) // todo -- use ncpus (or max clone index)
 							continue;

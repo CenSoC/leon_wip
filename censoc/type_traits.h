@@ -101,15 +101,25 @@ template <typename T> T static largish();
 template <> float largish<float>() { return 1e+38f; }
 template <> double largish<double>() { return 1e+308; }
 
-#ifdef __GNUC__
 unsigned const static DefaultAlign = 16;
-// todo enclose in hashdefs for gcc vs msvc, etc.
-template <typename T>
-struct aligned {
-	typedef T type __attribute__ ((aligned(16)));
-};
+
+#ifdef __GNUC__
+
+#define CENSOC_RESTRICTED_PTR(t, name, init_expr) t * __restrict__ name(init_expr)
+
+#define CENSOC_RESTRICTED_CONST_PTR(t, name, init_expr) t * const __restrict__ name(init_expr)
+
+#define CENSOC_ALIGNED_RESTRICTED_CONST_PTR(t, name, init_expr) t * const __restrict__ name((t *) __builtin_assume_aligned((init_expr), 16)) ; assert(!((uintptr_t)name % DefaultAlign))
+
+#define CENSOC_ALIGNED_RESTRICTED_CONST_PTR_FROM_LOCAL_SCALAR__(t, name, init_expr, line) t __attribute__ ((aligned(16))) censoc_aligned_restricted_ptr_from_local_scalar_ ## name ## _ ## line (init_expr) ; t * const __restrict__ name((t *) __builtin_assume_aligned(& censoc_aligned_restricted_ptr_from_local_scalar_ ## name ## _ ## line, 16)) ; assert(!((uintptr_t)name % DefaultAlign))
+
+#define CENSOC_ALIGNED_RESTRICTED_CONST_PTR_FROM_LOCAL_SCALAR_(t, name, init_expr, line) CENSOC_ALIGNED_RESTRICTED_CONST_PTR_FROM_LOCAL_SCALAR__(t, name, init_expr, line)
+
+#define CENSOC_ALIGNED_RESTRICTED_CONST_PTR_FROM_LOCAL_SCALAR(t, name, init_expr) CENSOC_ALIGNED_RESTRICTED_CONST_PTR_FROM_LOCAL_SCALAR_(t, name, init_expr, __LINE__)
+
+
 #else
-#error "attribute aligned has not been implemented for this compiler... TODO..."
+#error "aligned and restricted semantics have not yet been implemented for this compiler... TODO..."
 #endif
 
 }

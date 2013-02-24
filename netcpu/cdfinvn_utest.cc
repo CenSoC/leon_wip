@@ -45,9 +45,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdlib.h>
 
 #include <iostream>
+#include <vector>
 #include <boost/asio.hpp>
-
-#include <Eigen/Core>
 
 #include <censoc/lexicast.h>
 #include <censoc/cdfinvn.h>
@@ -75,12 +74,11 @@ struct checker {
 template <typename F>
 struct tester {
 	typedef F float_type;
-	typedef ::Eigen::Array<float_type, ::Eigen::Dynamic, 1> vector_type;
 
 	tester(float_type from, float_type to)
 	{
-		vector_type v(1);
-		v[0] = from;
+		::std::vector<float_type> v; 
+		v.push_back(from);
 		::censoc::cdfinvn<float_type, unsigned, checker<float_type> > cdfinvn(to);  
 		cdfinvn.eval(v, v.size());
 	}

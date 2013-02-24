@@ -59,7 +59,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <boost/enable_shared_from_this.hpp>
 #include <boost/algorithm/string.hpp>
 #include <boost/regex.hpp>
-#include <boost/xpressive/xpressive.hpp>
+// #include <boost/xpressive/xpressive.hpp>
 
 #include <censoc/empty.h>
 #include <censoc/type_traits.h>
@@ -172,8 +172,10 @@ private:
 	bool read_is_pending;
 	bool write_is_pending;
 
+protected:
 	// this is needed due to a likely bug in currently-installed boost::asio (some callbacks, even after an OK close call, get called with !error as opposed to error == canceled)
 	bool canceled_;
+private:
 
 	unsigned total_bytes_read;
 	unsigned const static max_read_capacity = 1024 * 1024 * 30;
@@ -340,7 +342,7 @@ private:
 							body_size = ::boost::lexical_cast<unsigned>(header_value);
 						else if (header_name == "content-type") {
 							if (header_value.find("multipart/form-data") != ::std::string::npos) {
-#if 0
+#if 1
 								::boost::regex e("\\W*boundary=([^\"]+)");
 								::boost::match_results< ::std::string::const_iterator> m;
 								if (::boost::regex_search(header_value, m, e) == true && m[1].matched == true) {
@@ -349,6 +351,7 @@ private:
 									::std::cerr << "found boundary(=" << body_boundary << ")\n";
 								}
 #else
+								// TODO/NOTE -- xpressive (albeit with the benefit of templated processing) is not compiling on gcc 4.7.2 from boost 1_52 due to the fact that RTTI needs to be enabled, and I really want to continue using -fno-rtti for as much as I can...
 								// todo -- regex search vs match in terms of efficiency/preformance!!!
 								::boost::xpressive::sregex e(::boost::xpressive::sregex::compile("\\W*boundary=([^\"]+)"));
 								::boost::xpressive::smatch m;
@@ -459,7 +462,7 @@ private:
 	{
 		::std::cerr << "on body name line\n";
 		::std::string const l(get_line(bytes));
-		// todo -- basic hack for the time-being, also later use boost xpressive (as per code which does the boundary discovery)!
+		// todo -- basic hack for the time-being, also later use boost xpressive (as per code which does the boundary discovery)! (although boost 1_52 seems to call typeid and I like to use "-fno-rtti"...
 		::boost::regex e("\\W*name=\"([^\"]+)\"");
 		::boost::match_results< ::std::string::const_iterator> m;
 		if (::boost::regex_search(l, m, e) == true && m[1].matched == true) {
@@ -650,6 +653,11 @@ struct http_adapter_driver : netcpu::message::async_driver_detail<virtual_enable
 	{
 		native_protocol::error_callback(&http_adapter_driver::on_native_protocol_exception, this);
 		http_protocol::handshake_callback = ::boost::bind(&http_adapter_driver::on_http_handshake, this);
+	}
+
+	~http_adapter_driver()
+	{
+		http_protocol::canceled_ = true;
 	}
 
 	void

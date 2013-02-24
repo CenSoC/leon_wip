@@ -149,7 +149,7 @@ struct task_processor : censoc::exp_lookup::exponent_evaluation_choice<EF, typen
 
 	size_type const max_alternatives;
 	size_type const repetitions;
-	extended_float_type const repetitions_inv;
+	float_type const accumulated_probability_log_repetitions_offset;
 	size_type float_repetitions_column_stride_size;
 	size_type extended_float_repetitions_column_stride_size;
 
@@ -188,7 +188,7 @@ struct task_processor : censoc::exp_lookup::exponent_evaluation_choice<EF, typen
 
 	// TODO -- later deprecate message.h typedef size_type and pass it via the template arg!!!
 	task_processor(meta_msg_type const & meta_msg)	
-	: max_alternatives(meta_msg.model.dataset.max_alternatives()), repetitions(meta_msg.model.repetitions()), repetitions_inv(1 / static_cast<extended_float_type>(repetitions)), x_size(meta_msg.model.dataset.x_size()), draws_sets_size(meta_msg.model.draws_sets_size()), 
+	: max_alternatives(meta_msg.model.dataset.max_alternatives()), repetitions(meta_msg.model.repetitions()), accumulated_probability_log_repetitions_offset(::std::log(static_cast<float_type>(repetitions))), x_size(meta_msg.model.dataset.x_size()), draws_sets_size(meta_msg.model.draws_sets_size()), 
 	reduce_exp_complexity(meta_msg.model.reduce_exp_complexity())
 	{
 		// default stride for majority of float_type vectorized data access
@@ -210,11 +210,6 @@ struct task_processor : censoc::exp_lookup::exponent_evaluation_choice<EF, typen
 			extended_float_repetitions_column_stride_size = repetitions + extended_float_stride_align_by - extended_float_repetitions_column_stride_size_modulo;
 		else
 			extended_float_repetitions_column_stride_size = repetitions;
-
-		// MUST note -- was_fpu_ok has, currently, respondent_probability_cache is, eventually (below), passed in many cases. this is because: 
-		// a) the contiguous memory layout of the necessary data/caches. 
-		// b) the explicit '__restrict' pointers are copied from respondent_probability_cache (i.e. it, in itself, is still declared as non __strict)
-		// if such a memory layout allocation strategy changes, then one must become more specific w.r.t. arguments passed to 'was_fpu_ok' at various cases
 
 		//---
 		respondent_probability_cache = static_cast<extended_float_type*>(0);
@@ -284,13 +279,13 @@ public:
 	{
 		// tmp-based testing: force recalculation of all caches:                                                                                                                   
 		// NOTE -- this is ONLY working because of not required for alignment for such variables/caches (otherwise repetetions_stride size thingy must be taken into account)
-		float_type * const __restrict a(composite_equation_tau_cached);
+		CENSOC_RESTRICTED_CONST_PTR(float_type, a, composite_equation_tau_cached);
 
 		for (size_type i(0); i != draws_sets_size; ++i)
 			a[i] = censoc::largish<float_type>();
 
-		float_type * const __restrict d(etavars_cache);
-		float_type * const __restrict e(betavars_cache);
+		CENSOC_RESTRICTED_CONST_PTR(float_type, d, etavars_cache);
+		CENSOC_RESTRICTED_CONST_PTR(float_type, e, betavars_cache);
 		size_type const i_end(draws_sets_size * x_size);
 		for (size_type i(0); i != i_end; ++i) 
 			d[i] = e[i] = censoc::largish<float_type>();
@@ -356,8 +351,8 @@ public:
 
 		float_type accumulated_probability(0); 
 
-		uint8_t const * __restrict choice_sets_alternatives_ptr(choice_sets_alternatives.get());
-		int8_t const * __restrict matrix_composite_ptr(matrix_composite.get());
+		CENSOC_RESTRICTED_PTR(uint8_t const, choice_sets_alternatives_ptr, choice_sets_alternatives.get());
+		CENSOC_RESTRICTED_PTR(int8_t const, matrix_composite_ptr, matrix_composite.get());
 
 		coefficient_metadata_type const * const etavar(coefficients + x_size);
 
@@ -400,13 +395,13 @@ public:
 
 			for (size_type j(0); j != x_size; ++j) {
 				if (etavars_cache[eta_cache_respondent_column_begin + j] != etavar[j].value()) {
-					float_type * const __restrict eta_cache_ptr_x(eta_cache_x + (eta_cache_respondent_column_begin + j) * float_repetitions_column_stride_size);
-					float_type const * const __restrict matrix_haltons_nonsigma_ptr(matrix_haltons_nonsigma + (eta_cache_respondent_column_begin + j) * float_repetitions_column_stride_size);
-					typename censoc::aligned<float_type>::type const etavar_value(etavar[j].value());
+					CENSOC_ALIGNED_RESTRICTED_CONST_PTR(float_type, eta_cache_ptr_x, eta_cache_x + (eta_cache_respondent_column_begin + j) * float_repetitions_column_stride_size);
+					CENSOC_ALIGNED_RESTRICTED_CONST_PTR(float_type const, matrix_haltons_nonsigma_ptr, matrix_haltons_nonsigma + (eta_cache_respondent_column_begin + j) * float_repetitions_column_stride_size);
+					CENSOC_ALIGNED_RESTRICTED_CONST_PTR_FROM_LOCAL_SCALAR(float_type const, etavar_value, etavar[j].value());
 					for (size_type r(0); r != repetitions; ++r)
-						eta_cache_ptr_x[r] = matrix_haltons_nonsigma_ptr[r] * etavar_value;
+						eta_cache_ptr_x[r] = matrix_haltons_nonsigma_ptr[r] * *etavar_value;
 
-					if (censoc::was_fpu_ok(respondent_probability_cache, &censoc::init_fpu_check_anchor) == false) { // No point in caching -- otherwise may reuse it detrementally on subsequent iteration(s) [when such may not have fpu exceptions flag set then)
+					if (censoc::was_fpu_ok(eta_cache_x, &censoc::init_fpu_check_anchor) == false) { // No point in caching -- otherwise may reuse it detrementally on subsequent iteration(s) [when such may not have fpu exceptions flag set then)
 						etavars_cache[eta_cache_respondent_column_begin + j] = censoc::largish<float_type>();
 						// note -- not resetting 'betavars_cache' because this code should automatically re-run on next iteration. BUT this is only due to the facet that there is no 'main/transient' cache variants for etavars_ and betavars_ caches!!!
 						return;
@@ -420,13 +415,13 @@ public:
 
 			for (size_type j(0); j != x_size; ++j) {
 				if (betavars_cache[eta_cache_respondent_column_begin + j] != coefficients[j].value()) {
-					float_type * const __restrict eta_cache_ptr(eta_cache + (eta_cache_respondent_column_begin + j) * float_repetitions_column_stride_size);
-					float_type const * const __restrict eta_cache_ptr_x(eta_cache_x + (eta_cache_respondent_column_begin + j) * float_repetitions_column_stride_size);
-					typename censoc::aligned<float_type>::type const coefficient_value(coefficients[j].value());
+					CENSOC_ALIGNED_RESTRICTED_CONST_PTR(float_type, eta_cache_ptr, eta_cache + (eta_cache_respondent_column_begin + j) * float_repetitions_column_stride_size);
+					CENSOC_ALIGNED_RESTRICTED_CONST_PTR(float_type const, eta_cache_ptr_x, eta_cache_x + (eta_cache_respondent_column_begin + j) * float_repetitions_column_stride_size);
+					CENSOC_ALIGNED_RESTRICTED_CONST_PTR_FROM_LOCAL_SCALAR(float_type const, coefficient_value, coefficients[j].value());
 					for (size_type r(0); r != repetitions; ++r)
-						eta_cache_ptr[r] = eta_cache_ptr_x[r] + coefficient_value;
+						eta_cache_ptr[r] = eta_cache_ptr_x[r] + *coefficient_value;
 
-					if (censoc::was_fpu_ok(respondent_probability_cache, &censoc::init_fpu_check_anchor) == false) { // No point in caching -- otherwise may reuse it detrementally on subsequent iteration(s) [when such may not have fpu exceptions flag set then)
+					if (censoc::was_fpu_ok(eta_cache, &censoc::init_fpu_check_anchor) == false) { // No point in caching -- otherwise may reuse it detrementally on subsequent iteration(s) [when such may not have fpu exceptions flag set then)
 						betavars_cache[eta_cache_respondent_column_begin + j] = censoc::largish<float_type>();
 						// note -- not resetting 'composite_equation_tau_cached' because this code should automatically re-run on next iteration. BUT this is only due to the facet that there is no 'main/transient' cache variants for betavars_ and composite_equation_tau_ caches!!!
 						return;
@@ -450,8 +445,8 @@ public:
 				for (size_type a(0); a != alternatives; ++a) {
 					assert(matrix_composite_ptr < debug_end_of_row_in_composite_matrix);
 					int const control(*matrix_composite_ptr++);
-					float_type * const __restrict dst(ev_cache_tmp_or_censor_cache_tmp + a * float_repetitions_column_stride_size);
-					float_type const * const __restrict src(eta_cache + eta_cache_respondent_column_begin * float_repetitions_column_stride_size);
+					CENSOC_ALIGNED_RESTRICTED_CONST_PTR(float_type, dst, ev_cache_tmp_or_censor_cache_tmp + a * float_repetitions_column_stride_size);
+					CENSOC_ALIGNED_RESTRICTED_CONST_PTR(float_type const, src, eta_cache + eta_cache_respondent_column_begin * float_repetitions_column_stride_size);
 					switch (control) {
 					case 0:
 					for (size_type tmp_i(0); tmp_i != repetitions; ++tmp_i) 
@@ -476,8 +471,8 @@ public:
 					for (size_type a(0); a != alternatives; ++a) {
 					assert(matrix_composite_ptr < debug_end_of_row_in_composite_matrix);
 					int const control(*matrix_composite_ptr++);
-						float_type * const __restrict dst(ev_cache_tmp_or_censor_cache_tmp + a * float_repetitions_column_stride_size);
-						float_type const * const __restrict src(eta_cache + (eta_cache_respondent_column_begin + x) * float_repetitions_column_stride_size);
+						CENSOC_ALIGNED_RESTRICTED_CONST_PTR(float_type, dst, ev_cache_tmp_or_censor_cache_tmp + a * float_repetitions_column_stride_size);
+						CENSOC_ALIGNED_RESTRICTED_CONST_PTR(float_type const, src, eta_cache + (eta_cache_respondent_column_begin + x) * float_repetitions_column_stride_size);
 						//assert(control == 0 || control == -1 || control == 1);
 						switch (control) {
 						case 1:
@@ -513,10 +508,10 @@ public:
 						// TODO -- consider fixing this, the way it is now is rather stupid wrt cpu-caching
 
 						// calculate 'exp' and aggregate across rows/alternatives
-						extended_float_type * const __restrict accum(repetitions_cache_rowwise_tmp);
+						CENSOC_ALIGNED_RESTRICTED_CONST_PTR(extended_float_type, accum, repetitions_cache_rowwise_tmp);
 						{ // a = 0, first alternative
-						extended_float_type * const __restrict dst(ev_cache);
-						float_type const * const __restrict src(ev_cache_tmp_or_censor_cache_tmp);
+						CENSOC_ALIGNED_RESTRICTED_CONST_PTR(extended_float_type, dst, ev_cache);
+						CENSOC_ALIGNED_RESTRICTED_CONST_PTR(float_type const, src, ev_cache_tmp_or_censor_cache_tmp);
 						for (size_type r(0); r != repetitions; ++r) {
 							extended_float_type const tmp(exponent_evaluation_choice_base::eval(src[r]));
 							accum[r] = tmp;
@@ -525,8 +520,8 @@ public:
 						}
 						}
 						for (size_type a(1); a != alternatives; ++a) {
-							extended_float_type * const __restrict dst(ev_cache);
-							float_type const * const __restrict src(ev_cache_tmp_or_censor_cache_tmp + a * float_repetitions_column_stride_size);
+							CENSOC_ALIGNED_RESTRICTED_CONST_PTR(extended_float_type, dst, ev_cache);
+							CENSOC_ALIGNED_RESTRICTED_CONST_PTR(float_type const, src, ev_cache_tmp_or_censor_cache_tmp + a * float_repetitions_column_stride_size);
 							for (size_type r(0); r != repetitions; ++r) {
 								extended_float_type const tmp(exponent_evaluation_choice_base::eval(src[r]));
 								accum[r] += tmp;
@@ -536,19 +531,19 @@ public:
 						}
 
 						{
-						extended_float_type * const __restrict dst(respondent_probability_cache);
-						extended_float_type const * const __restrict src(ev_cache);
+						CENSOC_ALIGNED_RESTRICTED_CONST_PTR(extended_float_type, dst, respondent_probability_cache);
+						CENSOC_ALIGNED_RESTRICTED_CONST_PTR(extended_float_type const, src, ev_cache);
 						for (size_type r(0); r != repetitions; ++r)
 							dst[r] *=  src[r] / accum[r];
 						}
 
 					} else {
 
-						extended_float_type * const __restrict accum(repetitions_cache_rowwise_tmp);
+						CENSOC_ALIGNED_RESTRICTED_CONST_PTR(extended_float_type, accum, repetitions_cache_rowwise_tmp);
 						{ // a =0, first alternative
 							if (chosen_alternative) {
-								float_type const * const __restrict src_a(ev_cache_tmp_or_censor_cache_tmp);
-								float_type const * const __restrict src_b(ev_cache_tmp_or_censor_cache_tmp + chosen_alternative * float_repetitions_column_stride_size);
+								CENSOC_ALIGNED_RESTRICTED_CONST_PTR(float_type const, src_a, ev_cache_tmp_or_censor_cache_tmp);
+								CENSOC_ALIGNED_RESTRICTED_CONST_PTR(float_type const, src_b, ev_cache_tmp_or_censor_cache_tmp + chosen_alternative * float_repetitions_column_stride_size);
 								for (size_type r(0); r != repetitions; ++r)
 									accum[r] = exponent_evaluation_choice_base::eval(src_a[r] - src_b[r]); 
 							} else for (size_type r(0); r != repetitions; ++r)
@@ -558,8 +553,8 @@ public:
 						}
 						for (size_type a(1); a != alternatives; ++a) {
 							if (a != chosen_alternative) {
-								float_type const * const __restrict src_a(ev_cache_tmp_or_censor_cache_tmp + a * float_repetitions_column_stride_size);
-								float_type const * const __restrict src_b(ev_cache_tmp_or_censor_cache_tmp + chosen_alternative * float_repetitions_column_stride_size);
+								CENSOC_ALIGNED_RESTRICTED_CONST_PTR(float_type const, src_a, ev_cache_tmp_or_censor_cache_tmp + a * float_repetitions_column_stride_size);
+								CENSOC_ALIGNED_RESTRICTED_CONST_PTR(float_type const, src_b, ev_cache_tmp_or_censor_cache_tmp + chosen_alternative * float_repetitions_column_stride_size);
 								for (size_type r(0); r != repetitions; ++r)
 									accum[r] += exponent_evaluation_choice_base::eval(src_a[r] - src_b[r]); 
 							} else for (size_type r(0); r != repetitions; ++r)
@@ -567,7 +562,7 @@ public:
 						}
 
 						{
-						extended_float_type * const __restrict dst(respondent_probability_cache);
+						CENSOC_ALIGNED_RESTRICTED_CONST_PTR(extended_float_type, dst, respondent_probability_cache);
 						for (size_type r(0); r != repetitions; ++r)
 							dst[r] /=  accum[r];
 						}
@@ -576,13 +571,12 @@ public:
 
 			} // end loop for each choiceset, for a given respondent
 
-			// prob should be between 0 and 1, so log is expected to be no greater than 0 (e.g. negative). so it is OK to use this value for early-exit test below...
 			{
-				extended_float_type * const __restrict dst(respondent_probability_cache);
-				extended_float_type sum(dst[0]);
-				for (size_type r(1); r != repetitions; ++r)
-					sum += dst[r];
-				accumulated_probability -= ::std::log(sum * repetitions_inv);
+				CENSOC_ALIGNED_RESTRICTED_CONST_PTR(extended_float_type const, src, respondent_probability_cache);
+				CENSOC_ALIGNED_RESTRICTED_CONST_PTR_FROM_LOCAL_SCALAR(extended_float_type, sum, 0);
+				for (size_type r(0); r != repetitions; ++r)
+					*sum += src[r];
+				accumulated_probability += accumulated_probability_log_repetitions_offset - ::std::log(*sum);
 			}
 
 			// note -- using the log of likelihood (instead of 'running products' way of the raw likelihood) in order to programmatically prevent underflow in cases of large number of respondents/observations being present in dataset.
