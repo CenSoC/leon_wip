@@ -119,9 +119,9 @@ define (uncomment) BOOST_DISABLE_THREADS
 #define BOOST_NO_RTTI
 #define BOOST_NO_TYPEID
 
-then start shell in relevant mingw33 mode,
+then start shell in relevant mingw32 mode,
 
-./bjam toolset=gcc cxxflags="-std=c++11 -flto " variant=release link=static threading=single --without-thread --without-wave --without-mpi --without-python --without-graph --without-graph_parallel --without-program_options --without-signals --without-test --without-serialization --layout=versioned install
+./bjam --debug-building abi=ms address-model=32 architecture=x86 instruction-set=i686 binary-format=pe target-os=windows toolset=gcc cxxflags="-std=c++11 -flto " variant=release link=static threading=single --without-thread --without-wave --without-mpi --without-python --without-graph --without-graph_parallel --without-program_options --without-signals --without-test --without-serialization --layout=versioned install
 
 to rename versioned libs in the installed dir, can try something like this:
 first to test:
@@ -147,5 +147,9 @@ gmake install
 typedef long double float_t;
 typedef long double double_t;
 
-BUT -- THIS IS VERY DANGEROUS AND SHOULD NOT BE DONE BY DEFAULT (SEE NETCPU/BSDMAKEFILE COMMENTS AS TO WHY).
+BUT -- THIS IS VERY DANGEROUS AND SHOULD NOT BE DONE BY DEFAULT (SEE NETCPU/BSDMAKEFILE COMMENTS AS TO WHY)...
 
+... and if one wants to live even more dangerously, try 
+# elif (__FLT_EVAL_METHOD__ == -1)    
+typedef float float_t;
+typedef double double_t;

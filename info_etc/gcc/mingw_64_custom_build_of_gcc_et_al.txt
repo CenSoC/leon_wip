@@ -121,7 +121,7 @@ define (uncomment) BOOST_DISABLE_THREADS
 
 then restart shell in relevant mingw64 mode,
 
-./bjam toolset=gcc cxxflags="-std=c++11 -flto " variant=release link=static threading=single --without-thread --without-wave --without-mpi --without-python --without-graph --without-graph_parallel --without-program_options --without-signals --without-test --without-serialization --layout=versioned install
+./bjam  --debug-building abi=ms address-model=64 architecture=x86 instruction-set=core2 binary-format=pe target-os=windows toolset=gcc cxxflags="-std=c++11 -flto " variant=release link=static threading=single --without-thread --without-wave --without-mpi --without-python --without-graph --without-graph_parallel --without-program_options --without-signals --without-test --without-serialization --layout=versioned install
 
 
 to rename versioned libs in the installed dir, can try something like this:
@@ -147,4 +147,9 @@ in "./x86_64-w64-mingw32/include/math.h" file may need to have double_t et al de
 typedef long double float_t;
 typedef long double double_t;
 
-BUT -- THIS IS VERY DANGEROUS AND SHOULD NOT BE DONE BY DEFAULT (SEE NETCPU/BSDMAKEFILE COMMENTS AS TO WHY).
+BUT -- THIS IS VERY DANGEROUS AND SHOULD NOT BE DONE BY DEFAULT (SEE NETCPU/BSDMAKEFILE COMMENTS AS TO WHY)...
+
+... and if one wants to live even more dangerously, try 
+# elif (__FLT_EVAL_METHOD__ == -1)    
+typedef float float_t;
+typedef double double_t;

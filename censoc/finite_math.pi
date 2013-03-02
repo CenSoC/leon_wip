@@ -126,6 +126,11 @@ namespace censoc {
 		return rv;
 	}
 
+	void extern
+	opacify(...) noexcept
+	{
+	}
+
 
 }
 

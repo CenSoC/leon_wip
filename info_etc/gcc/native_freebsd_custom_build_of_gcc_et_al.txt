@@ -227,7 +227,7 @@ define (uncomment) BOOST_DISABLE_THREADS
 
 define (uncomment) WIN32 nonsense
 
-./bjam toolset=gcc cxxflags="-std=c++11 -flto " variant=release link=static threading=single --without-thread --without-wave --without-mpi --without-python --without-graph --without-graph_parallel --without-program_options --without-signals --without-test --without-serialization --layout=versioned install
+./bjam --debug-building toolset=gcc cxxflags="-std=c++11 -flto " variant=release link=static threading=single --without-thread --without-wave --without-mpi --without-python --without-graph --without-graph_parallel --without-program_options --without-signals --without-test --without-serialization --layout=versioned install
 
 now, because the layout was versioned (otherwise link=static would not work in some previous versions of boost and I havent got the time to re-test on the most current downloaded one), need to do some extra steps:
 

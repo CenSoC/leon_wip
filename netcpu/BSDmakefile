@@ -228,7 +228,8 @@ FLAGS_FAST_E6550 = ${FLAGS_FAST_COMMON} -finline-limit=1000 --param inline-unit-
 
 # -mfpmath=sse+387
 
-# why the option -mfpmath=sse+387 is not used. Whist the benefit appears to be in getting extra registers by utilising both of the instruction sets, the dangers are:
+# As to why the option -mfpmath=sse+387 should be used with extreme/experimental care... 
+# Whist the benefit appears to be in getting extra registers by utilising both of the instruction sets, the dangers are:
 # i) gcc alters __FLT_EVAL_METHOD__ which in turn, on some systems (e.g. linux, mingw) alters the type of float_t and double_t whilst on other systems appears to be irrelevant w.r.t. the size of float_t et al (e.g. FreeBSD 8.2)
 # ii) in optimization scenarios where both of the fpu instruction sets are deployed, gcc may use routines which expect 387 behaviour storage (intermediates are at least 80 bits wide), and some of such routines may well reference float_t, perhaps expecting it to be default-sized of at least 80 bits... implying that all float_t and double_t may need to be defined as 'long double' (as indeed is the case in linux, et al machine or bits math.h and defaults.h et al). 
 # Whilst this 'loung double' may work by hacking math.h in mingw et al (to add cases for __FLT_EVAL_METHOD__ == -1, as gcc defines scenarios where both sse and 387 fp math is used) -- and such was in fact the practice in previous revisions in this repository; this may not always work with other routines expecting the float_t being of different (hardware default) __FLT_EVAL_METHOD__ usecase (e.g. == 0 on x86_64, whilst == 2 on x86). And whilst this may work for scalars, passing things like arrays of float_t may definitely break. The issue of breakage may not become apparent until the certain optimization corner-cases bring them to light (as indeed have happened during migration from 4.6.2 to 4.7.2 -- perhaps newer compiler had the ability to see extra places to optimize the code which enabled it to utilize 387 instruction set a bit more often... who knows... it's not really important in this context).
@@ -241,8 +242,8 @@ FLAGS_FAST_E6550 = ${FLAGS_FAST_COMMON} -finline-limit=1000 --param inline-unit-
 
 
 
-
-FLAGS_FAST_CORE2 = ${FLAGS_FAST_COMMON} -msahf -mrecip -mfpmath=sse,387 -march=core2 
+# -mfpmath=sse,387 
+FLAGS_FAST_CORE2 = ${FLAGS_FAST_COMMON} -msahf -mrecip -march=core2 
 
 FLAGS_FAST_I386 = ${FLAGS_FAST_COMMON} -msahf -mrecip -march=i386 
 

@@ -1260,6 +1260,8 @@ struct task_processor : ::boost::noncopyable {
 	void
 	do_redistribute_remaining_peers_complexities()
 	{
+		assert(processing_peers.empty() == false);
+
 		// will iterate first to find out the total remaining complexity size...
 		// NOTE -- instead of harvesting the total remaining size via loop iteration -- one could, theoretically, specialize 'second type' for pair to have a dtor which will decrement (and ctor which will increment) the commonly-referenced 'total remaining complexity value' variable. But it ought to be kept in mind that the act of inc/dec of such variable will occur more frequently (once per peer_report with done complexity ranges) as opposed to once-per-sync-only harvesting. Also, albeit not statistically often, the act of harvesting will only impose 'inc' (aside of loop iteration of course), whilst act of modifying commonly-referenced variable may cause additional 'inc' calls as well.  
 		size_type total_remaining_complexity_size(0);
@@ -1283,7 +1285,7 @@ struct task_processor : ::boost::noncopyable {
 
 		typename ::std::list<converger_1::processing_peer<N, F, Model, ModelId> *>::iterator j(processing_peers.begin());
 		(*j)->clear_remaining_complexities();
-		for (typename ::std::list<converger_1::processing_peer<N, F, Model, ModelId> *>::iterator j(processing_peers.begin());;) { 
+		while (!0) {
 
 			assert(i != remaining_complexities.end() || avail_i_complexity);
 			assert(i->second);
@@ -1314,6 +1316,10 @@ struct task_processor : ::boost::noncopyable {
 				avail_peer_complexity = per_peer_complexity_size;
 			}
 		}
+#ifndef NDEBUG
+		for (j = processing_peers.begin(); j != processing_peers.end(); ++j)
+			assert((*j)->remaining_complexities.empty() == false);
+#endif
 	}
 
 	void
@@ -1373,34 +1379,33 @@ struct task_processor : ::boost::noncopyable {
 	{
 		/* ::std::clog.precision(5); */ censoc::llog() << "on_sync_timeout. e_min so far: [" << e_min << "], coeffs to wait on: [" << coefficients_rand_range_ended_wait << "], players: [" << processing_peers.size() << "]\n";
 
-		if (processing_peers.empty() == true)
-			return;
+		if (processing_peers.empty() == false) {
 
-		if (accumulated_remaining_complexities_since_last_sync.empty() == false) {
+			if (accumulated_remaining_complexities_since_last_sync.empty() == false) {
 
-			censoc::netcpu::range_utils::subtract(remaining_complexities, accumulated_remaining_complexities_since_last_sync);
+				censoc::netcpu::range_utils::subtract(remaining_complexities, accumulated_remaining_complexities_since_last_sync);
 #ifndef NDEBUG
-			for (typename complexities_type::const_iterator i(accumulated_remaining_complexities_since_last_sync.begin()); i != accumulated_remaining_complexities_since_last_sync.end(); ++i) 
-				for (size_type j(0); j != i->second; ++j) 
-					assert(censoc::netcpu::range_utils::find(remaining_complexities, j + i->first) == false);
+				for (typename complexities_type::const_iterator i(accumulated_remaining_complexities_since_last_sync.begin()); i != accumulated_remaining_complexities_since_last_sync.end(); ++i) 
+					for (size_type j(0); j != i->second; ++j) 
+						assert(censoc::netcpu::range_utils::find(remaining_complexities, j + i->first) == false);
 #endif
-			if (remaining_complexities.empty() == true)
-				redistribute_remaining_complexities = true;
-			else {
-				// loop through all peers and subtract again (it will set needed peer2peer_assisted_complexity_present flag)
-				for (typename ::std::list<converger_1::processing_peer<N, F, Model, ModelId> *>::iterator i(processing_peers.begin()); i != processing_peers.end(); ++i) 
-					(*i)->subtract_from_remaining_complexities(accumulated_remaining_complexities_since_last_sync);
+				if (remaining_complexities.empty() == true)
+					redistribute_remaining_complexities = true;
+				else {
+					// loop through all peers and subtract again (it will set needed peer2peer_assisted_complexity_present flag)
+					for (typename ::std::list<converger_1::processing_peer<N, F, Model, ModelId> *>::iterator i(processing_peers.begin()); i != processing_peers.end(); ++i) 
+						(*i)->subtract_from_remaining_complexities(accumulated_remaining_complexities_since_last_sync);
+				}
+				accumulated_remaining_complexities_since_last_sync.clear();
+
+#ifndef NDEBUG
+				// print out remaining complexities
+				censoc::llog() << "Remaining complexities start:\n";
+				for (typename complexities_type::const_iterator i(remaining_complexities.begin()); i != remaining_complexities.end(); ++i) 
+					censoc::llog() << i->first << "," << i->second << ' ';
+				censoc::llog() << "\n... remaining complexities end\n";
+#endif
 			}
-			accumulated_remaining_complexities_since_last_sync.clear();
-
-#ifndef NDEBUG
-			// print out remaining complexities
-			censoc::llog() << "Remaining complexities start:\n";
-			for (typename complexities_type::const_iterator i(remaining_complexities.begin()); i != remaining_complexities.end(); ++i) 
-				censoc::llog() << i->first << "," << i->second << ' ';
-			censoc::llog() << "\n... remaining complexities end\n";
-#endif
-		}
 
 #ifndef NDEBUG
 			{
@@ -1414,182 +1419,182 @@ struct task_processor : ::boost::noncopyable {
 			}
 #endif
 
-		bool do_shrink(false);
-		if (better_find_since_last_recentered_sync == false) { // 'better find took place' cases are taken care of later... (need to reduce complexities AFTER recentering)
-			if (redistribute_remaining_complexities == true) { // ... who knows why -- could be many different causes... see below:
-				if (do_redistribute_remaining_complexities() == false)
-					do_shrink = true;
-			}
-		}
-
-
-		// NOTE -- MUST COOK BOTH MESSAGES (recentre_only and the whole of state_sync) AT ONCE (they must reflect data that is in-sync w.r.t. each other) -- because sync_peer_to_server and on_write_sync_peer_to_server in processing_peers rely on this (a simple hack -- see on_write_sync_peer_to_server) !!!
-
-		bool do_send_recentre_message(false);
-		if (better_find_since_last_recentered_sync == true) {
-			better_find_since_last_recentered_sync = false;
-
-			assert(current_complexity_level != combos_modem.metadata().end());
-			assert(current_complexity_level->second.size() == coefficients_size);
-
-			netcpu::message::serialise_to_decomposed_floating(e_min, server_recentre_only_sync_msg.value);
-			server_recentre_only_sync_msg.value_complexity(e_min_complexity);
-
-			assert(e_min_complexity != static_cast<size_type>(-1));
-
-			// because on_peer_report clobbers coeffs 'value' when converting complexity to index for 'visited_places' et al
-			offset.zero();
-			combos_modem.demodulate(e_min_complexity, coefficients_metadata, coefficients_size);
-			for (size_type i(0); i != coefficients_size; ++i) {
-				coefficients_metadata[i].value_save();
-				coefficient_to_server_state_sync_msg(i);
-			}
-			e_min_complexity = static_cast<size_type>(-1);
-
-			assert(redistribute_remaining_complexities == true);
-			assert(current_complexity_level != combos_modem.metadata().end());
-
-			remaining_complexities.clear();
-			censoc::netcpu::range_utils::add(remaining_complexities, ::std::make_pair(static_cast<size_type>(0), (current_complexity_level = combos_modem.metadata().begin())->first));
-			reduce_remaining_complexities(0, current_complexity_level->first);
-			if (do_redistribute_remaining_complexities() == true)
-				do_send_recentre_message = true;
-			else
-				do_shrink = true;
-		} 
-
-		if (do_send_recentre_message == true) {
-			complete_server_state_sync_msg();
-			sync_peers_to_server_recentre_only();
-		} else if (do_shrink == true) {
-
-			censoc::llog() << "on_sync_timeout: will recentre!\n";
-
-			assert(better_find_since_last_recentered_sync == false);
-
-			am_bootstrapping = true;
-
-			offset.one();
-			assert(offset.size());
-			for (size_type i(0); i != coefficients_size; ++i)
-				coefficients_metadata[i].pre_shrink(coefficients_rand_range_ended_wait, shrink_slowdown);
-
-			// pseudo -- keep going through zoom levels and pick the latest acceptable one (if any)
-			for (typename coefficients_metadata_x_type::const_iterator coefficients_metadata_x_i(coefficients_metadata_x.begin()); coefficients_metadata_x_i != coefficients_metadata_x.end(); ++coefficients_metadata_x_i) {
-				::std::cout << "iterating through a level of resolutions... ";
-				// is current level acceptable
-				bool ok(true);
-				for (size_type i(0); i != coefficients_size; ++i) {
-					::std::cout << "[coeff(=" << i << "), range(=" << coefficients_metadata[i].rand_range() << "), threshold(=" << (*coefficients_metadata_x_i).second[i].first << ")] ";
-					if (coefficients_metadata[i].rand_range() > (*coefficients_metadata_x_i).second[i].first) 
-						ok = false;
-					else
-						coefficients_metadata[i].set_grid_resolutions((*coefficients_metadata_x_i).second[i].second);
+			bool do_shrink(false);
+			if (better_find_since_last_recentered_sync == false) { // 'better find took place' cases are taken care of later... (need to reduce complexities AFTER recentering)
+				if (redistribute_remaining_complexities == true) { // ... who knows why -- could be many different causes... see below:
+					if (do_redistribute_remaining_complexities() == false)
+						do_shrink = true;
 				}
-				::std::cout << "ok(=" << ok << ")\n";
-				if (ok == true)
-					intended_coeffs_at_once = (*coefficients_metadata_x_i).first;
 			}
 
-			assert(intended_coeffs_at_once);
 
-			for (size_type i(0); i != coefficients_size; ++i) {
-				coefficients_metadata[i].post_shrink(
-						//coefficients_rand_range_ended_wait, 
-						intended_coeffs_at_once);
-				coefficient_to_server_state_sync_msg(i);
+			// NOTE -- MUST COOK BOTH MESSAGES (recentre_only and the whole of state_sync) AT ONCE (they must reflect data that is in-sync w.r.t. each other) -- because sync_peer_to_server and on_write_sync_peer_to_server in processing_peers rely on this (a simple hack -- see on_write_sync_peer_to_server) !!!
+
+			bool do_send_recentre_message(false);
+			if (better_find_since_last_recentered_sync == true) {
+				better_find_since_last_recentered_sync = false;
+
+				assert(current_complexity_level != combos_modem.metadata().end());
+				assert(current_complexity_level->second.size() == coefficients_size);
+
+				netcpu::message::serialise_to_decomposed_floating(e_min, server_recentre_only_sync_msg.value);
+				server_recentre_only_sync_msg.value_complexity(e_min_complexity);
+
+				assert(e_min_complexity != static_cast<size_type>(-1));
+
+				// because on_peer_report clobbers coeffs 'value' when converting complexity to index for 'visited_places' et al
+				offset.zero();
+				combos_modem.demodulate(e_min_complexity, coefficients_metadata, coefficients_size);
+				for (size_type i(0); i != coefficients_size; ++i) {
+					coefficients_metadata[i].value_save();
+					coefficient_to_server_state_sync_msg(i);
+				}
+				e_min_complexity = static_cast<size_type>(-1);
+
+				assert(redistribute_remaining_complexities == true);
+				assert(current_complexity_level != combos_modem.metadata().end());
+
+				remaining_complexities.clear();
+				censoc::netcpu::range_utils::add(remaining_complexities, ::std::make_pair(static_cast<size_type>(0), (current_complexity_level = combos_modem.metadata().begin())->first));
+				reduce_remaining_complexities(0, current_complexity_level->first);
+				if (do_redistribute_remaining_complexities() == true)
+					do_send_recentre_message = true;
+				else
+					do_shrink = true;
+			} 
+
+			if (do_send_recentre_message == true) {
+				complete_server_state_sync_msg();
+				sync_peers_to_server_recentre_only();
+			} else if (do_shrink == true) {
+
+				censoc::llog() << "on_sync_timeout: will recentre!\n";
+
+				assert(better_find_since_last_recentered_sync == false);
+
+				am_bootstrapping = true;
+
+				offset.one();
+				assert(offset.size());
+				for (size_type i(0); i != coefficients_size; ++i)
+					coefficients_metadata[i].pre_shrink(coefficients_rand_range_ended_wait, shrink_slowdown);
+
+				// pseudo -- keep going through zoom levels and pick the latest acceptable one (if any)
+				for (typename coefficients_metadata_x_type::const_iterator coefficients_metadata_x_i(coefficients_metadata_x.begin()); coefficients_metadata_x_i != coefficients_metadata_x.end(); ++coefficients_metadata_x_i) {
+					::std::cout << "iterating through a level of resolutions... ";
+					// is current level acceptable
+					bool ok(true);
+					for (size_type i(0); i != coefficients_size; ++i) {
+						::std::cout << "[coeff(=" << i << "), range(=" << coefficients_metadata[i].rand_range() << "), threshold(=" << (*coefficients_metadata_x_i).second[i].first << ")] ";
+						if (coefficients_metadata[i].rand_range() > (*coefficients_metadata_x_i).second[i].first) 
+							ok = false;
+						else
+							coefficients_metadata[i].set_grid_resolutions((*coefficients_metadata_x_i).second[i].second);
+					}
+					::std::cout << "ok(=" << ok << ")\n";
+					if (ok == true)
+						intended_coeffs_at_once = (*coefficients_metadata_x_i).first;
+				}
+
+				assert(intended_coeffs_at_once);
+
+				for (size_type i(0); i != coefficients_size; ++i) {
+					coefficients_metadata[i].post_shrink(
+							//coefficients_rand_range_ended_wait, 
+							intended_coeffs_at_once);
+					coefficient_to_server_state_sync_msg(i);
+				}
+
+				assert(offset.size());
+
+				if (!coefficients_rand_range_ended_wait) {
+					save_convergence_state();
+					float_type tmp_max(::boost::numeric::bounds<float_type>::lowest());
+					for (size_type i(0); i != coefficients_size - 1; ++i)
+						//for (size_type i(0); i != coefficients_size; ++i)
+						if (tmp_max < coefficients_metadata[i].saved_value())
+							tmp_max = coefficients_metadata[i].saved_value();
+					assert(tmp_max != 0);
+					//censoc::llog() 
+					::std::cout
+						<< "TODO -- WRITE DONE CRITERIA -- CURRENT RUN OF CONVERGENCE HAS ENDED!, e_min: " << e_min << '\n';
+					//censoc::llog() 
+					::std::cout
+						<< "raw coeffs are:\n";
+					for (size_type i(0); i != coefficients_size; ++i) {
+						//censoc::llog() 
+						::std::cout
+							<< coefficients_metadata[i].saved_value() << " ";
+					} 
+					//censoc::llog() 
+					::std::cout
+						<< "\n normalised coeffs are:\n";
+					for (size_type i(0); i != coefficients_size; ++i) {
+						//censoc::llog() 
+						::std::cout
+							<< coefficients_metadata[i].saved_value() / tmp_max << " ";
+					} 
+					//::std::cout << coefficients_metadata[coefficients_size - 1].saved_value() << " ";
+					//censoc::llog() 
+					::std::cout
+						<< ::std::endl;
+
+					//assert(0);
+					netcpu::pending_tasks.front()->markcompleted();
+					return;
+				}
+
+				e_min = censoc::largish<float_type>();
+
+
+				size_type init_coeffs_atonce_size(intended_coeffs_at_once);
+				assert(init_coeffs_atonce_size);
+				size_type init_complexity_size(meta_msg.complexity_size());
+				assert(init_complexity_size);
+				combos_modem.build(coefficients_size, init_complexity_size, init_coeffs_atonce_size, coefficients_metadata);
+
+				current_complexity_level = combos_modem.metadata().begin();
+				censoc::netcpu::range_utils::add(remaining_complexities, ::std::make_pair(static_cast<size_type>(0), current_complexity_level->first));
+				assert(current_complexity_level->first == remaining_complexities.begin()->second);
+				assert(current_complexity_level != combos_modem.metadata().end());
+				assert(current_complexity_level->second.size() == coefficients_size);
+				// no need to reduce remaining complexities -- on_bootstrapping_peer_report will do just that
+
+				// NOTE -- currently visited places do not map onto the 'shrunken' grid (possible todo for future -- rescale/remap from currently visited places onto the newly shrunk grid any of the still-relevant visited places). would involve looping through all stored visited places and then seeing if their coordinates are no more than 1 step away from current mid point... then will also have to remember to NOT clear the 'visited_places' before calling the 'complete_server_state_sync_msg'... but currently will need to clear it exactly before calling 'complete_xxx' code
+				visited_places.clear();
+
+				complete_server_state_sync_msg();
+				sync_peers_to_server_state();
+
+				//return;
+
+			} else if (redistribute_remaining_complexities == true) 
+				sync_peers_to_server_complexity_only();
+			else if (peer2peer_assisted_complexity_present == true) {
+
+				/** @note -- how will peer know that subtracted range is from itself or not?
+					answer -- still retain 'on_peer_report' clearing the peer (only don't set the flag there)
+					then additionally, call subtract on all peers for the whole range again
+				 */
+				server_complexity_only_sync_msg.noreply(!0);
+				censoc::llog() << "about to write peer2peer-assisted complexity only sync msg\n";
+				for (typename ::std::list<converger_1::processing_peer<N, F, Model, ModelId> *>::iterator i(processing_peers.begin()); i != processing_peers.end(); ++i) 
+					if ((*i)->peer2peer_assisted_complexity_present == true) 
+						(*i)->sync_peer_to_server(server_complexity_only_sync_msg);
+				server_complexity_only_sync_msg.noreply(0);
+				//@note -- one could think that the 'noreply' field could be added to server_state_sync message as well (in case of 'write_more' flag issuing a delayed write in a form of the whole server state sync); BUT it is wrong -- because the aforementioned 'server state sync' message could be a delayed write to 'sync_peers_to_server_complexity_only' when reply IS needed (i.e. whilst io_key has not changed, the replies are needed due to something like some peers reconnecting, etc.) -- considering that there could be 'sync complexities with reply' followed by 'sync complexities without reply' sequence of events before anything gets written out...
+				//@note -- also, keep in mind that really, the occasional reply from peer (when not needed) will not really break anything; and, in fact, will be of some use as the server can update its 'rollback'/'recovery' condition to a more recent state.
 			}
 
-			assert(offset.size());
-
-			if (!coefficients_rand_range_ended_wait) {
+			// for writing to disk... (a simple hack for the time-being)
+			size_type static write_to_disk_wait(3);
+			if (!--write_to_disk_wait) {
+				write_to_disk_wait = 1200;
 				save_convergence_state();
-				float_type tmp_max(::boost::numeric::bounds<float_type>::lowest());
-				for (size_type i(0); i != coefficients_size - 1; ++i)
-				//for (size_type i(0); i != coefficients_size; ++i)
-					if (tmp_max < coefficients_metadata[i].saved_value())
-						tmp_max = coefficients_metadata[i].saved_value();
-				assert(tmp_max != 0);
-				//censoc::llog() 
-				::std::cout
-					<< "TODO -- WRITE DONE CRITERIA -- CURRENT RUN OF CONVERGENCE HAS ENDED!, e_min: " << e_min << '\n';
-				//censoc::llog() 
-				::std::cout
-					<< "raw coeffs are:\n";
-				for (size_type i(0); i != coefficients_size; ++i) {
-					//censoc::llog() 
-					::std::cout
-						<< coefficients_metadata[i].saved_value() << " ";
-				} 
-				//censoc::llog() 
-				::std::cout
-					<< "\n normalised coeffs are:\n";
-				for (size_type i(0); i != coefficients_size; ++i) {
-					//censoc::llog() 
-					::std::cout
-						<< coefficients_metadata[i].saved_value() / tmp_max << " ";
-				} 
-				//::std::cout << coefficients_metadata[coefficients_size - 1].saved_value() << " ";
-				//censoc::llog() 
-				::std::cout
-					<< ::std::endl;
-
-				//assert(0);
-				netcpu::pending_tasks.front()->markcompleted();
-				return;
 			}
-
-			e_min = censoc::largish<float_type>();
-
-
-			size_type init_coeffs_atonce_size(intended_coeffs_at_once);
-			assert(init_coeffs_atonce_size);
-			size_type init_complexity_size(meta_msg.complexity_size());
-			assert(init_complexity_size);
-			combos_modem.build(coefficients_size, init_complexity_size, init_coeffs_atonce_size, coefficients_metadata);
-
-			current_complexity_level = combos_modem.metadata().begin();
-			censoc::netcpu::range_utils::add(remaining_complexities, ::std::make_pair(static_cast<size_type>(0), current_complexity_level->first));
-			assert(current_complexity_level->first == remaining_complexities.begin()->second);
-			assert(current_complexity_level != combos_modem.metadata().end());
-			assert(current_complexity_level->second.size() == coefficients_size);
-			// no need to reduce remaining complexities -- on_bootstrapping_peer_report will do just that
-
-			// NOTE -- currently visited places do not map onto the 'shrunken' grid (possible todo for future -- rescale/remap from currently visited places onto the newly shrunk grid any of the still-relevant visited places). would involve looping through all stored visited places and then seeing if their coordinates are no more than 1 step away from current mid point... then will also have to remember to NOT clear the 'visited_places' before calling the 'complete_server_state_sync_msg'... but currently will need to clear it exactly before calling 'complete_xxx' code
-			visited_places.clear();
-
-			complete_server_state_sync_msg();
-			sync_peers_to_server_state();
-
-			return;
-
-		} else if (redistribute_remaining_complexities == true) 
-			sync_peers_to_server_complexity_only();
-		else if (peer2peer_assisted_complexity_present == true) {
-
-			/** @note -- how will peer know that subtracted range is from itself or not?
-				answer -- still retain 'on_peer_report' clearing the peer (only don't set the flag there)
-				then additionally, call subtract on all peers for the whole range again
-			*/
-			server_complexity_only_sync_msg.noreply(!0);
-			censoc::llog() << "about to write peer2peer-assisted complexity only sync msg\n";
-			for (typename ::std::list<converger_1::processing_peer<N, F, Model, ModelId> *>::iterator i(processing_peers.begin()); i != processing_peers.end(); ++i) 
-				if ((*i)->peer2peer_assisted_complexity_present == true) 
-					(*i)->sync_peer_to_server(server_complexity_only_sync_msg);
-			server_complexity_only_sync_msg.noreply(0);
-			//@note -- one could think that the 'noreply' field could be added to server_state_sync message as well (in case of 'write_more' flag issuing a delayed write in a form of the whole server state sync); BUT it is wrong -- because the aforementioned 'server state sync' message could be a delayed write to 'sync_peers_to_server_complexity_only' when reply IS needed (i.e. whilst io_key has not changed, the replies are needed due to something like some peers reconnecting, etc.) -- considering that there could be 'sync complexities with reply' followed by 'sync complexities without reply' sequence of events before anything gets written out...
-			//@note -- also, keep in mind that really, the occasional reply from peer (when not needed) will not really break anything; and, in fact, will be of some use as the server can update its 'rollback'/'recovery' condition to a more recent state.
 		}
 
 		peer2peer_assisted_complexity_present = redistribute_remaining_complexities = false;
-
-		// for writing to disk... (a simple hack for the time-being)
-
-		size_type static write_to_disk_wait(3);
-		if (!--write_to_disk_wait) {
-			write_to_disk_wait = 1200;
-			save_convergence_state();
-		}
 
 #if 0
 		// call timer again...
@@ -2035,7 +2040,7 @@ struct task : netcpu::task {
 
 			//todo -- the newline escaping for the sake of the JSON formatting should be done elsewhere!!
 			censoc::lexicast< ::std::string> xxx("There are potentially ");
-			xxx << active_task_processor->processing_peers.size() << " processing workers (productivity of each is not yet accounted for).\\n";
+			xxx << active_task_processor->processing_peers.size() << " processing workers (productivity of each is not yet accounted for, with " << active_task_processor->scoped_peers.size() << " total registered connections).\\n";
 #ifndef NDEBUG
 			typename ::std::map<size_type, ::std::vector<size_type> >::const_iterator tmp; // assert parsing otherwise barfs if putting all into the assert macro...
 			assert(active_task_processor->current_complexity_level != tmp);

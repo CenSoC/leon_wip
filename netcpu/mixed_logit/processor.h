@@ -351,8 +351,8 @@ public:
 
 		float_type accumulated_probability(0); 
 
-		CENSOC_RESTRICTED_PTR(uint8_t const, choice_sets_alternatives_ptr, choice_sets_alternatives.get());
-		CENSOC_RESTRICTED_PTR(int8_t const, matrix_composite_ptr, matrix_composite.get());
+		uint8_t const * choice_sets_alternatives_ptr(choice_sets_alternatives.get());
+		int8_t const * matrix_composite_ptr(matrix_composite.get());
 
 		coefficient_metadata_type const * const etavar(coefficients + x_size);
 

@@ -119,7 +119,7 @@ unsigned const static DefaultAlign = 16;
 
 
 #else
-#error "aligned and restricted semantics have not yet been implemented for this compiler... TODO..."
+#error "aligned and restricted semantics have not yet been implemented for this compiler... TODO... (not to worry though -- most of them should follow similar syntatic structure :-)"
 #endif
 
 }

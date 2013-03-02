@@ -48,6 +48,23 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef CENSOC_FINITE_MATH_H
 #define CENSOC_FINITE_MATH_H
 
+#ifdef __GNUC__
+
+// optimization controlling thingies
+
+#define CENSOC_OPTIMIZE_PUSH_OPTIONS _Pragma("GCC push_options")
+
+#define CENSOC_OPTIMIZE_NO_ASSOCIATIVE_RECIPROCAL_MATH _Pragma("GCC optimize (\"-fno-associative-math\", \"-fno-reciprocal-math\")")
+
+#define CENSOC_OPTIMIZE_POP_OPTIONS _Pragma("GCC pop_options")
+
+// tip thingy: can use something like gcc -E main.cc to test...
+
+
+#else
+#error "optimization pragmas have not yet been implemented for this compiler... TODO... (not to worry though -- most of them should follow similar syntatic structure :-)"
+#endif
+
 namespace censoc {
 
 	bool isfinite(censoc::param<float>::type x) noexcept;
@@ -57,6 +74,8 @@ namespace censoc {
 // TODO --  on some computers 'was_fpu_ok' can be made static (non-extern and defined right here in this file which is subjected to 'ffast-math' etc optimizations) and still work absolutely fine... on other (e.g. slightly newer cpus) it would appear that I have to move it to finite_math.pi (with some optimizations disabled)... may be has something to do with march=native flag... Anyways -- TODO FIND OUT MORE LATER.
 	bool was_fpu_ok(...) noexcept;
 	bool was_fpu_ok_x(float *, int *) noexcept;
+
+	void opacify(...) noexcept;
 
 	int init_fpu_check_anchor(true);
 

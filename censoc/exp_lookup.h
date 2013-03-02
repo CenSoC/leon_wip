@@ -45,6 +45,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <boost/scoped_array.hpp>
 
+#include "finite_math.h"
 #include "type_traits.h"
 
 #ifndef CENSOC_EXP_LOOKUP_H
@@ -58,6 +59,7 @@ namespace censoc { namespace exp_lookup {
 
 template <typename F, typename N, N steps>
 class linear_interpolation_linear_spacing {
+	BOOST_STATIC_ASSERT(steps > 2);
 public:
 	typedef F float_type;
 	typedef N size_type;
@@ -96,35 +98,39 @@ public:
 	float_type
 	eval(float_type x) const
 	{
-		BOOST_STATIC_ASSERT(steps > 2);
-
 		float_type const * array;
-		if (x > 0)
+		if (::std::signbit(x) == false)
 			array = pos_array.get();
 		else {
-			x = -x;
+			x = ::std::fabs(x);
 			array = neg_array.get();
 		}
 
 		// todo -- one the one hand could use fistpl faster float to int conversion in assembly, on the other hand may leave as is so that 'march=native' could take advantage of vector intrinsicts (e.g. sse et al) or other h/w assembly calls... 
 		size_type const i_from(x *= steps);
 		if (i_from < last_array_i) {
-			size_type const i_to(i_from + 1);
-
 			assert(x >= 0);
 			assert(x >= i_from);
-			assert(x <= i_to);
+			assert(x <= i_from + 1);
 			assert(i_from < array_size);
-			assert(i_to < array_size);
+			assert(i_from + 1 < array_size);
 			assert(last_array_i + 1 == array_size);
 
-			float_type const y_from(array[i_from]);
-			float_type const y_to(array[i_to]);
-
-			return (x - i_from) * (y_to - y_from) + y_from;
-		} else 
-			return x *= ::std::numeric_limits<float_type>::max();
+			return sub_eval(x, i_from, array[i_from], array[i_from + 1]);
+		} else { 
+			censoc::opacify(&x);
+			return x * ::std::numeric_limits<float_type>::max();
+		}
 	}
+
+CENSOC_OPTIMIZE_PUSH_OPTIONS
+CENSOC_OPTIMIZE_NO_ASSOCIATIVE_RECIPROCAL_MATH
+	float_type static
+	sub_eval(float_type const x, size_type const i_from, float_type const y_from, float_type const y_to) 
+	{
+		return (x - i_from) * (y_to - y_from) + y_from;
+	}
+CENSOC_OPTIMIZE_POP_OPTIONS
 
 };
 
