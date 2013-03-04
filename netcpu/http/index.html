@@ -253,6 +253,17 @@ input:disabled {
 	background-color: #dfdfdf;
 }
 
+input.freeform_cli {
+	padding: 1pt;
+	text-align:left;
+}
+
+.freeform_cli_example {
+	background-color: yellow;
+	font-family: mono;
+	color: black;
+}
+
 table, th, td {
 	border-collapse: collapse;
 	text-align:left;
@@ -1178,33 +1189,56 @@ function new_task_type()
 			if (this.readyState == FileReader.DONE) {
 				var table = document.createElement("table");
 				split_csv(this.result);
-				var rows = Math.min(Math.max(csv_grid.length - 1, 0), 10);
+				var rows = Math.min(Math.max(csv_grid.length, 0), 10);
 
 				if (rows > 0) {
 					var first_row_columns = csv_grid[0].length;
 					this.pid.csv_column_types.length = first_row_columns;
-					var tr = document.createElement("tr");
-					for (var i = 0; i != first_row_columns; ++i) {
-						var td = document.createElement("td");
-						td.appendChild((this.pid.csv_column_types[i] = new select_csv_column_type(this.pid, i)).gui);
-						tr.appendChild(td);
-					}
-					table.appendChild(tr);
+					if (first_row_columns > 0) {
 
-					for (var i = 0; i != rows; ++i) {
-						var row = csv_grid[i];
+						// label columns
 						var tr = document.createElement("tr");
-						for (var j = 0; j != row.length; ++j) {
+						var alpha_start = "A".charCodeAt(0);
+						var alpha_size = "Z".charCodeAt(0) - alpha_start + 1;
+						for (var i = 0; i != first_row_columns; ++i) {
+							var alphas_as_ints = [];
+							var j = i;
+							do { 
+								alphas_as_ints.push(alpha_start + j % alpha_size);
+								j = Math.floor(j / alpha_size) - 1;
+							} while (j > -1);
+							var alphas = "";
+							for (var y = alphas_as_ints.length - 1; y >= 0; --y)
+								alphas += String.fromCharCode(alphas_as_ints[y]);
 							var td = document.createElement("td");
-							td.className = "unspecified_csv";
-							td.appendChild(document.createTextNode(row[j]));
+							td.appendChild(document.createTextNode("Column " + (i + 1) + " (" + alphas + ')'));
 							tr.appendChild(td);
 						}
 						table.appendChild(tr);
+						//
+						tr = document.createElement("tr");
+						for (var i = 0; i != first_row_columns; ++i) {
+							var td = document.createElement("td");
+							td.appendChild((this.pid.csv_column_types[i] = new select_csv_column_type(this.pid, i)).gui);
+							tr.appendChild(td);
+						}
+						table.appendChild(tr);
+
+						for (var i = 0; i != rows; ++i) {
+							var row = csv_grid[i];
+							var tr = document.createElement("tr");
+							for (var j = 0; j != row.length; ++j) {
+								var td = document.createElement("td");
+								td.className = "unspecified_csv";
+								td.appendChild(document.createTextNode(row[j]));
+								tr.appendChild(td);
+							}
+							table.appendChild(tr);
+						}
+						table.className = "auto_table";
+						this.pid.csv_table_holder.replaceChild(table, this.pid.csv_table);
+						this.pid.csv_table = table;
 					}
-					table.className = "auto_table";
-					this.pid.csv_table_holder.replaceChild(table, this.pid.csv_table);
-					this.pid.csv_table = table;
 				}
 			}
 		};
@@ -1230,30 +1264,31 @@ function new_task_type()
 
 	tmp_td = document.createElement("td");
 	var label = document.createElement("label");
-	label.appendChild(document.createTextNode("Exclude rows where any attribute-value is:"));
+	label.appendChild(document.createTextNode("Exclude rows foo:"));
 	label.className = "extra_option_text"
-	label.htmlFor = "csv_data_wildcard_delete_rows_value";
+	label.htmlFor = "csv_data_freeform_cli_delete_rows_value";
 
 	tmp_td.appendChild(label);
 	tmp_tr.appendChild(tmp_td);
 
 	tmp_td = document.createElement("td");
-	this.csv_data_wildcard_delete_rows_value = document.createElement("input");
-	this.csv_data_wildcard_delete_rows_value.disabled = true;
+	this.csv_data_freeform_cli_delete_rows_value = document.createElement("input");
+	this.csv_data_freeform_cli_delete_rows_value.disabled = true;
+	this.csv_data_freeform_cli_delete_rows_value.className = "freeform_cli";
 	var checkbox = document.createElement("input");
 	checkbox.type = "checkbox";
 	checkbox.checked = false;
-	checkbox.wildcard_value = this.csv_data_wildcard_delete_rows_value;
-	checkbox.id = "csv_data_wildcard_delete_rows_value";
+	checkbox.freeform_cli_value = this.csv_data_freeform_cli_delete_rows_value;
+	checkbox.id = "csv_data_freeform_cli_delete_rows_value";
 	checkbox.onchange = function()
 	{
 		if (this.checked == true)
-			this.wildcard_value.disabled = false;
+			this.freeform_cli_value.disabled = false;
 		else
-			this.wildcard_value.disabled = true;
+			this.freeform_cli_value.disabled = true;
 	}
-	this.csv_data_wildcard_delete_rows_value.size = 5;
-	tmp_td.appendChild(this.csv_data_wildcard_delete_rows_value);
+	this.csv_data_freeform_cli_delete_rows_value.size = 15;
+	tmp_td.appendChild(this.csv_data_freeform_cli_delete_rows_value);
 	tmp_td.appendChild(checkbox);
 	tmp_tr.appendChild(tmp_td);
 
@@ -1578,7 +1613,6 @@ function new_task_type()
 	tmp.onclick = function() 
 	{
 
-		this.disabled = true;
 		var form = new FormData();
 
 		var fromrow = parseInt(this.pid.csv_data_from_row.value);
@@ -1696,11 +1730,17 @@ function new_task_type()
 		cli_string += "--shrink_slowdown " + shrink_slowdown + '\n';
 		form.append("--shrink_slowdown", shrink_slowdown);
 
-		if (this.pid.csv_data_wildcard_delete_rows_value.disabled == false && this.pid.csv_data_wildcard_delete_rows_value.value.length) {
-			if (isNaN(this.pid.csv_data_wildcard_delete_rows_value.value))
-				return this.bail_on_wrong_user_values("\"Exclude rows where any attribute-value is\" must be a number.");
-			cli_string += "--del *:eq:" + this.pid.csv_data_wildcard_delete_rows_value.value + '\n';
-			form.append("--del", "*:eq:" + this.pid.csv_data_wildcard_delete_rows_value.value) + '\n';
+		if (this.pid.csv_data_freeform_cli_delete_rows_value.disabled == false && this.pid.csv_data_freeform_cli_delete_rows_value.value.length) {
+			var tmps = this.pid.csv_data_freeform_cli_delete_rows_value.value.split(/\s+/);
+			if (!tmps.length)
+				return this.bail_on_wrong_user_values("\"Exclude rows foo\" is incorrectly formed.");
+			for (var i = 0; i != tmps.length; ++i) {
+				var tmp_ = tmps[i].split(':');
+				if (tmp_.length != 3 || isNaN(tmp_[2]) || (tmp_[1] != "eq" && tmp_[1] != "lt" && tmp_[1] != "gt"))
+					return this.bail_on_wrong_user_values("One of the specifications in \"Exclude rows foo\" is incorrectly formed: " + tmps[i]);
+				cli_string += "--del " + tmps[i] + '\n';
+				form.append("--del", tmps[i]);
+			}
 		}
 
 		cli_string += "--dissect off\n--reduce_exp_complexity off\n";
@@ -1813,6 +1853,7 @@ function new_task_type()
 				this.btn.disabled = false;
 			}
 		}
+		this.disabled = true;
 		http_request.open("POST", server_at + "new_task");
 		http_request.send(form);
 	}
@@ -2867,8 +2908,24 @@ Different respondents may have different number of choice sets. Different choice
 <p>
 Many data files will have title row(s). <span class="help_content_fieldname">Data starts from row no</span> configuration field specifies the row number from which the actual data begins.
 <p>
-Some data files may be produced by some clumsy software which is too lazy to delete irrelevant rows from the dataset. Temporarily (and without setting precedence of any kind) this mechanisms is allowed to be done from this interface -- any attribute (in any given row) whose value is equal to that specified in
-<span class="help_content_fieldname">Exclude rows where any attribute-value is</span> field will be excluded from computation (i.e. deleted when it is sent to the server for processing). Such an approach may be deprecated in future as it may lead to an over-clutter of different buttons/options/features for a wide variety of different data-producing software packages. This will result in a mess -- a lot of buttons, etc. where only a few are relevant to any given user. Instead, in future, an approach may be adopted where additional utilities are used to prepare the dataset separately from this interface and then being able to upload such a 'federated standard' data file to the server via this interface. The deployment of any given preparation utility will be the responsibilty of the user who had chosen to use whichever lazy/clumsy dataset-producing software in the first place.
+A given data file may be generated by some clumsy software/workflow which is too lazy to delete irrelevant rows from the dataset.
+<br>Temporarily (and without setting precedence of any kind) such deletion is allowed to be done from this interface, namely the <span class="help_content_fieldname">Exclude rows foo</span> field.
+<br>The mechanism to specify to-be-excluded rows is in a textual CLI (Command Line Interface) form consisting of three tokens, each separeted by a colon 
+<br><span class="freeform_cli_example">COLUMN:COMPARATOR:VALUE</span> 
+<br>For example, to exclude all rows from a dataset where column 5 has value 3 one would specify the following text
+<br><span class="freeform_cli_example">5:eq:3</span>
+<br>The interface also accepts spreadsheet equivalent 'E' (alpha-like) column identifiers, so the equivalent notation for the above example could well be
+<br><span class="freeform_cli_example">E:eq:3</span>
+<br>The possible comparator options (i.e. text for the middle token) are: <em>eq lt gt</em>
+<br>For example, to delete all rows where second column has values greater than 7 one would enter
+<br><span class="freeform_cli_example">b:gt:7</span>
+<br>Additionally, a special-meaning wildcard column-specifier may be entered
+<br><span class="freeform_cli_example">*:eq:3</span>
+<br>resulting in all rows where <em>any attribute</em> has a value of 3 being excluded from computation (i.e. deleted when the dataset is sent to the server for processing).
+<br>One is free to specify multilpe tuples separeted by (white)space such as
+<br><span class="freeform_cli_example">*:eq:7 AB:lt:4 1:eq:5</span>
+<p>Such a CLI field may be deprecated in future as it may lead to an over-cluttering of the interface with different options/features for a wide variety of different data-producing software packages. This will result in a mess only a few fields/options are relevant to any given user. Instead, in future, an approach may be adopted where additional utilities are used to prepare the dataset separately from this interface and then being able to upload such a 'federated standard' data file to the server via this interface. The deployment of any given preparation utility will be the responsibilty of the user who had chosen to use whichever lazy/clumsy dataset-producing software in the first place.
+<br>Lastly, do take care with respect what you are typing as currently there is a minimal amount of input-error detection!
 <p> 
 Some data files may not be pre-grouped/ordered by respondent/choice set/alternative columns. Selecting the <span class="help_content_fieldname">Perform sorting of dataset</span> option will request the processing server to sort the uploaded .csv file by the aforementioned columns. This may add to the time taken to add a task, so don't tick the checkbox if the supplied dataset is already sorted. Once again, this feature may be deprecated in the near future (instead execting the users to take care of their dataset prior to using this interface).
 </div>

@@ -109,7 +109,6 @@ public:
 							throw ::std::runtime_error(xxx() << "Failed to grow the rows buffer for csv parser(=" << this << ")");
 						grid.reserve(rows_reservations_size = new_rows_reservations_size);
 					}
-					assert(is.tellg() > 0);
 					grid.push_back(::std::vector< ::std::string>());
 					grid.back().reserve(columns_reservations_size);
 					grid.back().push_back(::std::string());

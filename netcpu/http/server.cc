@@ -178,7 +178,7 @@ protected:
 private:
 
 	unsigned total_bytes_read;
-	unsigned const static max_read_capacity = 1024 * 1024 * 30;
+	unsigned const static max_read_capacity = 1024 * 1024 * 64;
 
 	unsigned header_size;
 	unsigned body_size;
