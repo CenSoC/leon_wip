@@ -74,6 +74,7 @@ typedef censoc::lexicast< ::std::string> xxx;
 ::boost::system::error_code static ec;
 ::boost::asio::io_service static io;
 ::boost::asio::ssl::context static as_server_ssl(io, ::boost::asio::ssl::context::sslv23_server);
+unsigned char const static as_server_ssl_session_id(1);
 ::boost::asio::ssl::context static ssl(io, ::boost::asio::ssl::context::sslv23);
 
 struct match_boundaries_result {
@@ -1142,6 +1143,9 @@ struct interface {
 
 		as_server_ssl.set_verify_mode( ::boost::asio::ssl::context::verify_peer | ::boost::asio::ssl::context::verify_fail_if_no_peer_cert);
 		as_server_ssl.add_verify_path(as_server_ssl_clients_certificates);
+
+		if (!::SSL_CTX_set_session_id_context(as_server_ssl.impl(), &as_server_ssl_session_id, sizeof(as_server_ssl_session_id)))
+			throw ::std::runtime_error(xxx() << "SSL_CTX_set_session_id_context");
 
 		ssl.set_verify_mode(::boost::asio::ssl::context::verify_peer | ::boost::asio::ssl::context::verify_fail_if_no_peer_cert);
 		ssl.load_verify_file(server_ssl_certificate);

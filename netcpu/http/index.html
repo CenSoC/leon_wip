@@ -89,6 +89,63 @@ td.incomplete_value {
 	color: black;
 }
 
+td.dataset_example_respondent_1 {
+	background-color: #ffaaaa;
+	color: black;
+	border-left: 0;
+	border-right: 0;
+}
+td.dataset_example_respondent_2 {
+	background-color: #ff7777;
+	color: black;
+	border-left: 0;
+	border-right: 0;
+}
+
+td.dataset_example_choiceset_1 {
+	background-color: #ffffaa;
+	color: black;
+	border-left: 0;
+	border-right: 0;
+}
+td.dataset_example_choiceset_2 {
+	background-color: #ffff88;
+	color: black;
+	border-left: 0;
+	border-right: 0;
+}
+td.dataset_example_choiceset_3 {
+	background-color: #ffff55;
+	color: black;
+	border-left: 0;
+	border-right: 0;
+}
+
+td.dataset_example_alternative_1 {
+	background-color: #cffff8;
+	color: black;
+	border-left: 0;
+	border-right: 0;
+}
+td.dataset_example_alternative_2 {
+	background-color: #beeff7;
+	color: black;
+	border-left: 0;
+	border-right: 0;
+}
+td.dataset_example_alternative_3 {
+	background-color: #addfe6;
+	color: black;
+	border-left: 0;
+	border-right: 0;
+}
+td.dataset_example_alternative_4 {
+	background-color: #9cced5;
+	color: black;
+	border-left: 0;
+	border-right: 0;
+}
+
 td.incomplete_normalised_value {
 	background-color: white;
 	color: black;
@@ -2904,6 +2961,39 @@ There must be an <span class="help_content_fieldname">alternative</span> column 
 </li>
 </ul>
 <p>
+For example, a given dataset may look similar to the following (note: order of columns in the following example is purely coincidental as are the effect-coding of attributes and the order of rows):
+<br>
+<table style="border-spacing:1px; border-collapse:separate;">
+<tr>
+<td>Respondent</td>
+<td>Choice-Set</td>
+<td>Alternative</td>
+<td>Atttribute-1</td>
+<td>Atttribute-2</td>
+<td>Choice</td>
+</tr>
+<tr><td class="dataset_example_respondent_1">1</td><td class="dataset_example_choiceset_1">1</td><td class="dataset_example_alternative_1">1</td><td>-1</td><td>-1</td><td>0</td></tr>
+<tr><td class="dataset_example_respondent_1">1</td><td class="dataset_example_choiceset_1">1</td><td class="dataset_example_alternative_2">2</td><td>1</td><td>-1</td><td>0</td></tr>
+<tr><td class="dataset_example_respondent_1">1</td><td class="dataset_example_choiceset_1">1</td><td class="dataset_example_alternative_3">3</td><td>1</td><td>1</td><td>1</td></tr>
+<tr><td class="dataset_example_respondent_1">1</td><td class="dataset_example_choiceset_1">1</td><td class="dataset_example_alternative_4">4</td><td>-1</td><td>1</td><td>0</td></tr>
+<tr><td class="dataset_example_respondent_1">1</td><td class="dataset_example_choiceset_2">2</td><td class="dataset_example_alternative_1">1</td><td>-1</td><td>-1</td><td>1</td></tr>
+<tr><td class="dataset_example_respondent_1">1</td><td class="dataset_example_choiceset_2">2</td><td class="dataset_example_alternative_2">2</td><td>1</td><td>-1</td><td>0</td></tr>
+<tr><td class="dataset_example_respondent_1">1</td><td class="dataset_example_choiceset_2">2</td><td class="dataset_example_alternative_3">3</td><td>1</td><td>1</td><td>0</td></tr>
+<tr><td class="dataset_example_respondent_1">1</td><td class="dataset_example_choiceset_2">2</td><td class="dataset_example_alternative_4">4</td><td>-1</td><td>1</td><td>0</td></tr>
+<tr><td class="dataset_example_respondent_1">1</td><td class="dataset_example_choiceset_3">3</td><td class="dataset_example_alternative_1">1</td><td>-1</td><td>-1</td><td>0</td></tr>
+<tr><td class="dataset_example_respondent_1">1</td><td class="dataset_example_choiceset_3">3</td><td class="dataset_example_alternative_2">2</td><td>1</td><td>-1</td><td>0</td></tr>
+<tr><td class="dataset_example_respondent_1">1</td><td class="dataset_example_choiceset_3">3</td><td class="dataset_example_alternative_3">3</td><td>1</td><td>1</td><td>0</td></tr>
+<tr><td class="dataset_example_respondent_1">1</td><td class="dataset_example_choiceset_3">3</td><td class="dataset_example_alternative_4">4</td><td>-1</td><td>1</td><td>1</td></tr>
+<tr><td class="dataset_example_respondent_2">2</td><td class="dataset_example_choiceset_1">1</td><td class="dataset_example_alternative_1">1</td><td>-1</td><td>-1</td><td>1</td></tr>
+<tr><td class="dataset_example_respondent_2">2</td><td class="dataset_example_choiceset_1">1</td><td class="dataset_example_alternative_2">2</td><td>1</td><td>-1</td><td>0</td></tr>
+<tr><td class="dataset_example_respondent_2">2</td><td class="dataset_example_choiceset_1">1</td><td class="dataset_example_alternative_3">3</td><td>1</td><td>1</td><td>0</td></tr>
+<tr><td class="dataset_example_respondent_2">2</td><td class="dataset_example_choiceset_1">1</td><td class="dataset_example_alternative_4">4</td><td>-1</td><td>1</td><td>0</td></tr>
+<tr><td class="dataset_example_respondent_2">2</td><td class="dataset_example_choiceset_2">2</td><td class="dataset_example_alternative_1">1</td><td>-1</td><td>-1</td><td>0</td></tr>
+<tr><td class="dataset_example_respondent_2">2</td><td class="dataset_example_choiceset_2">2</td><td class="dataset_example_alternative_2">2</td><td>1</td><td>-1</td><td>1</td></tr>
+<tr><td class="dataset_example_respondent_2">2</td><td class="dataset_example_choiceset_2">2</td><td class="dataset_example_alternative_3">3</td><td>1</td><td>1</td><td>0</td></tr>
+<tr><td class="dataset_example_respondent_2">2</td><td class="dataset_example_choiceset_2">2</td><td class="dataset_example_alternative_4">4</td><td>-1</td><td>1</td><td>0</td></tr>
+</table>
+<p>
 Different respondents may have different number of choice sets. Different choice sets may have different numebr of alternatives. All rows, however, must have the same attributes.
 <p>
 Many data files will have title row(s). <span class="help_content_fieldname">Data starts from row no</span> configuration field specifies the row number from which the actual data begins.
@@ -2957,7 +3047,9 @@ As a matter of further computational efficiency the algorithm has an option to u
 <p>
 Moreover, as the convergence process zooms in -- one may consider the possibility of terrain becoming <em>smoother</em> (e.g. with lesser traits of multidimensional diagonality). To this extent, the algorithm allows additional (alternative) complexities settings when the zoom-in process crosses certain thresholds. There could be any <span class="help_content_fieldname">Number of additional complexity settings</span>. 
 <br>A given additional complexity comes "into effect" when all of the coefficients' exploration ranges are below specified threshold (such threshold is individually-configurable for each of the coefficients via <span class="help_content_fieldname">Activate @range less than</span>).
-
+<p class="freeform_cli_example">
+NOTE: given the current lack of proper hardware used to deploy various servers, it is NOT recommended to have any
+"complexity size" of <span class="help_content_fieldname">max-coefficients-@once</span> fields to be over 4-coefficients-@once limit!
 </div>
 
 <div class="help_content" id="help_vcgw_misc_content">
