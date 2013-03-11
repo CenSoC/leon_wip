@@ -42,6 +42,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <readpassphrase.h>
 #include <stdlib.h>
+#include <zlib.h>
 #include <archive.h>
 #include <archive_entry.h>
 
@@ -392,13 +393,22 @@ public:
 	}
 
 private:
+	censoc::vector<uint8_t, unsigned> buffer; 
 	void
 	write_common(::std::string const & x)
 	{
 		assert(write_is_pending == false);
 		assert(origin.empty() == false);
 		assert(content.empty() == false);
+
+		uLongf deflated_payload_size(x.size() * 1.03 + 12);
+		if (deflated_payload_size > buffer.size())
+			buffer.reset(deflated_payload_size);
+		if (::compress2(buffer.data(), &deflated_payload_size, reinterpret_cast<char unsigned const *>(x.data()), x.size(), 9) != Z_OK)
+			throw message::exception("HTTP driver failed to compress message");
+
 		write_is_pending = true;
+
 		::std::ostream os(&write_raw);
 		os << "HTTP/1.1 200 OK\r\n"
 		<< "Content-Type: " << content << "; charset=UTF-8\r\n"
@@ -407,9 +417,11 @@ private:
 		<< "Access-Control-Allow-Cookies: true\r\n"
 		<< "Access-Control-Allow-Credentials: true\r\n"
 		<< "Connection: Keep-Alive\r\n"
-		<< "Content-Length: " << x.size()  << "\r\n"
-		<< "\r\n"
-		<< x;
+		<< "Content-Encoding: deflate\r\n"
+		<< "Content-Length: " << deflated_payload_size  << "\r\n"
+		<< "\r\n";
+
+		os.write(reinterpret_cast<char const *>(buffer.data()), deflated_payload_size);
 	}
 
 	void
