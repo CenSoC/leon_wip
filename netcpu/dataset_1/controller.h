@@ -511,13 +511,14 @@ private:
 				// pack grouping by attributes
 				uint8_t * tmp(composite_matrix_data_ptr + a);
 				for (typename ::std::set<size_type>::const_iterator i(x_unique.begin()); i != x_unique.end(); ++i, tmp += *r) {
-					assert(grid_obj.template column<F>(*i) == grid_obj.template column<int>(*i));
+					if (grid_obj.template column<F>(*i) != grid_obj.template column<int>(*i))
+						throw netcpu::message::exception("attribute columns can only contain whole numbers");
 					*tmp = grid_obj.template column<int8_t>(*i);
 				}
 
-				assert(grid_obj.template column<int>(best_i) == grid_obj.template column<float_type>(best_i));
 				int const best_i_value(grid_obj.template column<int>(best_i));
-				assert(best_i_value == 0 || best_i_value == 1);
+				if (best_i_value && best_i_value != 1 || best_i_value != grid_obj.template column<float_type>(best_i))
+					throw netcpu::message::exception("choice column can only contain values of 0 or 1");
 				if (best_i_value) {
 					if (*composite_matrix_data_chosen_alternative_ptr != static_cast<uint8_t>(-1))
 						throw netcpu::message::exception("design is not excepted to have multiple 'choices' present for a given choiceset -- only one alternative can be indicated as chosen");

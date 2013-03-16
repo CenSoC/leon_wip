@@ -4,3 +4,6 @@ Moreover, this is a QUICK HACK -- very EARLY DAYS and is intended to provide a P
 
 The author does not place any claims on his profficiency/skills/etc. w.r.t. Javascript/ECMA coding. Indubitably. The http-based ++c processing could, however, act as a segway to future survey-providing -taking technology to be developed "inhouse".
 
+There may be a need to install a third party library. 
+Currently such lib(s) is/are:
+zip.js (tested with JZlib version : "1.0.2") such a lib (namely parts thereof: deflate.js and zip.js) was placed in third_party/zip directory within http directory, but this is strictly is not compulsory and may indeed be changed depending on the sysadmin installation/deployment context. 

@@ -162,6 +162,8 @@ struct http_async_driver_detail : SharedFromThisProvider, ::boost::noncopyable {
 
 	::boost::asio::streambuf read_raw;
 	::boost::asio::streambuf write_raw;
+	char unsigned const * pending_deflated_payload;
+	unsigned pending_deflated_payload_size;
 
 	typedef ::boost::asio::ssl::stream<boost::asio::ip::tcp::socket> socket_type;
 	socket_type socket;
@@ -180,7 +182,9 @@ protected:
 private:
 
 	unsigned total_bytes_read;
+public:
 	unsigned const static max_read_capacity = 1024 * 1024 * 64;
+private:
 
 	unsigned header_size;
 	unsigned body_size;
@@ -188,6 +192,7 @@ private:
 	::std::string origin;
 public:
 	::std::string content;
+	::std::string cache_control;
 private:
 
 	::std::list< ::std::string> headers;
@@ -264,6 +269,8 @@ public:
 	reset_callbacks()
 	{
 		process_callback = ::boost::bind(&http_async_driver_detail::empty_on_process, this, _1, _2);
+		pending_deflated_payload_size = 0;
+		cache_control = "no-cache";
 	}
 
 
@@ -393,6 +400,21 @@ public:
 	}
 
 private:
+	void
+	write_common_headers(::std::ostream & os, unsigned deflated_payload_size)
+	{
+		os << "HTTP/1.1 200 OK\r\n"
+		<< "Content-Type: " << content << "; charset=UTF-8\r\n"
+		<< "Access-Control-Allow-Origin: " << origin << " \r\n"
+		// << "Access-Control-Allow-Origin: * \r\n";
+		<< "Access-Control-Allow-Cookies: true\r\n"
+		<< "Access-Control-Allow-Credentials: true\r\n"
+		<< "Connection: Keep-Alive\r\n"
+		<< "Cache-Control: " << cache_control << "\r\n"
+		<< "Content-Encoding: deflate\r\n"
+		<< "Content-Length: " << deflated_payload_size  << "\r\n"
+		<< "\r\n";
+	}
 	censoc::vector<uint8_t, unsigned> buffer; 
 	void
 	write_common(::std::string const & x)
@@ -410,17 +432,7 @@ private:
 		write_is_pending = true;
 
 		::std::ostream os(&write_raw);
-		os << "HTTP/1.1 200 OK\r\n"
-		<< "Content-Type: " << content << "; charset=UTF-8\r\n"
-		<< "Access-Control-Allow-Origin: " << origin << " \r\n"
-		// << "Access-Control-Allow-Origin: * \r\n";
-		<< "Access-Control-Allow-Cookies: true\r\n"
-		<< "Access-Control-Allow-Credentials: true\r\n"
-		<< "Connection: Keep-Alive\r\n"
-		<< "Content-Encoding: deflate\r\n"
-		<< "Content-Length: " << deflated_payload_size  << "\r\n"
-		<< "\r\n";
-
+		write_common_headers(os, deflated_payload_size);
 		os.write(reinterpret_cast<char const *>(buffer.data()), deflated_payload_size);
 	}
 
@@ -437,6 +449,35 @@ public:
 	{
 		write_common(x);
 		::boost::asio::async_write(socket, write_raw, ::boost::bind(&http_async_driver_detail::on_write, SharedFromThisProvider::shared_from_this(), ::boost::asio::placeholders::error));
+	}
+
+	void
+	write(char unsigned const * deflated_payload, unsigned deflated_payload_size)
+	{
+		assert(write_is_pending == false);
+		assert(origin.empty() == false);
+		assert(content.empty() == false);
+		assert(cache_control.empty() == false);
+		assert(deflated_payload != NULL);
+		assert(deflated_payload_size);
+		write_is_pending = true;
+		::std::ostream os(&write_raw);
+		write_common_headers(os, deflated_payload_size);
+		pending_deflated_payload = deflated_payload;
+		pending_deflated_payload_size = deflated_payload_size;
+		::boost::asio::async_write(socket, write_raw, ::boost::bind(&http_async_driver_detail::on_write_common_headers, SharedFromThisProvider::shared_from_this(), ::boost::asio::placeholders::error));
+	}
+private:
+	void 
+	on_write_common_headers(::boost::system::error_code const & error)
+	{
+		if (canceled_ == true)
+			return;
+		if (!error && pending_deflated_payload_size) { 
+			::boost::asio::async_write(socket, ::boost::asio::buffer(pending_deflated_payload, pending_deflated_payload_size), ::boost::bind(&http_async_driver_detail::on_write, SharedFromThisProvider::shared_from_this(), ::boost::asio::placeholders::error));
+		} else if (error != ::boost::asio::error::operation_aborted) { 
+			censoc::llog() << "'error' var in async callback ('on_write') is non-zero: [" << error << ", " << socket.lowest_layer().remote_endpoint(netcpu::ec) << "]\n"; 
+		} 
 	}
 
 protected:
@@ -562,7 +603,7 @@ private:
 
 public:
 	http_async_driver_detail()
-	:	read_raw(max_read_capacity), socket(netcpu::io, netcpu::as_server_ssl), keepalive_wait(false), read_is_pending(false), write_is_pending(false), canceled_(false), total_bytes_read(0), origin("*"), content("text/plain"), cancel_pending(false)
+	:	read_raw(max_read_capacity), pending_deflated_payload_size(0), socket(netcpu::io, netcpu::as_server_ssl), keepalive_wait(false), read_is_pending(false), write_is_pending(false), canceled_(false), total_bytes_read(0), origin("*"), content("text/plain"), cache_control("no-cache"), cancel_pending(false)
 	{
 		assert(keepalive_timer.is_pending() == false);
 		keepalive_timer.timeout(::boost::posix_time::seconds(75));
@@ -714,6 +755,20 @@ struct new_task : io_wrapper<http_adapter_driver> {
 		return "post /new_task http/1.1";
 	}
 
+	struct scoped_zip_archive {
+		::archive * impl;
+		scoped_zip_archive()
+		: impl(::archive_read_new())
+		{
+			if (impl == NULL)
+				throw netcpu::message::exception("::archive_read_new");
+		}
+		~scoped_zip_archive()
+		{
+			::archive_read_finish(impl);
+		}
+	};
+
 	void
 	on_process(::std::string const & resource_id, ::std::list< ::std::pair< ::std::string, ::std::string> > & body_fields)
 	{
@@ -734,29 +789,28 @@ struct new_task : io_wrapper<http_adapter_driver> {
 				if (::boost::filesystem::basename(i->first) == "--filedata") {
 					::std::string const extension(::boost::filesystem::extension(i->first));
 					if (extension == ".zip") {
-						::archive * a(::archive_read_new());
-						if (a != NULL) {
-							::archive_entry *ae;
-							if (::archive_read_support_compression_compress(a) == ARCHIVE_OK && ::archive_read_support_format_zip(a) == ARCHIVE_OK && 
-									// me thinks libarchive has an interface bug... at least w.r.t. doco/implementation, the buf data argument (no. 2) should have been declared const... alas an ugly cast for the time being... if later versions of libarchive become more explicit w.r.t. whether the buf data is modified during call then will adjust/re-factor later...
-									::archive_read_open_memory(a, const_cast<char *>(i->second.data()), i->second.size()) == ARCHIVE_OK 
-									&& ::archive_read_next_header(a, &ae) == ARCHIVE_OK && ae != NULL) {
-								unsigned file_size(::archive_entry_size(ae));
-								if (file_size) {
-									::boost::scoped_ptr<char> d(new char[file_size]);
-									if (::archive_read_data(a, d.get(), file_size) == file_size) {
-										mm->args.push_back(::std::pair< ::std::string, ::std::string>("--filedata", ::std::string(d.get(), file_size)));
-										// ::boost::stream< ::boost::array_source> stream(d.get(), file_size);
-									}
-								}
-							}
-							::archive_read_finish(a);
-						}
+						scoped_zip_archive a;
+						::archive_entry *ae;
+						if (::archive_read_support_compression_compress(a.impl) == ARCHIVE_OK && ::archive_read_support_format_zip(a.impl) == ARCHIVE_OK && 
+							// me thinks libarchive has an interface bug... at least w.r.t. doco/implementation, the buf data argument (no. 2) should have been declared const... alas an ugly cast for the time being... if later versions of libarchive become more explicit w.r.t. whether the buf data is modified during call then will adjust/re-factor later...
+							::archive_read_open_memory(a.impl, const_cast<char *>(i->second.data()), i->second.size()) == ARCHIVE_OK && ::archive_read_next_header(a.impl, &ae) == ARCHIVE_OK && ae != NULL
+						) {
+							::boost::scoped_array<char> d(new char[http_adapter_driver::http_protocol::max_read_capacity]);
+							int const bytes_read(::archive_read_data(a.impl, d.get(), http_adapter_driver::http_protocol::max_read_capacity));
+							if (bytes_read <= 0)
+								throw netcpu::message::exception("Could not read some of the zip data.");
+							else if (static_cast<unsigned>(bytes_read) < http_adapter_driver::http_protocol::max_read_capacity) {
+								mm->args.push_back(::std::pair< ::std::string, ::std::string>("--filedata", ::std::string(d.get(), bytes_read)));
+								// ::boost::stream< ::boost::array_source> stream(d.get(), file_size);
+							} else
+								throw netcpu::message::exception(xxx("The uncompressed CSV dataset file is still too large... maximum allowed dataset size is: ") << unsigned(http_adapter_driver::http_protocol::max_read_capacity) << "bytes.");
+						} else
+							throw netcpu::message::exception("Could not open zip archive, etc.");
 					} else if (extension == ".csv") {
 						i->first.erase(i->first.size() - 4);
 						mm->args.push_back(*i);
 					} else
-						throw netcpu::message::exception(xxx() << "invalid file format upload (only csv and zip files supported)");
+						throw netcpu::message::exception("invalid file format upload (only csv and zip files supported)");
 				} else if (i->first == "--model_id") { 
 					model_id = ::boost::lexical_cast<unsigned>(i->second);
 				} else
@@ -1017,33 +1071,82 @@ struct delete_task : io_wrapper<http_adapter_driver> {
 #endif
 };
 
-struct root : io_wrapper<http_adapter_driver> {
+struct file_cache {
+	::boost::scoped_array<uint8_t> buffer; 
+	unsigned size;
+	file_cache(::std::string const & filepath) 
+	{
+		::std::ifstream file(filepath, ::std::ios::binary);
+		::std::istreambuf_iterator<char> i(file);
+		::std::vector<char> const file_data(i, ::std::istreambuf_iterator<char>());
+		uLongf deflated_payload_size(file_data.size() * 1.03 + 12);
+		buffer.reset(new uint8_t[deflated_payload_size]);
+		if (::compress2(buffer.get(), &deflated_payload_size, reinterpret_cast<char unsigned const *>(file_data.data()), file_data.size(), 9) != Z_OK)
+			throw message::exception("HTTP driver failed to compress message");
+		else
+			size = deflated_payload_size;
+	}
+};
 
+struct root : io_wrapper<http_adapter_driver> {
 	::std::string static
 	get_id()
 	{
 		return "get / http/1.1";
 	}
-
 	void
 	on_process(::std::string const & resource_id, ::std::list< ::std::pair< ::std::string, ::std::string> > & body_fields)
 	{
 		if (resource_id == get_id()) {
 			//::boost::filesystem::file_size("./index.html");
-			::std::ifstream f("./index.html", ::std::ios::binary);
 			//::std::stringstream ss << f.rdbuf();
-			io().http_protocol::write(std::string(::std::istreambuf_iterator<char>(f), ::std::istreambuf_iterator<char>()));
+			//io().http_protocol::write(std::string(::std::istreambuf_iterator<char>(f), ::std::istreambuf_iterator<char>()));
+
+			//file_cache static cache("./index.html");
+			io().http_adapter_driver::http_protocol::write(cache.buffer.get(), cache.size);
 		} else 
 			apply_resource_processor(io(), resource_id, body_fields);
 	}
-
 	root(http_adapter_driver & io)
 	: io_wrapper<http_adapter_driver>(io) {
 		io.http_protocol::process_callback = ::boost::bind(&root::on_process, this, _1, _2);
 		io.http_protocol::content = "text/html";
+		io.http_protocol::cache_control = "max-age=86400";
 	}
+	file_cache static cache;
 };
+file_cache root::cache("./index.html");
 
+template <typename Derived>
+struct js_file : io_wrapper<http_adapter_driver> {
+	::std::string static
+	get_id()
+	{
+		return "get /" + Derived::get_filepath() + " http/1.1";
+	}
+	void
+	on_process(::std::string const & resource_id, ::std::list< ::std::pair< ::std::string, ::std::string> > & body_fields)
+	{
+		if (resource_id == get_id()) {
+			//file_cache static cache("./" + Derived::get_filepath());
+			io().http_adapter_driver::http_protocol::write(cache.buffer.get(), cache.size);
+		} else 
+			apply_resource_processor(io(), resource_id, body_fields);
+	}
+	js_file(http_adapter_driver & io)
+	: io_wrapper<http_adapter_driver>(io) {
+		io.http_protocol::process_callback = ::boost::bind(&js_file::on_process, this, _1, _2);
+		io.http_protocol::content = "application/javascript";
+	}
+	file_cache static cache;
+};
+template <typename Derived>
+file_cache js_file<Derived>::cache("./" + Derived::get_filepath());
+
+struct index_worker : js_file<index_worker> { index_worker(http_adapter_driver & io) : js_file(io) { io.http_protocol::cache_control = "max-age=86400"; } ::std::string static get_filepath() { return "index_worker.js"; } };
+struct index_utils : js_file<index_utils> { index_utils(http_adapter_driver & io) : js_file(io) { io.http_protocol::cache_control = "max-age=86400"; } ::std::string static get_filepath() { return "index_utils.js"; } };
+struct zip : js_file<zip> { zip(http_adapter_driver & io) : js_file(io) { io.http_protocol::cache_control = "max-age=172800"; } ::std::string static get_filepath() { return "third_party/zip/zip.js"; } };
+struct zip_deflate : js_file<zip_deflate> { zip_deflate(http_adapter_driver & io) : js_file(io) { io.http_protocol::cache_control = "max-age=172800"; } ::std::string static get_filepath() { return "third_party/zip/deflate.js"; } };
 
 bool static 
 verify_callback(bool preverified, ::boost::asio::ssl::verify_context& ctx) 
@@ -1231,6 +1334,10 @@ void static
 run(int argc, char * * argv)
 {
 	resources_insert<root>();
+	resources_insert<index_worker>();
+	resources_insert<index_utils>();
+	resources_insert<zip>();
+	resources_insert<zip_deflate>();
 	resources_insert<new_task>();
 	resources_insert<get_tasks_list>();
 	resources_insert<move_task_in_list>();

@@ -67,6 +67,7 @@ li {
 	background-color: yellow;
 	font-size:12pt;
 	font-family: mono;
+	white-space: pre-wrap;
 }
 
 div.beta {
@@ -354,65 +355,25 @@ input.number {
 <!-- } -->
 
 <!-- code { -->
+
+<script type="text/javascript" src="third_party/zip/zip.js"></script>
+
+<script type="text/javascript" src="index_utils.js"></script>   
+
 <script type="text/javascript">
+
 
 // TODO -- later on will have a whole array of possible servers whilst being able to determine which one to use (ala partial remedy/mitigation w.r.t. denial of service attacks where load-balancing is also actively done at the client/browser end)
 //var server_at = "https://localhost:8055/";
-var server_at = "https://localhost:8081/";
-//"https://webnetcpu.zapto.org:443/"
+//var server_at = "https://localhost:8081/";
+var server_at = "https://webnetcpu.zapto.org:443/"
 
 var http_request;
 
 // TODO -- move to the new_task_type scope...
+var worker = new Worker("index_worker.js");
 var file;
 var csv_grid = [];
-function split_csv(str)
-{
-	csv_grid = [];
-	var newrow_pending = true;
-	var unmatched_quotes = false;
-	var str_i = 0;
-	while (true) {
-		if (str_i == str.length)
-			return;
-		var c = str[str_i++];
-		if (/\s/.test(c) == false) {
-			if (newrow_pending == true) {
-				newrow_pending = false;
-				csv_grid.push([]);
-				var row = csv_grid[csv_grid.length - 1];
-				row.push("");
-				while (true) {
-					if (c == ',') {
-						if (unmatched_quotes == false)
-							row.push("");
-						else 
-							row[row.length - 1] += c;
-					} else if (/[\r\n]/.test(c) == true) {
-						newrow_pending = true;
-						break;
-					} else if (c == '"') {
-						if (unmatched_quotes == true) {
-							if (str_i == str.length)
-								return;
-							if (str[str_i] == '"') {
-								row[row.length - 1] += c;
-								++str_i;
-							} else
-								unmatched_quotes = false;
-						} else
-							unmatched_quotes = true;
-					} else if (/\s/.test(c) == false || unmatched_quotes == true)
-						row[row.length - 1] += c;
-					if (str_i == str.length)
-						return;
-					c = str[str_i++];
-				}
-			} 
-		} 
-	}
-}
-
 
 function cli_coefficient_range_metadata_type(i, pid)
 {
@@ -1008,18 +969,26 @@ function new_task_type()
 		this.pid.coefficients.length = 0;
 		switch (parseInt(this.value)) {
 			case 0:
+				this.pid.repeats.disabled = true;
+				this.pid.draws_sets_size.disabled = true;
 				break;
 			case 1:
+				this.pid.repeats.disabled = true;
+				this.pid.draws_sets_size.disabled = true;
 				for (var i = 0; i != Object.keys(this.pid.attributes).length; i++)
 					this.pid.coefficients.push("<b>&beta;</b><sub>" + (i + 1) + "</sub>");
 				break;
 			case 2:
+				this.pid.repeats.disabled = false;
+				this.pid.draws_sets_size.disabled = false;
 				for (var i = 0; i != Object.keys(this.pid.attributes).length; i++)
 					this.pid.coefficients.push("<b>&beta;</b><sub>" + (i + 1) + "</sub>");
 				for (var i = 0; i != Object.keys(this.pid.attributes).length; i++)
 					this.pid.coefficients.push("<b>&sigma;</b><sub>&beta;<sub>" + (i + 1) + "</sub></sub>");
 				break;
 			case 3:
+				this.pid.repeats.disabled = false;
+				this.pid.draws_sets_size.disabled = false;
 				for (var i = 0; i != Object.keys(this.pid.attributes).length; i++)
 					this.pid.coefficients.push("<b>&beta;</b><sub>" + (i + 1) + "</sub>");
 				for (var i = 0; i != Object.keys(this.pid.attributes).length; i++)
@@ -1027,6 +996,8 @@ function new_task_type()
 				this.pid.coefficients.push("&tau;");
 				break;
 			case 4:
+				this.pid.repeats.disabled = false;
+				this.pid.draws_sets_size.disabled = false;
 				for (var i = 0; i != Object.keys(this.pid.attributes).length; i++)
 					this.pid.coefficients.push("<b>&beta;</b><sub>" + (i + 1) + "</sub>");
 				for (var i = 0; i != Object.keys(this.pid.attributes).length; i++)
@@ -1233,42 +1204,74 @@ function new_task_type()
 	tmp_td.appendChild(document.createTextNode(".CSV file:"));
 	tmp_tr.appendChild(tmp_td);
 	tmp_td = document.createElement("td");
-	tmp = document.createElement("input");
-	tmp.type = "file";
-	tmp.pid = this;
-	tmp.onchange = function ()
+	tmp_file_choice = document.createElement("input");
+	tmp_file_choice.type = "file";
+	tmp_file_choice.pid = this;
+
+	tmp_td.appendChild(tmp_file_choice);
+	tmp_tr.appendChild(tmp_td);
+	tmp_tbl.appendChild(tmp_tr);
+
+	tmp_tr = document.createElement("tr");
+	tmp_td = document.createElement("td");
+	tmp_td.appendChild(document.createTextNode("Preview rows:"));
+	tmp_tr.appendChild(tmp_td);
+	tmp_td = document.createElement("td");
+	tmp_csv_preview_rows = document.createElement("input");
+	tmp_csv_preview_rows.size = 5;
+	tmp_csv_preview_rows.value = 10;
+	tmp_td.appendChild(tmp_csv_preview_rows);
+	tmp_tr.appendChild(tmp_td);
+	tmp_tbl.appendChild(tmp_tr);
+
+	tmp_csv_preview_rows.onchange = function()
+	{
+		var new_value = parseInt(this.value);
+		if (isNaN(new_value) == true)
+			this.value = 10;
+		else if (new_value > 1000)
+			this.value = 1000;
+		else if (new_value < 3)
+			this.value = 3;
+		else
+			this.value = new_value;
+
+		if (tmp_file_choice.files.length)
+			tmp_file_choice.onchange();
+	}
+	tmp_file_choice.onchange = function ()
 	{
 		file = this.files[0];
-		var file_slice = file.slice(0, Math.min(file.size, 30000));
-		var file_reader = new FileReader();
-		file_reader.pid = this.pid;
-		file_reader.onloadend = function() {
-			if (this.readyState == FileReader.DONE) {
+		this.pid.attributes = {};
+		var csv_table_holder_previous_class_name = this.pid.csv_table_holder.style.className;
+		this.pid.csv_table_holder.className = "debug_log_from_server";
+		{
+		var txt = document.createTextNode('');
+		this.pid.csv_table_holder.replaceChild(txt, this.pid.csv_table);
+		this.pid.csv_table = txt;
+		}
+		worker.pid = this.pid;
+		worker.onmessage = function(e) {
+			if (e.data.message == "progress") {
+				var txt = document.createTextNode("Parsing: " + Math.min(parseInt(e.data.percent), 99) + "% done... please wait.");
+				this.pid.csv_table_holder.replaceChild(txt, this.pid.csv_table);
+				this.pid.csv_table = txt;
+			} else if (e.data.message == "preview_csv") {
+				this.pid.csv_table_holder.className = csv_table_holder_previous_class_name;
+				this.pid.model.onchange();
+				csv_grid = e.data.csv_grid;
 				var table = document.createElement("table");
-				split_csv(this.result);
-				var rows = Math.min(Math.max(csv_grid.length, 0), 10);
-
+				//var rows = Math.min(Math.max(csv_grid.length, 0), 10);
+				var rows = csv_grid.length;
 				if (rows > 0) {
 					var first_row_columns = csv_grid[0].length;
 					this.pid.csv_column_types.length = first_row_columns;
 					if (first_row_columns > 0) {
-
 						// label columns
 						var tr = document.createElement("tr");
-						var alpha_start = "A".charCodeAt(0);
-						var alpha_size = "Z".charCodeAt(0) - alpha_start + 1;
 						for (var i = 0; i != first_row_columns; ++i) {
-							var alphas_as_ints = [];
-							var j = i;
-							do { 
-								alphas_as_ints.push(alpha_start + j % alpha_size);
-								j = Math.floor(j / alpha_size) - 1;
-							} while (j > -1);
-							var alphas = "";
-							for (var y = alphas_as_ints.length - 1; y >= 0; --y)
-								alphas += String.fromCharCode(alphas_as_ints[y]);
 							var td = document.createElement("td");
-							td.appendChild(document.createTextNode("Column " + (i + 1) + " (" + alphas + ')'));
+							td.appendChild(document.createTextNode("Column " + (i + 1) + " (" + column_numeric_to_alpha(i) + ')'));
 							tr.appendChild(td);
 						}
 						table.appendChild(tr);
@@ -1298,13 +1301,11 @@ function new_task_type()
 					}
 				}
 			}
-		};
-		file_reader.readAsText(file_slice);
+		}
+		worker.postMessage({"message" : "preview_csv", "file" : file, "rows" : tmp_csv_preview_rows.value });
 	}
 
-	tmp_td.appendChild(tmp);
-	tmp_tr.appendChild(tmp_td);
-	tmp_tbl.appendChild(tmp_tr);
+
 	tmp_tr = document.createElement("tr");
 	tmp_td = document.createElement("td");
 	tmp_td.appendChild(document.createTextNode("Data starts from row no:"));
@@ -1325,17 +1326,9 @@ function new_task_type()
 	label.className = "extra_option_text"
 	label.htmlFor = "csv_data_freeform_cli_delete_rows_value";
 
-	tmp_td.appendChild(label);
-	tmp_tr.appendChild(tmp_td);
-
-	tmp_td = document.createElement("td");
-	this.csv_data_freeform_cli_delete_rows_value = document.createElement("input");
-	this.csv_data_freeform_cli_delete_rows_value.disabled = true;
-	this.csv_data_freeform_cli_delete_rows_value.className = "freeform_cli";
 	var checkbox = document.createElement("input");
 	checkbox.type = "checkbox";
 	checkbox.checked = false;
-	checkbox.freeform_cli_value = this.csv_data_freeform_cli_delete_rows_value;
 	checkbox.id = "csv_data_freeform_cli_delete_rows_value";
 	checkbox.onchange = function()
 	{
@@ -1344,9 +1337,18 @@ function new_task_type()
 		else
 			this.freeform_cli_value.disabled = true;
 	}
+
+	tmp_td.appendChild(checkbox);
+	tmp_td.appendChild(label);
+	tmp_tr.appendChild(tmp_td);
+
+	tmp_td = document.createElement("td");
+	this.csv_data_freeform_cli_delete_rows_value = document.createElement("input");
+	checkbox.freeform_cli_value = this.csv_data_freeform_cli_delete_rows_value;
+	this.csv_data_freeform_cli_delete_rows_value.disabled = true;
+	this.csv_data_freeform_cli_delete_rows_value.className = "freeform_cli";
 	this.csv_data_freeform_cli_delete_rows_value.size = 15;
 	tmp_td.appendChild(this.csv_data_freeform_cli_delete_rows_value);
-	tmp_td.appendChild(checkbox);
 	tmp_tr.appendChild(tmp_td);
 
 	tmp_tbl.appendChild(tmp_tr);
@@ -1356,16 +1358,32 @@ function new_task_type()
 	tmp_td = document.createElement("td");
 	tmp_td.colSpan = 2;
 	var label = document.createElement("label");
-	label.appendChild(document.createTextNode("Perform sorting of dataset "));
 	label.className = "extra_option_text"
 	this.csv_data_sort = document.createElement("input");
 	this.csv_data_sort.type = "checkbox";
 	this.csv_data_sort.checked = false;
 	label.appendChild(this.csv_data_sort);
+	label.appendChild(document.createTextNode("Perform sorting of dataset (at the server)."));
 	tmp_td.appendChild(label);
 	tmp_tr.appendChild(tmp_td);
 
 	tmp_tbl.appendChild(tmp_tr);
+
+
+	tmp_tr = document.createElement("tr");
+	tmp_td = document.createElement("td");
+	tmp_td.colSpan = 2;
+	var label = document.createElement("label");
+	label.className = "extra_option_text"
+	this.csv_preprocess = document.createElement("input");
+	this.csv_preprocess.type = "checkbox";
+	this.csv_preprocess.checked = false;
+	label.appendChild(this.csv_preprocess);
+	label.appendChild(document.createTextNode("Strip'n'zip dataset before sending to server."));
+	tmp_td.appendChild(label);
+	tmp_tr.appendChild(tmp_td);
+	tmp_tbl.appendChild(tmp_tr);
+
 
 	td.appendChild(tmp_tbl);
 
@@ -1463,6 +1481,7 @@ function new_task_type()
 	this.repeats.type = "number";
 	this.repeats.size = 10;
 	this.repeats.value = 1000;
+	this.repeats.disabled = true;
 	tmp_td.appendChild(this.repeats);
 	tmp_tr.appendChild(tmp_td);
 	tmp_tbl.appendChild(tmp_tr);
@@ -1476,6 +1495,7 @@ function new_task_type()
 	this.draws_sets_size.type = "number";
 	this.draws_sets_size.size = 10;
 	this.draws_sets_size.value = 1;
+	this.draws_sets_size.disabled = true;
 	tmp_td.appendChild(this.draws_sets_size);
 	tmp_tr.appendChild(tmp_td);
 	tmp_tbl.appendChild(tmp_tr);
@@ -1667,6 +1687,7 @@ function new_task_type()
 		alert(text);
 		this.disabled = false;
 	}
+
 	tmp.onclick = function() 
 	{
 
@@ -1690,7 +1711,6 @@ function new_task_type()
 		cli_string += "--fromrow " + fromrow  + '\n';
 
 		form.append("--model_id", model);
-		form.append("--fromrow", fromrow);
 
 		var attributes_size = 0;
 		var attributes = [];
@@ -1761,19 +1781,23 @@ function new_task_type()
 		}
 
 		cli_string += "--respondent " + respondent_i + '\n';
-		form.append("--respondent", respondent_i);
 
 		cli_string += "--choice_set " + choice_set_i + '\n';
-		form.append("--choice_set", choice_set_i);
 
 		cli_string += "--alternative " + alternative_i + '\n';
-		form.append("--alternative", alternative_i);
 
-		cli_string += "--repeats " + repeats + '\n';
-		form.append("--repeats", repeats);
+
+		if (this.pid.repeats.disabled == false) {
+			cli_string += "--repeats " + repeats + '\n';
+			form.append("--repeats", repeats);
+		}
+
+		if (this.pid.draws_sets_size.disabled == false) {
+			cli_string += "--draws_sets_size " + draws_sets_size + '\n';
+			form.append("--draws_sets_size", draws_sets_size);
+		}
 
 		cli_string += "--best " + choice_i + '\n';
-		form.append("--best", choice_i);
 
 		cli_string += "--complexity_size " + complexity_size + '\n';
 		form.append("--complexity_size", complexity_size);
@@ -1781,12 +1805,11 @@ function new_task_type()
 		cli_string += "--minimpr " + minimpr + '\n';
 		form.append("--minimpr", minimpr);
 
-		cli_string += "--draws_sets_size " + draws_sets_size + '\n';
-		form.append("--draws_sets_size", draws_sets_size);
-
 		cli_string += "--shrink_slowdown " + shrink_slowdown + '\n';
 		form.append("--shrink_slowdown", shrink_slowdown);
 
+		var delby = [];
+		var del_strings = [];
 		if (this.pid.csv_data_freeform_cli_delete_rows_value.disabled == false && this.pid.csv_data_freeform_cli_delete_rows_value.value.length) {
 			var tmps = this.pid.csv_data_freeform_cli_delete_rows_value.value.split(/\s+/);
 			if (!tmps.length)
@@ -1796,7 +1819,12 @@ function new_task_type()
 				if (tmp_.length != 3 || isNaN(tmp_[2]) || (tmp_[1] != "eq" && tmp_[1] != "lt" && tmp_[1] != "gt"))
 					return this.bail_on_wrong_user_values("One of the specifications in \"Exclude rows foo\" is incorrectly formed: " + tmps[i]);
 				cli_string += "--del " + tmps[i] + '\n';
-				form.append("--del", tmps[i]);
+				del_strings.push(tmps[i]);
+				delby.push(
+					{
+					"column" : tmp_[0], "op" : tmp_[1], "val" : tmp_[2]
+					}
+				);
 			}
 		}
 
@@ -1804,11 +1832,11 @@ function new_task_type()
 		form.append("--dissect", "off");
 		form.append("--reduce_exp_complexity", "off");
 
+		var sort_str = "";
 		if (this.pid.csv_data_sort.checked == true) {
-			var sort_str = respondent_i + ',' + choice_set_i;
+			sort_str = respondent_i + ',' + choice_set_i;
 			sort_str += ',' + alternative_i;
 			cli_string += "--sort " + sort_str + '\n';
-			form.append("--sort", sort_str);
 		}
 
 		var tmp_attribute_i = 0;
@@ -1832,7 +1860,7 @@ function new_task_type()
 		}
 
 		cli_string += "--x " + x_str + '\n';
-		form.append("--x", x_str);
+
 
 		// main coefficients metadata stuff
 		cli_string += "--coeffs_atonce_size " + this.pid.coeffs_atonce.value + '\n';
@@ -1874,23 +1902,29 @@ function new_task_type()
 			}
 		}
 
+		if (this.pid.csv_preprocess.checked == true)
+			cli_string += "--csv_strip_n_zip true\n";
+		else
+			cli_string += "--csv_strip_n_zip false\n";
+
 		this.pid.to_server.innerHTML = cli_string;
 
 		// todo -- move it into new_task_type namespace... as sooo many other quick hacks :-)
 
-		this.pid.from_server.innerHTML = "Processing... please wait...";
+		this.pid.from_server.innerHTML = "SENDING TO SERVER... this may take some time, like minutes -- even if the dataset is small the server is still gonna do some chewing, and in debug mode at that -- indubitably. The finally-submitted dataset is " + (file.size / (1024 * 1024)).toFixed(3) + "MB";
+
+		var btn = this;
+		btn.style.visibility = "hidden";
 		// var form = new FormData(document.getElementById("aoeu"));
-		form.append("--filedata", file);
 		http_request = new XMLHttpRequest();
 		http_request.pid = this.pid;
-		http_request.btn = this;
 		http_request.withCredentials = true;
 		http_request.form_to_send = form;
 		http_request.spurious_try_again_flag = true;
 		http_request.onreadystatechange = function()
 		{
 			if (this.readyState == 4) {
-				this.btn.disabled = false;
+				btn.style.visibility = "visible";
 				if (this.status == 200) {
 					//alert(this.responseText);
 					var obj = JSON.parse(this.responseText);
@@ -1907,13 +1941,76 @@ function new_task_type()
 					this.send(this.form_to_send);
 				}
 			} else if (this.readyState == 0) {
-				this.btn.disabled = false;
+				btn.style.visibility = "visible";
 			}
 		}
-		this.disabled = true;
-		http_request.open("POST", server_at + "new_task");
-		http_request.send(form);
+
+		if (this.pid.csv_preprocess.checked == false) {
+			form.append("--fromrow", fromrow);
+			form.append("--respondent", respondent_i);
+			form.append("--choice_set", choice_set_i);
+			form.append("--alternative", alternative_i);
+			form.append("--best", choice_i);
+			form.append("--x", x_str);
+			for (var del_strings_i = 0; del_strings_i != del_strings.length; ++del_strings_i)
+				form.append("--del", del_strings[del_strings_i]);
+			if (this.pid.csv_data_sort.checked == true)
+				form.append("--sort", sort_str);
+			form.append("--filedata", file);
+			http_request.open("POST", server_at + "new_task");
+			http_request.send(form);
+		} else {
+			form.append("--fromrow", 1);
+			form.append("--respondent", 1);
+			form.append("--choice_set", 2);
+			form.append("--alternative", 3);
+			form.append("--best", 4);
+			for (var attributes_i = 0; attributes_i != attributes.length; ++attributes_i)
+				form.append("--x", attributes_i + 5);
+			if (this.pid.csv_data_sort.checked == true)
+				form.append("--sort", "1,2,3");
+
+			var from_server = this.pid.from_server;
+
+			worker.pid = this.pid;
+			worker.onmessage = function(e) {
+				if (e.data.message == "progress") {
+					from_server.innerHTML = "STRIPPING CSV " + parseInt(e.data.percent) + "% done... please wait."
+				} else if (e.data.message == "strip_csv") {
+					//csv_grid = e.data.csv;
+					zip.createWriter(new zip.BlobWriter(), function(writer) {
+						writer.add("dataset.csv", new zip.TextReader(e.data.csv), function() {
+							from_server.innerHTML = "ZIPPING CSV 100%... preparing to send to server...";
+							writer.close(function(blob) {
+								from_server.innerHTML = "SENDING TO SERVER... this may take some time, like minutes -- even if the dataset is small the server is still gonna do some chewing, and in debug mode at that -- indubitably. The finally-submitted dataset is " + (blob.size / (1024 * 1024)).toFixed(3) + "Mb in size, whilst the originally-selected dataset file is " + (file.size / (1024 * 1024)).toFixed(3) + "MB";
+								form.append("--filedata.zip", blob);
+								http_request.open("POST", server_at + "new_task");
+								http_request.send(form);
+								});
+							}, function(currentIndex, totalIndex) {
+								from_server.innerHTML = "ADDING CSV TO ZIP ARCHIVE... " + parseInt((100 * currentIndex) / totalIndex) + '%';
+							});
+						}, function(error) {
+							from_server.innerHTML = "BOO -- zipping failed: " + error;
+							btn.style.visibility = "visible";
+						}
+					);
+				}
+			}
+			var msg = {};
+			msg.message = "strip_csv";
+			msg.file = file;
+			msg.respondent_i = respondent_i;
+			msg.choice_set_i = choice_set_i;
+			msg.alternative_i = alternative_i;
+			msg.choice_i = choice_i;
+			msg.attributes = attributes;
+			msg.delby = delby;
+			msg.fromrow = fromrow;
+			worker.postMessage(msg);
+		}
 	}
+
 
 	tmp.className = "full_width";
 	tmp.appendChild(document.createTextNode("Send to server"));
@@ -2880,6 +2977,7 @@ function async_main()
 }
 function main()
 {
+	zip.workerScriptsPath = "third_party/zip/";
 	var elem = document.createElement("canvas");
 	if (window["innerHeight"] != null && window["pageXOffset"] != null && setInterval && clearInterval && Blob && elem && elem["getContext"] != null && File && FileReader && XMLHttpRequest) {
 		var ctx = elem.getContext("2d");
@@ -2995,6 +3093,9 @@ For example, a given dataset may look similar to the following (note: order of c
 </table>
 <p>
 Different respondents may have different number of choice sets. Different choice sets may have different numebr of alternatives. All rows, however, must have the same attributes.
+<br>Generally speaking, all of the aforementioned columns/data must contain numbers in their cells (e.g. not letters, words, etc. -- just numbers). This requirement may be relaxed in the future, but currently it still stands.
+<p>
+<span class="help_content_fieldname">Preview rows</span> allows one to specify how many rows (from dataset file selected in the <span class="help_content_fieldname">.CSV file</span> field) will be displayed in the interactive column-selector table. This may be of help when selecting designated elements of the .CSV dataset (i.e. which column has respondent id, where is a choice column, etc.)
 <p>
 Many data files will have title row(s). <span class="help_content_fieldname">Data starts from row no</span> configuration field specifies the row number from which the actual data begins.
 <p>
@@ -3017,7 +3118,13 @@ A given data file may be generated by some clumsy software/workflow which is too
 <p>Such a CLI field may be deprecated in future as it may lead to an over-cluttering of the interface with different options/features for a wide variety of different data-producing software packages. This will result in a mess only a few fields/options are relevant to any given user. Instead, in future, an approach may be adopted where additional utilities are used to prepare the dataset separately from this interface and then being able to upload such a 'federated standard' data file to the server via this interface. The deployment of any given preparation utility will be the responsibilty of the user who had chosen to use whichever lazy/clumsy dataset-producing software in the first place.
 <br>Lastly, do take care with respect what you are typing as currently there is a minimal amount of input-error detection!
 <p> 
-Some data files may not be pre-grouped/ordered by respondent/choice set/alternative columns. Selecting the <span class="help_content_fieldname">Perform sorting of dataset</span> option will request the processing server to sort the uploaded .csv file by the aforementioned columns. This may add to the time taken to add a task, so don't tick the checkbox if the supplied dataset is already sorted. Once again, this feature may be deprecated in the near future (instead execting the users to take care of their dataset prior to using this interface).
+Some data files may not be pre-grouped/ordered by respondent/choice set/alternative columns. Selecting the <span class="help_content_fieldname">Perform sorting of dataset (at the server)</span> option will request the processing server to sort the uploaded .csv file by the aforementioned columns. This may add to the time taken to add a task, so don't tick the checkbox if the supplied dataset is already sorted. Once again, this feature may be deprecated in the near future (instead execting the users to take care of their dataset prior to using this interface).
+<p>
+<span class="help_content_fieldname">Strip'n'zip dataset before sending to server</span> option allows one to strip irrelevant columns from the .CSV dataset whilst also compressing (zipping) relevant columns -- thereby minimizing the amount of data that is transmitted over the network to the processing server. This option, unfortunately, has to do its foo in pure Javascript on the client-side (i.e. a web-browser does all the stripping and zipping) and consequently it is not the fastest of processes in the whole wild wild west. However what it does provide is, effectively, an opportunity to tune one's workflow: 
+<ul>
+<li>if one is adding a new task from a computer which is connected to a very slow/expensive network (e.g. 3g broadband SIM card et. al.) then it would make sense to use this option (as uploading huge dataset may take very long time and cost some money)...</li>
+<li>alternatively, if one is connected to a very fast network (e.g. organisation's LAN to which the actual server is connected), or if one's dataset is rather small to begin with (due to either already being pre-stripped -selected, or just having a small-enough size altogether), then one would opt to not have the aforementioned option selected.</li>
+</ul>
 </div>
 
 <div class="help_content" id="help_vcgw_coefficients_metadata_content">
