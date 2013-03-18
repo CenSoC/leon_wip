@@ -79,7 +79,7 @@ function parse_csv(file, newrow_callback)
 			return;
 		var c = str[str_i++];
 		//if (/\s/.test(c) == false) {
-		if (/[\041-\0176]/.test(c) == true) {
+		if (/[\041-\176]/.test(c) == true) {
 			if (newrow_pending == true) {
 				newrow_pending = false;
 				row.push("");
@@ -149,7 +149,11 @@ function preview_csv(file, rows)
 		}
 	);
 
-	postMessage(rv, [rv]);
+	try {
+		postMessage(rv, [rv]); // chrome throws, FF allows
+	} catch(e) {
+		postMessage(rv);
+	}
 }
 
 function strip_csv(msg) 
@@ -206,7 +210,11 @@ function strip_csv(msg)
 		}
 	);
 
-	postMessage(rv, [rv]);
+	try {
+		postMessage(rv, [rv]); // chrome throws, FF allows
+	} catch(e) {
+		postMessage(rv);
+	}
 }
 
 

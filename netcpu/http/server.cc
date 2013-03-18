@@ -61,6 +61,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <boost/algorithm/string.hpp>
 #include <boost/regex.hpp>
 // #include <boost/xpressive/xpressive.hpp>
+#include "boost/date_time/posix_time/posix_time.hpp"
 
 #include <censoc/empty.h>
 #include <censoc/type_traits.h>
@@ -71,6 +72,9 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 namespace censoc { namespace netcpu { 
 
 typedef censoc::lexicast< ::std::string> xxx;
+
+::boost::posix_time::ptime static time_started;
+::std::string static time_started_as_string;
 
 ::boost::system::error_code static ec;
 ::boost::asio::io_service static io;
@@ -317,7 +321,6 @@ private:
 #endif
 		::std::cerr << line;
 		::boost::trim(line);
-		::std::transform(line.begin(), line.end(), line.begin(), ::tolower);
 		return line;
 	}
 
@@ -331,6 +334,8 @@ private:
 		} else {
 			if (headers.empty() == false) {
 
+				::boost::posix_time::ptime t;
+				bool if_modified_since_found(false);
 				bool keepalive_found(false);
 				::std::list< ::std::string>::const_iterator i(headers.begin());
 				assert(i != headers.end());
@@ -342,17 +347,20 @@ private:
 						::boost::trim(header_name);
 						::std::string header_value(i->substr(delim_pos + 1));
 						::boost::trim(header_value);
+						::std::transform(header_name.begin(), header_name.end(), header_name.begin(), ::tolower);
+						::std::string header_value_lc(header_value);
+						::std::transform(header_value_lc.begin(), header_value_lc.end(), header_value_lc.begin(), ::tolower);
 						if (header_name == "origin") {
 							origin = header_value;
 						} else if (header_name == "connection") {
-							if (header_value == "keep-alive")
+							if (header_value_lc == "keep-alive")
 								keepalive_found = true;
 						} else if (header_name == "content-length")
 							body_size = ::boost::lexical_cast<unsigned>(header_value);
 						else if (header_name == "content-type") {
-							if (header_value.find("multipart/form-data") != ::std::string::npos) {
+							if (header_value_lc.find("multipart/form-data") != ::std::string::npos) {
 #if 1
-								::boost::regex e("\\W*boundary=([^\"]+)");
+								::boost::regex e("\\W*boundary=([^\"]+)", ::boost::regex::perl | boost::regex::icase);
 								::boost::match_results< ::std::string::const_iterator> m;
 								if (::boost::regex_search(header_value, m, e) == true && m[1].matched == true) {
 									body_boundary = "--" + m[1].str();
@@ -362,7 +370,7 @@ private:
 #else
 								// TODO/NOTE -- xpressive (albeit with the benefit of templated processing) is not compiling on gcc 4.7.2 from boost 1_52 due to the fact that RTTI needs to be enabled, and I really want to continue using -fno-rtti for as much as I can...
 								// todo -- regex search vs match in terms of efficiency/preformance!!!
-								::boost::xpressive::sregex e(::boost::xpressive::sregex::compile("\\W*boundary=([^\"]+)"));
+								::boost::xpressive::sregex e(::boost::xpressive::sregex::compile("\\W*boundary=([^\"]+)", ::boost::regex::perl | boost::regex::icase));
 								::boost::xpressive::smatch m;
 								if(::boost::xpressive::regex_search(header_value, m, e)) {
 									body_boundary = "--" + m[1];
@@ -371,6 +379,14 @@ private:
 								}
 #endif
 							}
+						} else if (header_name == "if-modified-since") {
+							if_modified_since_found = true;
+							// todo -- perhaps a pre-allocation -init -caching of stringstream, locale and facets et. al.
+							::std::stringstream ss;
+							::std::locale loc(ss.getloc());
+							ss.imbue(::std::locale(loc, new ::boost::posix_time::time_input_facet("%a, %d %b %Y %H:%M:%S GMT")));
+							ss << header_value;
+							ss >> t;
 						}
 					}
 				}
@@ -381,8 +397,35 @@ private:
 					::std::cerr << "finished reading header, will start on body...\n";
 					read<&http_async_driver_detail::on_body_boundary_line>();
 					header_size = total_bytes_read;
-				} else
-					process_callback(headers.front(), body_fields);
+				} else if (if_modified_since_found == true && netcpu::time_started >= t && cache_control.find("no-cache") == ::std::string::npos) {
+
+					// todo -- perhaps a pre-allocation -init -caching of stringstream, locale and facets et. al.
+					::std::ostringstream ss;
+					::std::locale loc(ss.getloc());
+					ss.imbue(::std::locale(loc, new ::boost::posix_time::time_facet("%a, %d %b %Y %H:%M:%S GMT")));
+					ss << ::boost::posix_time::second_clock::universal_time();
+
+					assert(write_is_pending == false);
+					write_is_pending = true;
+					::std::ostream os(&write_raw);
+					os << "HTTP/1.1 304 Not Modified\r\n"
+					<< "Date: " << ss.str() << "\r\n"
+					// todo -- perhaps cache the whole string as "Last-Modified: blah blah"
+					<< "Last-Modified: " << netcpu::time_started_as_string << "\r\n"
+					<< "Access-Control-Allow-Origin: " << origin << " \r\n"
+					<< "Access-Control-Allow-Cookies: true\r\n"
+					<< "Access-Control-Allow-Credentials: true\r\n"
+					<< "Connection: Keep-Alive\r\n"
+					<< "Cache-Control: " << cache_control << "\r\n"
+					<< "\r\n";
+
+					::boost::asio::async_write(socket, write_raw, ::boost::bind(&http_async_driver_detail::on_write, SharedFromThisProvider::shared_from_this(), ::boost::asio::placeholders::error));
+				} else {
+					assert(body_fields.empty() == true);
+					::std::string resource_id(headers.front());
+					::std::transform(resource_id.begin(), resource_id.end(), resource_id.begin(), ::tolower);
+					process_callback(resource_id, body_fields);
+				}
 			}
 		}
 	}
@@ -403,8 +446,10 @@ private:
 	void
 	write_common_headers(::std::ostream & os, unsigned deflated_payload_size)
 	{
-		os << "HTTP/1.1 200 OK\r\n"
-		<< "Content-Type: " << content << "; charset=UTF-8\r\n"
+		os << "HTTP/1.1 200 OK\r\n";
+		if (cache_control.find("no-cache") == ::std::string::npos) 
+			os << "Last-Modified: " << netcpu::time_started_as_string << "\r\n";
+		os << "Content-Type: " << content << "; charset=UTF-8\r\n"
 		<< "Access-Control-Allow-Origin: " << origin << " \r\n"
 		// << "Access-Control-Allow-Origin: * \r\n";
 		<< "Access-Control-Allow-Cookies: true\r\n"
@@ -506,7 +551,9 @@ private:
 	void
 	on_wind_out_the_rest_of_contents(unsigned)
 	{
-		process_callback(headers.front(), body_fields);
+		::std::string resource_id(headers.front());
+		::std::transform(resource_id.begin(), resource_id.end(), resource_id.begin(), ::tolower);
+		process_callback(resource_id, body_fields);
 	}
 
 	match_boundaries_result matcher_status;
@@ -517,7 +564,7 @@ private:
 		::std::cerr << "on body name line\n";
 		::std::string const l(get_line(bytes));
 		// todo -- basic hack for the time-being, also later use boost xpressive (as per code which does the boundary discovery)! (although boost 1_52 seems to call typeid and I like to use "-fno-rtti"...
-		::boost::regex e("\\W*name=\"([^\"]+)\"");
+		::boost::regex e("\\W*name=\"([^\"]+)\"", ::boost::regex::perl | boost::regex::icase);
 		::boost::match_results< ::std::string::const_iterator> m;
 		if (::boost::regex_search(l, m, e) == true && m[1].matched == true) {
 			body_name = m[1].str();
@@ -560,7 +607,9 @@ private:
 			read<&http_async_driver_detail::on_body_name_line>();
 		else if (body_bytes_read == body_size) {
 			::std::cerr << "issing porecssing callback\n";
-			process_callback(headers.front(), body_fields);
+			::std::string resource_id(headers.front());
+			::std::transform(resource_id.begin(), resource_id.end(), resource_id.begin(), ::tolower);
+			process_callback(resource_id, body_fields);
 		} else if (body_size > body_bytes_read) {
 			::std::cerr << "winding out... body_size= " << body_size << ", body_bytes_read " << body_bytes_read << "\n";
 			assert(read_is_pending == false);
@@ -1111,7 +1160,7 @@ struct root : io_wrapper<http_adapter_driver> {
 	: io_wrapper<http_adapter_driver>(io) {
 		io.http_protocol::process_callback = ::boost::bind(&root::on_process, this, _1, _2);
 		io.http_protocol::content = "text/html";
-		io.http_protocol::cache_control = "max-age=86400";
+		io.http_protocol::cache_control = "public, max-age=1800";
 	}
 	file_cache static cache;
 };
@@ -1143,10 +1192,10 @@ struct js_file : io_wrapper<http_adapter_driver> {
 template <typename Derived>
 file_cache js_file<Derived>::cache("./" + Derived::get_filepath());
 
-struct index_worker : js_file<index_worker> { index_worker(http_adapter_driver & io) : js_file(io) { io.http_protocol::cache_control = "max-age=86400"; } ::std::string static get_filepath() { return "index_worker.js"; } };
-struct index_utils : js_file<index_utils> { index_utils(http_adapter_driver & io) : js_file(io) { io.http_protocol::cache_control = "max-age=86400"; } ::std::string static get_filepath() { return "index_utils.js"; } };
-struct zip : js_file<zip> { zip(http_adapter_driver & io) : js_file(io) { io.http_protocol::cache_control = "max-age=172800"; } ::std::string static get_filepath() { return "third_party/zip/zip.js"; } };
-struct zip_deflate : js_file<zip_deflate> { zip_deflate(http_adapter_driver & io) : js_file(io) { io.http_protocol::cache_control = "max-age=172800"; } ::std::string static get_filepath() { return "third_party/zip/deflate.js"; } };
+struct index_worker : js_file<index_worker> { index_worker(http_adapter_driver & io) : js_file(io) { io.http_protocol::cache_control = "public, max-age=1800"; } ::std::string static get_filepath() { return "index_worker.js"; } };
+struct index_utils : js_file<index_utils> { index_utils(http_adapter_driver & io) : js_file(io) { io.http_protocol::cache_control = "public, max-age=1800"; } ::std::string static get_filepath() { return "index_utils.js"; } };
+struct zip : js_file<zip> { zip(http_adapter_driver & io) : js_file(io) { io.http_protocol::cache_control = "public, max-age=172800"; } ::std::string static get_filepath() { return "third_party/zip/zip.js"; } };
+struct zip_deflate : js_file<zip_deflate> { zip_deflate(http_adapter_driver & io) : js_file(io) { io.http_protocol::cache_control = "public, max-age=172800"; } ::std::string static get_filepath() { return "third_party/zip/deflate.js"; } };
 
 bool static 
 verify_callback(bool preverified, ::boost::asio::ssl::verify_context& ctx) 
@@ -1294,6 +1343,14 @@ struct acceptor : ::boost::enable_shared_from_this<acceptor> {
 	void
 	run()
 	{
+		netcpu::time_started = ::boost::posix_time::second_clock::universal_time();
+		// todo -- perhaps a pre-allocation -init -caching of stringstream, locale and facets et. al.
+		::std::ostringstream ss;
+		::std::locale loc(ss.getloc());
+		ss.imbue(::std::locale(loc, new ::boost::posix_time::time_facet("%a, %d %b %Y %H:%M:%S GMT")));
+		ss << netcpu::time_started;
+		netcpu::time_started_as_string = ss.str();
+
 		::boost::shared_ptr<netcpu::http_adapter_driver> new_driver(new netcpu::http_adapter_driver);
 		new peer_connection(*new_driver);
 		newcon.async_accept(new_driver->http_protocol::socket.lowest_layer(), ::boost::bind(&acceptor::on_accept, shared_from_this(), new_driver, ::boost::asio::placeholders::error));
