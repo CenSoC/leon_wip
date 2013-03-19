@@ -145,7 +145,7 @@ struct _interface {
 		// todo -- later will have a series of servers ...
 		// while (config_file) 
 
-			::std::string const server_at("netcpu.zapto.org:8877"), cert_filename("certificate.pem"), alternative_cert_filename("new_certificate.pem");
+			::std::string const server_at("netcpu.zapto.org:8878"), cert_filename("certificate.pem"), alternative_cert_filename("new_certificate.pem");
 			//::std::string const server_at("localhost:8889"), cert_filename("certificate.pem"), alternative_cert_filename("new_certificate.pem");
 #if 0
 			// see above for why non-config_file setup is being used now...

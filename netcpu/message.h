@@ -947,7 +947,7 @@ struct array<T, false> : field_interface {
 };
 
 struct version : message_base<message::messages_ids::version> {
-	message::scalar<uint8_t> value;
+	message::scalar<uint64_t> value;
 };
 
 struct ready_to_process : message_base<message::messages_ids::ready_to_process>  {
