@@ -39,6 +39,12 @@ ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS 
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
 -->
+
+<!--
+<meta name="viewport" content="width=device-width">
+-->
+<meta name="viewport" content="width=390px">
+
 <title>WebNetCPU</title>
 
 <!-- style { -->
@@ -46,6 +52,12 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 li {
 	padding : 0.3em;
+}
+
+#overflowish {
+	overflow : auto;
+	-webkit-overflow-scrolling : touch;
+	/* min-width : 320px; */
 }
 
 .debug_log_to_server {
@@ -1390,9 +1402,8 @@ function new_task_type()
 	td.appendChild(document.createElement("hr"));
 
 	this.csv_table_holder = document.createElement("div");
-	this.csv_table_holder.style.overflow = "auto";
-	// window.innerWidth + "px";
-	this.csv_table_holder.style.maxWidth = (0.95 * screen.width) + "px";
+	this.csv_table_holder.id = "overflowish";
+	this.csv_table_holder.style.maxWidth = (0.95 * document.documentElement.clientWidth) + "px";
 	this.csv_table = document.createElement("table");
 	this.csv_table_holder.appendChild(this.csv_table);
 	td.appendChild(this.csv_table_holder);
@@ -2435,6 +2446,7 @@ function tasks_list_type()
 		this.table = tbl;
 	}
 
+	this.convergence_results_divs = [];
 	this.blahblah = function(obj)
 	{
 		var tbl = document.createElement("table");
@@ -2456,6 +2468,8 @@ function tasks_list_type()
 		var new_task_names_set = {};
 
 		for (var i = 0; i != obj.tasks.length; ++i) {
+			this.convergence_results_divs = [];
+
 			new_task_names_set[obj.tasks[i].name] = true;
 			tr = document.createElement("tr");
 
@@ -2703,23 +2717,28 @@ function tasks_list_type()
 						}
 						tbl_.appendChild(tr_);
 
-						var tbl_holder_ = document.createElement("div");
-	tbl_holder_.style.overflow = "auto";
-	tbl_holder_.style.maxWidth = (0.95 * screen.width) + "px";
-	tbl_holder_.appendChild(tbl_);
-
-
-						td.appendChild(tbl_holder_);
+						var overflow_holder_1 = document.createElement("div");
+						overflow_holder_1.id = "overflowish";
+						overflow_holder_1.style.maxWidth = (0.95 * document.documentElement.clientWidth) + "px";
+						this.pid.convergence_results_divs.push(overflow_holder_1);
+						overflow_holder_1.appendChild(tbl_);
+						td.appendChild(overflow_holder_1);
 
 						var canvas = document.createElement("canvas");
 						canvas.painter = new canvas_painter_type(canvas, this.coefficients, this.task_name, this.model_id, betas_size);
 
+						td.appendChild(document.createElement("br"));
+
+						var overflow_holder_2 = document.createElement("div");
+						overflow_holder_2.id = "overflowish";
+						overflow_holder_2.style.maxWidth = (0.95 * document.documentElement.clientWidth) + "px";
+						this.pid.convergence_results_divs.push(overflow_holder_2);
+						overflow_holder_2.appendChild(canvas);
+						td.appendChild(overflow_holder_2);
+
 						if (repainting_timer == null)
 							repainting_timer = setInterval("timer_callback()", 3000);
-						this.pid.existing_detail_showing_tasks[this.task_name] = canvas;
-
-						td.appendChild(document.createElement("br"));
-						td.appendChild(canvas);
+						this.pid.existing_detail_showing_tasks[this.task_name] = { "canvas" : canvas , "divs" : [ overflow_holder_1, overflow_holder_2 ] }
 
 					} else {
 						td.className = "coefficients_not_ready";
@@ -2961,9 +2980,27 @@ function main_menu_type()
 	}
 }
 
+function ajdust_max_overflow_widths()
+{
+	var max_width = (0.95 * document.documentElement.clientWidth) + "px";
+	new_task.csv_table_holder.style.maxWidth = max_width;
+	var keys = Object.keys(tasks_list.existing_detail_showing_tasks);
+	for (var i = 0; i != keys.length; ++i) {
+		var shown_task = tasks_list.existing_detail_showing_tasks[keys[i]];
+		if (shown_task["divs"])
+			for (var j = 0; j != shown_task.divs.length; ++j)
+				shown_task.divs[j].style.maxWidth = max_width;
+	}
+}
+
 var loading_please_wait_title;
 function async_main()
 {
+	if ("onorientationchange" in window && "orientation" in window)
+		window.onorientationchange = ajdust_max_overflow_widths;
+	else  
+		window.onresize = ajdust_max_overflow_widths;
+
 		normals.length = 200000;
 		for (var i = 0; i != normals.length; ++i)
 			normals[i] = draw_from_normal();
@@ -2982,7 +3019,7 @@ function main()
 	if (window["innerHeight"] != null && window["pageXOffset"] != null && setInterval && clearInterval && Blob && elem && elem["getContext"] != null && File && FileReader && XMLHttpRequest) {
 		var ctx = elem.getContext("2d");
 		var blob = new Blob;
-		if (ctx != null && ctx["createLinearGradient"] != null && blob.slice) {
+		if (ctx != null && ctx["createLinearGradient"] != null && (blob.slice || blob.webkitSlice)) {
 			loading_please_wait_title = document.createElement("div");
 			loading_please_wait_title.className = "loading_please_wait";
 			loading_please_wait_title.appendChild(document.createTextNode("Loading..."));
@@ -3002,9 +3039,9 @@ function timer_callback()
 		clearInterval(repainting_timer);
 		repainting_timer = null;
 	} else for (var i = 0; i != keys.length; ++i) {
-		var canvas = tasks_list.existing_detail_showing_tasks[keys[i]];
-		if (canvas["painter"])
-			canvas.painter.repaint();
+		var shown_task = tasks_list.existing_detail_showing_tasks[keys[i]];
+		if (shown_task["canvas"])
+			shown_task.canvas.painter.repaint();
 	}
 	normals_i = ++normals_i % normals.length;
 }

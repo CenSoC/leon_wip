@@ -58,7 +58,11 @@ function parse_csv(file, newrow_callback)
 
 			offset_i = new_offset_i;
 
-			var file_slice = file.slice(offset_i, offset_i + 1000000); 
+			var file_slice;
+			if (file.slice)
+				file_slice = file.slice(offset_i, offset_i + 1000000); 
+			else 
+				file_slice = file.webkitSlice(offset_i, offset_i + 1000000); 
 			str = file_reader.readAsBinaryString(file_slice);
 
 			if (!str.length) {

@@ -41,7 +41,7 @@
 MYPATH=`realpath ${0}`
 MYDIR=`dirname ${MYPATH}`/
 #CMDLINE="--key new_key.pem --cert new_certificate.pem --dh new_dh.pem --listen_at 127.0.0.1:8889 --root ${MYDIR}update_server_repo "
-CMDLINE="--key key.pem --cert certificate.pem --dh dh.pem --listen_at netcpu.zapto.org:8877 --root ${MYDIR}update_server_repo "
+CMDLINE="--key key.pem --cert certificate.pem --dh dh.pem --listen_at netcpu.zapto.org:8878 --root ${MYDIR}update_server_repo "
 
 # release mode
 MALLOC_OPTIONS="10nP" ./update_server.exe ${CMDLINE}
