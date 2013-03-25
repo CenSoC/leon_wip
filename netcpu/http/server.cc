@@ -1192,10 +1192,10 @@ struct js_file : io_wrapper<http_adapter_driver> {
 template <typename Derived>
 file_cache js_file<Derived>::cache("./" + Derived::get_filepath());
 
-struct index_worker : js_file<index_worker> { index_worker(http_adapter_driver & io) : js_file(io) { io.http_protocol::cache_control = "public, max-age=1800"; } ::std::string static get_filepath() { return "index_worker.js"; } };
-struct index_utils : js_file<index_utils> { index_utils(http_adapter_driver & io) : js_file(io) { io.http_protocol::cache_control = "public, max-age=1800"; } ::std::string static get_filepath() { return "index_utils.js"; } };
-struct zip : js_file<zip> { zip(http_adapter_driver & io) : js_file(io) { io.http_protocol::cache_control = "public, max-age=172800"; } ::std::string static get_filepath() { return "third_party/zip/zip.js"; } };
-struct zip_deflate : js_file<zip_deflate> { zip_deflate(http_adapter_driver & io) : js_file(io) { io.http_protocol::cache_control = "public, max-age=172800"; } ::std::string static get_filepath() { return "third_party/zip/deflate.js"; } };
+struct index_worker : js_file<index_worker> { index_worker(http_adapter_driver & io) : js_file(io) { io.http_protocol::cache_control = "public, max-age=1800, must-revalidate"; } ::std::string static get_filepath() { return "index_worker.js"; } };
+struct index_utils : js_file<index_utils> { index_utils(http_adapter_driver & io) : js_file(io) { io.http_protocol::cache_control = "public, max-age=1800, must-revalidate"; } ::std::string static get_filepath() { return "index_utils.js"; } };
+struct zip : js_file<zip> { zip(http_adapter_driver & io) : js_file(io) { io.http_protocol::cache_control = "public, max-age=172800, must-revalidate"; } ::std::string static get_filepath() { return "third_party/zip/zip.js"; } };
+struct zip_deflate : js_file<zip_deflate> { zip_deflate(http_adapter_driver & io) : js_file(io) { io.http_protocol::cache_control = "public, max-age=172800, must-revalidate"; } ::std::string static get_filepath() { return "third_party/zip/deflate.js"; } };
 
 bool static 
 verify_callback(bool preverified, ::boost::asio::ssl::verify_context& ctx) 

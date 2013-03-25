@@ -1249,12 +1249,10 @@ function new_task_type()
 			this.value = new_value;
 
 		if (tmp_file_choice.files.length)
-			tmp_file_choice.onchange();
+			tmp_file_choice.onchange_ish(false);
 	}
-	tmp_file_choice.onchange = function ()
+	tmp_file_choice.onchange_ish = function(do_renew_csv_columns)
 	{
-		file = this.files[0];
-		this.pid.attributes = {};
 		var csv_table_holder_previous_class_name = this.pid.csv_table_holder.style.className;
 		this.pid.csv_table_holder.className = "debug_log_from_server";
 		{
@@ -1277,7 +1275,8 @@ function new_task_type()
 				var rows = csv_grid.length;
 				if (rows > 0) {
 					var first_row_columns = csv_grid[0].length;
-					this.pid.csv_column_types.length = first_row_columns;
+					if (do_renew_csv_columns == true)
+						this.pid.csv_column_types.length = first_row_columns;
 					if (first_row_columns > 0) {
 						// label columns
 						var tr = document.createElement("tr");
@@ -1291,7 +1290,10 @@ function new_task_type()
 						tr = document.createElement("tr");
 						for (var i = 0; i != first_row_columns; ++i) {
 							var td = document.createElement("td");
-							td.appendChild((this.pid.csv_column_types[i] = new select_csv_column_type(this.pid, i)).gui);
+							if (do_renew_csv_columns == true)
+								td.appendChild((this.pid.csv_column_types[i] = new select_csv_column_type(this.pid, i)).gui);
+							else
+								td.appendChild(this.pid.csv_column_types[i].gui);
 							tr.appendChild(td);
 						}
 						table.appendChild(tr);
@@ -1310,11 +1312,21 @@ function new_task_type()
 						table.className = "auto_table";
 						this.pid.csv_table_holder.replaceChild(table, this.pid.csv_table);
 						this.pid.csv_table = table;
+						if (do_renew_csv_columns == false)
+							for (var i = 0; i != first_row_columns; ++i)
+								this.pid.csv_column_types[i].gui.onchange();
 					}
 				}
 			}
 		}
 		worker.postMessage({"message" : "preview_csv", "file" : file, "rows" : tmp_csv_preview_rows.value });
+	}
+	tmp_file_choice.onchange = function ()
+	{
+		file = this.files[0];
+		this.pid.attributes = {};
+		this.pid.csv_column_types = [];
+		this.onchange_ish(true);
 	}
 
 
@@ -2240,10 +2252,67 @@ function canvas_painter_type(canvas, coefficients, task_name, model_id, betas_si
 		return this.height - (value - this.min) * this.height_over_range;
 	}
 
-	if (this.model_id > 1)
+	this.get_task_name_metrics = function(context)
+	{
+		return context.measureText(this.task_name);
+	}
+
+	this.get_max_normalised_value = function()
+	{
+		var rv = this.coefficients[0].normalised_value;
+		for (var i = 1; i < this.betas_size; ++i)
+			if (rv < this.coefficients[i].normalised_value)
+				rv = this.coefficients[i].normalised_value;
+		if (this.model_id > 1) 
+			for (var i = 0; i < this.betas_size; ++i) {
+				var tmp = Math.abs(this.coefficients[this.betas_size + i].normalised_value);
+				if (rv < tmp)
+					rv = tmp;
+			}
+		return rv;
+	}
+
+	this.paint_comparison = function(context, label_y, label_width, value_scaler, canvas_height)
+	{
+		context.fillText(this.task_name, 0, canvas_height - label_y);
+
+		context.beginPath();
+		context.moveTo(label_width + this.coefficient_circle_radius, canvas_height - this.coefficients[0].normalised_value * value_scaler);
+		var coefficient_centre = label_width + this.coefficient_circle_radius * 3 + this.coefficient_circle_padding;
+		for (var i = 1; i < this.betas_size; ++i, coefficient_centre += this.coefficient_centre_stepsize)
+			context.lineTo(coefficient_centre, canvas_height - this.coefficients[i].normalised_value * value_scaler);
+		var variances_start = coefficient_centre;
+		if (this.model_id > 1) 
+			for (var i = 0; i < this.betas_size; ++i, coefficient_centre += this.coefficient_centre_stepsize)
+				context.lineTo(coefficient_centre, canvas_height - this.coefficients[this.betas_size + i].normalised_value * value_scaler);
+		context.stroke();
+		context.closePath();
+
+
+		if (this.model_id > 1) {
+			coefficient_centre = variances_start;
+			context.beginPath();
+			for (var i = 0; i != this.betas_size; ++i, coefficient_centre += this.coefficient_centre_stepsize) {
+				context.beginPath();
+				context.arc(coefficient_centre, canvas_height - this.coefficients[this.betas_size + i].normalised_value * value_scaler, this.coefficient_circle_radius * .5, 0, Math.PI * 2);
+				context.stroke();
+				context.closePath();
+			}
+		}
+
+	}
+
+	this.max_painted_coefficient_value = 1;
+	if (this.model_id > 1) 
 		for (var i = 0; i != this.betas_size; ++i) {
-			var top = this.value_to_y_coord(this.coefficients[i].normalised_value + this.normal_trunc * this.coefficients[i + this.betas_size].normalised_value);
-			var bottom = this.value_to_y_coord(this.coefficients[i].normalised_value - this.normal_trunc * this.coefficients[i + this.betas_size].normalised_value);
+
+			var variance_normalised_value = this.coefficients[i + this.betas_size].normalised_value;
+
+			if (this.max_painted_coefficient_value < variance_normalised_value)
+				this.max_painted_coefficient_value = variance_normalised_value;
+
+			var top = this.value_to_y_coord(this.coefficients[i].normalised_value + this.normal_trunc * variance_normalised_value);
+			var bottom = this.value_to_y_coord(this.coefficients[i].normalised_value - this.normal_trunc * variance_normalised_value);
 
 			var grd = this.ctx.createLinearGradient(0, top, 0, bottom);
 
@@ -2394,6 +2463,111 @@ function tasks_list_type()
 	this.tableHolder.appendChild(this.table);
 	tr.appendChild(this.tableHolder);
 	this.gui.appendChild(tr);
+
+	tr = document.createElement("tr");
+	td = document.createElement("td");
+	this.comparison_canvas_holder = document.createElement("div");
+	this.comparison_canvas_holder.id = "overflowish";
+	this.comparison_canvas_holder.style.maxWidth = (0.95 * document.documentElement.clientWidth) + "px";
+	this.comparison_canvas_holder.style.display = "none";
+	this.comparison_canvas = document.createElement("canvas");
+	this.comparison_canvas_holder.appendChild(document.createTextNode("Comparative overlay of shown(-detail) tasks..."));
+	this.comparison_canvas_holder.appendChild(document.createElement("br"));
+	this.comparison_canvas_holder.appendChild(this.comparison_canvas);
+	td.appendChild(this.comparison_canvas_holder);
+	tr.appendChild(td);
+	this.gui.appendChild(tr);
+
+	this.paint_comparison = function()
+	{
+		var keys = Object.keys(this.existing_detail_showing_tasks);
+		if (keys.length) {
+
+			var context = this.comparison_canvas.getContext("2d"); 
+			context.font = "14px sans";
+
+			// find relevant dimension details for all of the labels
+			var canvas_height = 200;
+			var canvas_width = 0;
+			var max_label_width = 0;
+			var tmp_offset = 10;
+			var max_normalised_value = 0;
+			var painters = [];
+			for (var i = 0; i != keys.length; ++i) {
+				var shown_task = this.existing_detail_showing_tasks[keys[i]];
+				if (shown_task["canvas"]) {
+					if (canvas_width < shown_task.canvas.width)
+						canvas_width = shown_task.canvas.width;
+					var painter = shown_task.canvas.painter;
+					painters.push({ "label_y" : tmp_offset, "painter" : painter });
+					tmp_offset += 17;
+					if (canvas_height < tmp_offset)
+						canvas_height = tmp_offset;
+					var metrics = painter.get_task_name_metrics(context);
+					if (max_label_width < metrics.width)
+						max_label_width = metrics.width;
+					if (max_normalised_value < painter.get_max_normalised_value())
+						max_normalised_value = painter.get_max_normalised_value();
+				}
+			}
+			canvas_width += max_label_width;
+
+
+			this.comparison_canvas.width = canvas_width;
+			this.comparison_canvas.height = canvas_height;
+			context.clearRect(0, 0, canvas_width, canvas_height);
+			context.font = "14px sans"; 
+
+			// execute the painting call...
+			var value_scaler = canvas_height / max_normalised_value;
+			var intensity_step;
+			if (painters.length > 1)
+				intensity_step = 1 / (painters.length - 1);
+			var intensity_value = 0;
+			var hue_from = 0;
+			var hue_to = 1;
+			var hue_step = (hue_to - hue_from) * intensity_step;
+			var hue = hue_from;
+			context.lineWidth = 1.5;
+			for (var i = 0; i != painters.length; ++i, hue += hue_step, intensity_value += intensity_step) {
+				var rgb_scale = 255 * intensity_value;
+				var rgb_color = "rgb(";
+				var r, g, b;
+				var x = Math.floor(hue * 6);
+				var f = hue * 6 - x;
+				var q = (1 - f);
+				switch (x % 6) {
+				case 0: 
+					rgb_color += parseInt(rgb_scale) + ',' + parseInt(rgb_scale * f) + ",0)";
+					break;
+				case 1: 
+					rgb_color += parseInt(rgb_scale * q) + ',' + parseInt(rgb_scale) + ",0)";
+					break;
+				case 2: 
+					rgb_color += "0," + parseInt(rgb_scale) + ',' + parseInt(rgb_scale * f) + ')';
+					break;
+				case 3: 
+					rgb_color += "0," + parseInt(rgb_scale * q) + ',' + parseInt(rgb_scale) + ')';
+					break;
+				case 4: 
+					rgb_color += parseInt(rgb_scale * f) + ",0," + parseInt(rgb_scale) + ')';
+					break;
+				case 5: 
+					rgb_color += parseInt(rgb_scale) + ",0," + parseInt(rgb_scale * q) + ')';
+					break;
+				}
+
+				context.strokeStyle = rgb_color;
+				context.fillStyle = rgb_color;
+
+				painters[i].painter.paint_comparison(context, painters[i].label_y, max_label_width, value_scaler, canvas_height);
+			}
+
+			this.comparison_canvas_holder.style.display = "block";
+		} else
+			this.comparison_canvas_holder.style.display = "none";
+
+	} // paint_comparison
 
 	tr = document.createElement("tr");
 	td = document.createElement("td");
@@ -2739,6 +2913,7 @@ function tasks_list_type()
 						if (repainting_timer == null)
 							repainting_timer = setInterval("timer_callback()", 3000);
 						this.pid.existing_detail_showing_tasks[this.task_name] = { "canvas" : canvas , "divs" : [ overflow_holder_1, overflow_holder_2 ] }
+						this.pid.paint_comparison();
 
 					} else {
 						td.className = "coefficients_not_ready";
@@ -2746,6 +2921,7 @@ function tasks_list_type()
 						td.appendChild(document.createElement("br"));
 						td.appendChild(document.createTextNode("Try again in a few minutes."));
 						this.pid.existing_detail_showing_tasks[this.task_name] = {};
+						this.pid.paint_comparison();
 					}
 					tr.appendChild(td);
 					this.table.insertBefore(tr, this.row.nextSibling);
@@ -2753,6 +2929,7 @@ function tasks_list_type()
 					delete this.pid.existing_detail_showing_tasks[this.task_name];
 					//alert("Not yet implemented");
 					this.table.removeChild(this.row.nextSibling);
+					this.pid.paint_comparison();
 				}
 			}
 			label.appendChild(checkbox);
@@ -2837,6 +3014,7 @@ function tasks_list_type()
 		for (var i = 0; i != existing_detail_showing_tasks.length; ++i)
 			if (new_task_names_set[existing_detail_showing_tasks[i]] != true)
 				delete this.existing_detail_showing_tasks[existing_detail_showing_tasks[i]];
+		this.paint_comparison();
 	}
 
 	this.existing_detail_showing_tasks = {};
@@ -2844,6 +3022,7 @@ function tasks_list_type()
 
 	this.populate = function()
 	{
+		this.comparison_canvas_holder.style.display = "none";
 		this.display_status("Please wait, processing...");
 
 		/*
@@ -2984,6 +3163,7 @@ function ajdust_max_overflow_widths()
 {
 	var max_width = (0.95 * document.documentElement.clientWidth) + "px";
 	new_task.csv_table_holder.style.maxWidth = max_width;
+	tasks_list.comparison_canvas_holder.style.maxWidth = max_width;
 	var keys = Object.keys(tasks_list.existing_detail_showing_tasks);
 	for (var i = 0; i != keys.length; ++i) {
 		var shown_task = tasks_list.existing_detail_showing_tasks[keys[i]];
