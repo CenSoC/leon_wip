@@ -2787,18 +2787,20 @@ function tasks_list_type()
 
 						var td_ = document.createElement("td");
 						td_.className = "terrain_elevation_value";
-						td_.appendChild(document.createTextNode("Terrain minimisation: " + parseFloat(parseFloat(this.e_min_value).toFixed(3))));
-						tr_.appendChild(td_);
 
 						var betas_size = 0;
 						var inv_distance;
 						switch (this.model_id) {
 						case 1:
+							td_.appendChild(document.createTextNode("Log-likelihood: -" + parseFloat(parseFloat(this.e_min_value).toFixed(3))));
+							tr_.appendChild(td_);
 							betas_size = this.coefficients.length;
 							calculate_normalised_betas(betas_size, this.coefficients);
 							generate_headings("<b>&beta;</b>", tr_, betas_size, "");
 						break;
 						case 2:
+							td_.appendChild(document.createTextNode("Log-likelihood: -" + parseFloat(parseFloat(this.e_min_value).toFixed(3))));
+							tr_.appendChild(td_);
 							betas_size = this.coefficients.length / 2;
 							inv_distance = calculate_normalised_betas(betas_size, this.coefficients);
 							for (var i = 0; i != betas_size; ++i)
@@ -2807,6 +2809,8 @@ function tasks_list_type()
 							generate_headings("<b>&sigma;</b><sub>&beta;", tr_, betas_size, "</sub>");
 						break;
 						case 3:
+							td_.appendChild(document.createTextNode("Log-likelihood: -" + parseFloat(parseFloat(this.e_min_value).toFixed(3))));
+							tr_.appendChild(td_);
 							betas_size = (this.coefficients.length - 1) / 2;
 							inv_distance = calculate_normalised_betas(betas_size, this.coefficients);
 							for (var i = 0; i != betas_size; ++i)
@@ -2818,6 +2822,8 @@ function tasks_list_type()
 							tr_.appendChild(td_);
 						break;
 						case 4: {
+							td_.appendChild(document.createTextNode("Log-likelihood: -" + parseFloat(parseFloat(this.e_min_value).toFixed(3))));
+							tr_.appendChild(td_);
 							betas_size = (this.coefficients.length - 4) / 2;
 							var phi = this.coefficients[this.coefficients.length - 1].value;
 							inv_distance = calculate_normalised_betas(betas_size, this.coefficients);
@@ -2840,6 +2846,8 @@ function tasks_list_type()
 						}
 						break;
 						default:
+							td_.appendChild(document.createTextNode("Terrain minimisation: " + parseFloat(parseFloat(this.e_min_value).toFixed(3))));
+							tr_.appendChild(td_);
 						break;
 						}
 						tbl_.appendChild(tr_);
