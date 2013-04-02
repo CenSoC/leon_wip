@@ -281,6 +281,8 @@ public:
 	void
 	handshake()
 	{
+		assert(keepalive_timer.is_pending() == false);
+		keepalive_timer.timeout(::boost::posix_time::seconds(75));
 		socket.async_handshake(::boost::asio::ssl::stream_base::server, ::boost::bind(&http_async_driver_detail::on_handshake, SharedFromThisProvider::shared_from_this(), ::boost::asio::placeholders::error));
 	}
 
@@ -303,8 +305,15 @@ private:
 				censoc::llog() << "unexpected exception. peer at a time was: [" << socket.lowest_layer().remote_endpoint(netcpu::ec) << "]\n"; 
 				throw; 
 			} 
-		} else 
-			censoc::llog() << "'error' var in async callback for ssl handshake is non-zero: [" << error << ", " << socket.lowest_layer().remote_endpoint(netcpu::ec) << "]\n"; 
+		} else { 
+			censoc::llog() << "'error' var in http driver's async callback for ssl handshake is non-zero: [" << error << ", " << socket.lowest_layer().remote_endpoint(netcpu::ec) << ']';
+			if (error.category() == boost::asio::error::get_ssl_category()) {
+				char const * const str(::ERR_error_string(error.value(), NULL));
+				assert(str != NULL);
+				censoc::llog() << " additional ssl caterogy description: [" << str << ']';
+			}
+			censoc::llog() << '\n'; 
+		}
 	}
 
 	::std::string 
@@ -654,8 +663,6 @@ public:
 	http_async_driver_detail()
 	:	read_raw(max_read_capacity), pending_deflated_payload_size(0), socket(netcpu::io, netcpu::as_server_ssl), keepalive_wait(false), read_is_pending(false), write_is_pending(false), canceled_(false), total_bytes_read(0), origin("*"), content("text/plain"), cache_control("no-cache"), cancel_pending(false)
 	{
-		assert(keepalive_timer.is_pending() == false);
-		keepalive_timer.timeout(::boost::posix_time::seconds(75));
 		keepalive_timer.timeout_callback(&http_async_driver_detail::on_keepalive_timeout, this);
 		reset_callbacks();
 	}

@@ -143,35 +143,9 @@ survey_generator :
 
 # TODO -- ICONV was not detected during installation of libxls -- so needed to manually hack (+ it may also have mem leak)... will need to use custom patches...
 
-CENSOC_HOME = ${.CURDIR}/../
-
-# NOTE -- currently bypassing LIB XLS specifications in the makefile and adjusting those directly in the environment shell!!!
-# --- LIB XLS ---
-
-# FOR BUILDING WITH SYSTEM-WIDE LIBXLS OR for static linking with in-tree version (in case system-wide version does not use lib iconv, or perhaps leaks too much). RUN LIBXLS_REBUILD.SH FIRST THOUGH.
-
-# base location for lib xls
-
-# for external dynamic/shared xls lib (e.g. if such is installed in a custom dir)
-# LIBXLS=/home/online/libxls/installed/
-# or override for in-tree version
-# LIBXLS = ${CENSOC_HOME}3rdparty/libxls/
-
-# header location as a subdir of base location
-# LIBXLS_INC = ${LIBXLS}include/
-
-# lib location as a subdir of base location
-
-# for most cases
-# LIBXLS_LIB = ${LIBXLS}lib/
-# or override for in-tree version
-# LIBXLS_LIB = ${LIBXLS}src/.libs/
-
-# ---------------
-
-#INCS = -I${CENSOC_HOME} -I${LIBXLS_INC} 
-INCS = -I${CENSOC_HOME} 
-#LIBS = -L${LIBXLS_LIB} 
+# censoc-centric libs are to be treated as any other 3rd party lib -- via the environment variable/shell substitution/setting.
+# CENSOC_HOME = ${.CURDIR}/../
+# INCS = -I${CENSOC_HOME} 
 
 # TODO -- use -Wconversion 
 # TODO -- combine may not be needed at all
@@ -180,7 +154,7 @@ INCS = -I${CENSOC_HOME}
 
 # -std=c++98
 # -std=c++0x
-FLAGS_COMMON = -std=c++11 -pipe -pedantic -static -ffor-scope -fstrict-aliasing -fstrict-overflow -DLITTLE_ENDIAN -DEIGEN_NO_EXCEPTIONS -Wall -Wunused -Wno-parentheses -Wextra -Wstrict-overflow -Wstrict-overflow=5 ${INCS} ${LIBS}
+FLAGS_COMMON = -std=c++11 -pipe -pedantic -static -ffor-scope -fstrict-aliasing -fstrict-overflow -DLITTLE_ENDIAN -DEIGEN_NO_EXCEPTIONS -Wall -Wunused -Wno-parentheses -Wextra -Wstrict-overflow -Wstrict-overflow=5 
 
 FLAGS_DEBUG = ${FLAGS_COMMON} -ggdb -DNDEBUG_XSLOW
 #FLAGS_DEBUG = ${FLAGS_COMMON} -ggdb 

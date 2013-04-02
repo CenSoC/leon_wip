@@ -61,13 +61,9 @@ OPENSSL_TOP=${TOP}/openssl/installed
 ZLIB_TOP=${TOP}/zlib/installed
 LIBARCHIVE_TOP=${TOP}/libarchive/installed
 
-# NOTE -- temp hack for LIB XLS...
 MYPATH=`realpath ${0}`
 MYDIR=`dirname ${MYPATH}`/
-XLS_TOP=${MYDIR}../3rdparty/libxls/
-XLS_INCS=${XLS_TOP}include
-XLS_LIBS=${XLS_TOP}src/.libs
-# end of LIB XLS hack
+CENSOC_TOP=${MYDIR}..
 
 
 GCC_LIBS=${GCC_TOP}/lib/gcc/${TARGET_XXX}/${GCC_VERSION}/:${GCC_TOP}/lib
@@ -118,8 +114,10 @@ OPENSSL_INCS=${OPENSSL_TOP}/include
 ZLIB_INCS=${ZLIB_TOP}/include
 LIBARCHIVE_INCS=${LIBARCHIVE_TOP}/include
 
+CENSOC_INCS=${CENSOC_TOP}
+
 # not using these because of the cross-compiling instances :/usr/include:/usr/local/include
-INCS=${BINUTILS_INCS}:${GCC_INCS}:${BOOST_INCS}:${XLS_INCS}:${OPENSSL_INCS}:${EIGEN_INCS}:${ZLIB_INCS}:${LIBARCHIVE_INCS}
+INCS=${BINUTILS_INCS}:${GCC_INCS}:${BOOST_INCS}:${XLS_INCS}:${OPENSSL_INCS}:${EIGEN_INCS}:${ZLIB_INCS}:${LIBARCHIVE_INCS}:${CENSOC_INCS}
 
 # probably not needed (leftover from previous experiments)... todo -- clean up if there is time later
 export CPATH=${INCS}${CPATH:+:}${CPATH}
