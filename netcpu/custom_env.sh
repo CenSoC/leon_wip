@@ -80,7 +80,7 @@ LIBARCHIVE_LIBS=${LIBARCHIVE_TOP}/lib
 
 # not using these because of the cross-compiling instances :/usr/lib:/usr/local/lib
 # moreover, the user/binutils is for the fact that config in binutils relying on -ldl which is on linux, but not on freebsd...
-LIBS=/usr/home/${USER}/binutils:${BINUTILS_LIBS}:${GCC_LIBS}:${GDB_LIBS}:${BOOST_LIBS}:${XLS_LIBS}:${OPENSSL_LIBS}:${ZLIB_LIBS}:${LIBARCHIVE_LIBS}
+LIBS=/usr/home/${USER}/binutils:${BINUTILS_LIBS}:${GCC_LIBS}:${GDB_LIBS}:${BOOST_LIBS}:${OPENSSL_LIBS}:${ZLIB_LIBS}:${LIBARCHIVE_LIBS}
 
 export LD_RUN_PATH=${LIBS}${LD_RUN_PATH:+:}${LD_RUN_PATH}
 export LD_LIBRARY_PATH=${LIBS}:/usr/home/${USER}/gmp/installed/lib:/usr/home/${USER}/ppl/installed/lib:/usr/home/${USER}/cloog/installed/lib:/usr/home/${USER}/mpfr/installed/lib:/usr/home/${USER}/mpc/installed/lib${LD_LIBRARY_PATH:+:}${LD_LIBRARY_PATH}

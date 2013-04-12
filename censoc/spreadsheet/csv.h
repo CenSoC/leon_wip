@@ -100,7 +100,8 @@ public:
 			if (!is.good())
 				return;
 
-			if (!::isspace(c)) {
+			//if (!::isspace(c)) {
+			if (!isnewline(c)) {
 				if (newrow_pending == true) {
 					newrow_pending = false;
 					if (grid.size() == rows_reservations_size) {
@@ -138,7 +139,7 @@ public:
 									unmatched_quotes = false;
 							} else
 								unmatched_quotes = true;
-						} else if (!::isspace(c) || unmatched_quotes == true)
+						} else // if (!::isspace(c) || unmatched_quotes == true)
 							grid.back().back() += c;
 						c = is.get();
 						if (!is.good())

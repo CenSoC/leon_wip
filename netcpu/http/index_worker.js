@@ -63,7 +63,8 @@ function parse_csv(file, newrow_callback)
 				file_slice = file.slice(offset_i, offset_i + 1000000); 
 			else 
 				file_slice = file.webkitSlice(offset_i, offset_i + 1000000); 
-			str = file_reader.readAsBinaryString(file_slice);
+			//str = file_reader.readAsBinaryString(file_slice);
+			str = file_reader.readAsText(file_slice); // a quick alternative of a hack to bypass BOM in UTF-8 encoding (present at times in some CSV text files).
 
 			if (!str.length) {
 				if (row.length > 0 && row[0].length > 0)
@@ -83,7 +84,8 @@ function parse_csv(file, newrow_callback)
 			return;
 		var c = str[str_i++];
 		//if (/\s/.test(c) == false) {
-		if (/[\041-\176]/.test(c) == true) {
+		//if (/[\041-\176]/.test(c) == true) {
+		if (/[\012\014\015]/.test(c) == false) {
 			if (newrow_pending == true) {
 				newrow_pending = false;
 				row.push("");
@@ -93,7 +95,8 @@ function parse_csv(file, newrow_callback)
 							row.push("");
 						else 
 							row[row.length - 1] += c;
-					} else if (/[\r\n]/.test(c) == true) {
+					//} else if (/[\r\n]/.test(c) == true) {
+					} else if (/[\012\014\015]/.test(c) == true) {
 						if (newrow_callback(row, offset_i + str_i) == false)
 							return;
 						newrow_pending = true;
@@ -110,7 +113,7 @@ function parse_csv(file, newrow_callback)
 								unmatched_quotes = false;
 						} else
 							unmatched_quotes = true;
-					} else if (/\s/.test(c) == false || unmatched_quotes == true)
+					} else // if (/\s/.test(c) == false || unmatched_quotes == true)
 						row[row.length - 1] += c;
 					if (test_more_data() == false)
 						return;

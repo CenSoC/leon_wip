@@ -76,7 +76,7 @@ processor : finite_math
 	make LIBS_DEFINED="finite_math.o -lboost_filesystem -lboost_system -lssl -lcrypto -lz ${LIB_YUCK_I} ${LIB_YUCK_III}" ${.TARGET}.exe
 
 controller :
-	make LIBS_DEFINED="-lboost_system -lssl -lcrypto -lz" ${.TARGET}.exe
+	make LIBS_DEFINED="-lboost_filesystem -lboost_system -lssl -lcrypto -lz" ${.TARGET}.exe
 #make LIBS_DEFINED="-lxlsreader -liconv -lboost_system -lssl -lcrypto" ${.TARGET}.exe
 
 nosleep :

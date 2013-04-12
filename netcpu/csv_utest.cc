@@ -68,7 +68,7 @@ struct grid_base {
 };
 typedef censoc::spreadsheet::csv<size_type, xxx, grid_base> rawgrid_type;
 
-char const buffer[] = "\"test\" , , boo, \"test \",\n   01, 2, 3, 4, 15.15, \"\"\"a\"\n\n\tte\t st,\"\"\"boo\",goo\nbam,baa";
+char const buffer[] = "\"test\" , ,, boo, \"test \",\n   01, 2, -2.5 , 4, 15.15, \"\"\"a\"\n\n\tte\t st,\"\"\"boo\",goo\nbam,baa";
 char const static filepath[] = "/tmp/csv_utest_1.tmp"; 
 
 
@@ -83,14 +83,20 @@ int main()
 	ute_type ute;
 	rawgrid_type grid(tmp_file, grid_base::ctor(ute));
 	grid.torow(1);
-	assert(grid.column< ::std::string>(5) ==  "\"a");
+	assert(grid.column< ::std::string>(5) ==  " \"a");
+	assert(grid.column< ::std::string>(0) ==  "   01");
+	assert(grid.column<double>(0) == 1);
+	assert(grid.column<int>(0) == 1);
+	assert(grid.column<int>(1) == 2);
+	assert(grid.column<double>(2) == -2.5);
 	grid.torow(0);
-	assert(grid.column< ::std::string>(1) == "");
-	assert(grid.column< ::std::string>(3) == "test ");
-	assert(grid.column< ::std::string>(4) == "");
-	assert(grid.column< ::std::string>(0) == "test");
+	assert(grid.column< ::std::string>(1) == " ");
+	assert(grid.column< ::std::string>(2) == "");
+	assert(grid.column< ::std::string>(4) == " test ");
+	assert(grid.column< ::std::string>(5) == "");
+	assert(grid.column< ::std::string>(0) == "test ");
 	grid.torow(2);
-	assert(grid.column< ::std::string>(0) == "test");
+	assert(grid.column< ::std::string>(0) == "\tte\t st");
 	assert(grid.column< ::std::string>(1) == "\"boo");
 	assert(grid.column< ::std::string>(2) == "goo");
 	grid.torow(3);

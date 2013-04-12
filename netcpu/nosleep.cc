@@ -67,8 +67,6 @@ counters_type static cpu_counts;
 uint_fast64_t static ip_io_count;
 uint_fast64_t static disk_io_count;
 
-unsigned static pinged_whilst_inactive_counter(0);
-
 void static
 ping_exit()
 {
@@ -76,10 +74,8 @@ ping_exit()
 	while (::PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
 		if (msg.message == WM_QUIT)
 			::ExitProcess(0);
-		else if (msg.message == WM_POWERBROADCAST && msg.wParam == PBT_APMRESUMEAUTOMATIC) {
+		else if (msg.message == WM_POWERBROADCAST && msg.wParam == PBT_APMRESUMEAUTOMATIC)
 			::SetThreadExecutionState(ES_SYSTEM_REQUIRED | ES_CONTINUOUS);
-			pinged_whilst_inactive_counter = 0;
-		}
 }
 
 // NOTE -- SHOULD LATER USE PDH PERFORMANCE DATA HELPING LIB (LIKE PDHADDCOUNTER ET AL), BUT THIS IS QUICKER TO HACK TO ROUGHLY TEST THE CONCEPT (NO TIME NOW TO HACK RELEVANT DECLARATIONS/STRUCTS SUPPORT WITHIN MINGW32 WHICH CURRENTLY DOES NOT HAVE EXPLICIT HEADERS/LIB FOR IT'S PDH QUERY/COUNTERS... ALTHOUGH MINGW64, WHICH CAN BE MADE TO BUILD 32BIT RUNTIME AS WELL, DOES APPARENTLY SUPPORT PDH... WILL NEED TO MIGRATE LATER ON...)
@@ -209,7 +205,6 @@ ping_io()
 void static
 long_sleep()
 {
-	pinged_whilst_inactive_counter = 0;
 	::SetProcessWorkingSetSize(::GetCurrentProcess(), -1, -1);
 	for (unsigned i(0); i != 57 * 6; ++i) {
 		::censoc::scheduler::sleep_s(10);
@@ -221,6 +216,13 @@ void static
 long_sleep_whilst_active()
 {
 	::SetThreadExecutionState(ES_SYSTEM_REQUIRED | ES_CONTINUOUS);
+	long_sleep();
+}
+
+void static
+long_sleep_whilst_inactive()
+{
+	::SetThreadExecutionState(ES_CONTINUOUS);
 	long_sleep();
 }
 
@@ -251,54 +253,64 @@ main()
 	::SetThreadExecutionState(ES_SYSTEM_REQUIRED | ES_CONTINUOUS);
 	while (!0) {
 		try {
+			bool stay_awake(false);
 
-			ping_cpu();
-			::censoc::scheduler::sleep_s(10);
-			ping_cpu();
-			ping_exit();
-			
-			bool bail(false);
-			for (unsigned j(0u), non_idle_size(-1); j != cpus_size && bail == false; ++j) {
-				unsigned const last_idx(idx ? 0u : 1u);
-				uint_fast64_t const cpu_diff(cpu_counts[idx][j] - cpu_counts[last_idx][j]);
-				uint_fast64_t const idle_diff(idle_counts[idx][j] - idle_counts[last_idx][j]);
-				if (idle_diff < cpu_diff - cpu_diff / 8u) // no core should have > 12%
-					bail = true;
-				else if (idle_diff < cpu_diff - cpu_diff / 12u) // at least ~50% of cores (if on hugely multicore box) should not have > 8%
-					if (++non_idle_size == non_idle_end) 
-						bail = true;
+			// CPU polling...
+			for (unsigned i(0); i != 10 && stay_awake == false; ++i) {
+				ping_cpu();
+				::censoc::scheduler::sleep_s(10);
+				ping_cpu();
+				ping_exit();
+				
+				for (unsigned j(0u), non_idle_size(-1); j != cpus_size && stay_awake == false; ++j) {
+					unsigned const last_idx(idx ? 0u : 1u);
+					uint_fast64_t const cpu_diff(cpu_counts[idx][j] - cpu_counts[last_idx][j]);
+					uint_fast64_t const idle_diff(idle_counts[idx][j] - idle_counts[last_idx][j]);
+					if (idle_diff < cpu_diff - cpu_diff / 8u) // no core should have > 12%
+						stay_awake = true;
+					else if (idle_diff < cpu_diff - cpu_diff / 12u) // at least ~50% of cores (if on hugely multicore box) should not have > 8%
+						if (++non_idle_size == non_idle_end) 
+							stay_awake = true;
+				}
 			}
-			if (bail == true)
-				long_sleep_whilst_active();
 
-			// one could have done with only 1 call to 'ping_io' (if calling GetSystemTime or similar and then calculating the amount if time spent in the sleep state)... but will leave for future todo.
-			// mainly because:  the code would not get to this point unless there is no CPU activity anyway (i.e. there is plenty of cpu cycles available to do this additional code); and current model offers lesser additional code to write (meaning lesser issues to deal with -- a bonus w.r.t. lose(r)os environment).
-			ping_io();
-			uint_fast64_t const tmp_ip_io_count(ip_io_count);
-			uint_fast64_t const tmp_disk_io_count(disk_io_count);
-			::censoc::scheduler::sleep_s(10);
-			ping_io();
-			ping_exit();
-			if (
+			// ... cpus are idle, now check the IO conditions for staying awake.
+			if (stay_awake == false)
+				for (unsigned i(0); i != 10 && stay_awake == false; ++i) {
+					// one could have done with only 1 call to 'ping_io' (if calling GetSystemTime or similar and then calculating the amount if time spent in the sleep state)... but will leave for future todo.
+					// mainly because:  the code would not get to this point unless there is no CPU activity anyway (i.e. there is plenty of cpu cycles available to do this additional code); and current model offers lesser additional code to write (meaning lesser issues to deal with -- a bonus w.r.t. lose(r)os environment).
+					ping_io();
+					uint_fast64_t const tmp_ip_io_count(ip_io_count);
+					uint_fast64_t const tmp_disk_io_count(disk_io_count);
+					::censoc::scheduler::sleep_s(10);
+					ping_io();
+					ping_exit();
+					if (
 #if 1
-					// using GetIfEintry et al
-					ip_io_count - tmp_ip_io_count > 12 * 10 * 1024 // 12kB per sec
+							// using GetIfEintry et al
+							ip_io_count - tmp_ip_io_count > 12 * 10 * 1024 // 12kB per sec
 #else
-					// using GetIpStatistics
-					ip_io_count - tmp_ip_io_count > 70 // 70 packets in 10 secs
+							// using GetIpStatistics
+							ip_io_count - tmp_ip_io_count > 70 // 70 packets in 10 secs
 #endif
-					||
-					disk_io_count - tmp_disk_io_count > 150 * 10 * 1024 // 150kB per sec
-				 ) 
+							||
+							disk_io_count - tmp_disk_io_count > 150 * 10 * 1024 // 150kB per sec
+						 ) 
+						stay_awake = true;
+				}
+
+			// take action based on the above-determined conditions
+			if (stay_awake == true)
 				long_sleep_whilst_active();
-			if (++pinged_whilst_inactive_counter == 10) {
-				::SetThreadExecutionState(ES_CONTINUOUS);
-				long_sleep();
-			}
+			else
+				long_sleep_whilst_inactive();
+
 		} catch (::std::exception const & e) {
 			::std::cerr << "Runtime error: [" << e.what() << "]\n";
+			long_sleep_whilst_inactive();
 		} catch (...) {
 			::std::cerr << "Unknown runtime error.\n";
+			long_sleep_whilst_inactive();
 		}
 	}
 	return 0;

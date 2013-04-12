@@ -535,28 +535,41 @@ public:
 	verify_args(dataset_1::message::meta<N> & meta_msg, dataset_1::message::bulk<N> & bulk_msg)
 	{
 		cli_check_matrix_elements(x_elements, "x submatrix", ute);
-		if (filepath.empty() == false) {
+		uint8_t const utf8_tolerance[] = {0xEF, 0xBB, 0xBF};
+
+		// ... given the context of the models/convergence/etc it is feasible to enforce > 3 chars size of the csv data...
+		if (filepath.empty() == false && ::boost::filesystem::file_size(filepath) > sizeof(utf8_tolerance)) {
 			// xls_debug = 1;
 			//rawgrid_type grid_obj(filepath.c_str(), "ASCII", sheet_i, typename grid_base::ctor(ute));
 			::std::ifstream is(filepath);
 			if (!is.good())
 				throw netcpu::message::exception(xxx() << "Failed to open csv file(=" << filepath << ")");
+			// UTF-8 encoding BOM discarding...
+			for (uint_fast8_t utf8_tolerance_i(0); is.peek() == utf8_tolerance[utf8_tolerance_i] && utf8_tolerance_i != 3; ++utf8_tolerance_i)
+				is.ignore();
 			rawgrid_type grid_obj(is, typename grid_base::ctor(ute));
 			verify_args_sub(grid_obj, meta_msg, bulk_msg);
-		} else if (filedata.size()) {
+		} else if (filedata.size() > sizeof(utf8_tolerance)) {
+			// UTF-8 encoding BOM discarding...
+			char * filedata_data(filedata.data());
+			size_type filedata_size(filedata.size());
+			for (uint_fast8_t utf8_tolerance_i(0); *filedata_data == utf8_tolerance[utf8_tolerance_i] && utf8_tolerance_i != 3 && filedata_size; ++utf8_tolerance_i, ++filedata_data, --filedata_size);
+
 			// does not currently (boost v.1_52) work with -fno-rtti switch (calls typeid), but I really dont wanna enable the damn thing, so there
 			//::boost::iostreams::stream< ::boost::iostreams::array_source> data(filedata.data(), filedata.size());
 			// instead doing this:
 			struct : ::std::streambuf {
 				using ::std::streambuf::setg;
 		  } buf;
-			buf.setg(filedata.data(), filedata.data(), filedata.data() + filedata.size()); 
+			buf.setg(filedata_data, filedata_data, filedata_data + filedata_size); 
 			::std::istream data(&buf);
 
 			rawgrid_type grid_obj(data, typename grid_base::ctor(ute));
 			verify_args_sub(grid_obj, meta_msg, bulk_msg);
 		} else if (filepath.empty() == false && filedata.size() || filepath.empty() == true && !filedata.size())
 			throw netcpu::message::exception("must either supply the filepath for the csv file or the filedata itself");
+		else
+			throw netcpu::message::exception(xxx() << "The csv data is too small");
 	}
 };
 
