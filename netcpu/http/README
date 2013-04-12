@@ -1,8 +1,14 @@
 All of the higher-level README files apply.
 
-Moreover, this is a QUICK HACK -- very EARLY DAYS and is intended to provide a PROOF-OF-CONCEPT. Without a shadow of a doubt it is left for others to create, if so desired, more sleek/eye-candy/super-duper HTML5/Javascript interfaces. 
+Moreover, this is a QUICK HACK -- very EARLY DAYS and is intended to provide a PROOF-OF-CONCEPT only. 
 
-The author does not place any claims on his profficiency/skills/etc. w.r.t. Javascript/ECMA coding. Indubitably. The http-based ++c processing could, however, act as a segway to future survey-providing -taking technology to be developed "inhouse".
+Without a shadow of a doubt it is left for others to create, if so desired, more sleek/eye-candy/super-duper HTML5/Javascript interfaces. 
+
+THE AUTHOR DOES NOT PLACE ANY CLAIMS ON HIS PROFFICIENCY/SKILLS/ETC. W.R.T. JAVASCRIPT/ECMA coding. 
+
+Things like variable-scopes are not optimized for Javascript programming (and at times are "hacked" by immitating those from a C++ realm) -- this, however, shall suffice for the proof-of-concept interface implementation (esp. given that such Javascript hacking was picked-up on the "need-to-have-a-HTML-button-here" kind of basis). This may also lead to a larger code-base (all these 'this.pid.' et al are in many cases not needed and may be cleaned up later on). Indubitably. 
+
+The http-based ++c processing could, however, act as a segway to future survey-providing -taking technology to be developed "inhouse".
 
 There may be a need to install a third party library. 
 Currently such lib(s) is/are:

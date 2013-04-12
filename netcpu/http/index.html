@@ -60,6 +60,10 @@ li {
 	/* min-width : 320px; */
 }
 
+div.waiting_animation {
+	text-align:center;
+}
+
 .debug_log_to_server {
 	color: grey;
 	font-size:10pt;
@@ -375,6 +379,7 @@ input.number {
 
 <script type="text/javascript">
 
+var two_pi = Math.PI * 2;
 
 // TODO -- later on will have a whole array of possible servers whilst being able to determine which one to use (ala partial remedy/mitigation w.r.t. denial of service attacks where load-balancing is also actively done at the client/browser end)
 //var server_at = "https://localhost:8055/";
@@ -1704,6 +1709,8 @@ function new_task_type()
 	this.from_server.className = "debug_log_from_server";
 	td.appendChild(this.from_server);
 
+	var waiting_animation = new waiting_animation_type(td);
+
 	tmp = document.createElement("button")
 	tmp.pid = this;
 	tmp.bail_on_wrong_user_values = function(text)
@@ -1935,10 +1942,15 @@ function new_task_type()
 
 		// todo -- move it into new_task_type namespace... as sooo many other quick hacks :-)
 
-		this.pid.from_server.innerHTML = "SENDING TO SERVER... this may take some time, like minutes -- even if the dataset is small the server is still gonna do some chewing, and in debug mode at that -- indubitably. The finally-submitted dataset is " + (file.size / (1024 * 1024)).toFixed(3) + "MB";
-
 		var btn = this;
-		btn.style.visibility = "hidden";
+		stop_waiting = function()
+		{
+			btn.disabled = false;
+			waiting_animation.stop();
+		}
+
+		btn.disabled = true;
+
 		// var form = new FormData(document.getElementById("aoeu"));
 		http_request = new XMLHttpRequest();
 		http_request.pid = this.pid;
@@ -1948,7 +1960,6 @@ function new_task_type()
 		http_request.onreadystatechange = function()
 		{
 			if (this.readyState == 4) {
-				btn.style.visibility = "visible";
 				if (this.status == 200) {
 					//alert(this.responseText);
 					var obj = JSON.parse(this.responseText);
@@ -1957,7 +1968,9 @@ function new_task_type()
 					} else if (obj.error) {
 						this.pid.from_server.innerHTML = "Server says BAD: " + obj.error;
 					}
+					stop_waiting();
 				} else if (this.status != 0 || this.spurious_try_again_flag == false) {
+					stop_waiting();
 					this.pid.from_server.innerHTML = "Epic fail... [specifics are not yet diagnosed properly, the browser-communicated status code is " + this.status + ']';
 				} else {
 					this.spurious_try_again_flag = false;
@@ -1965,11 +1978,17 @@ function new_task_type()
 					this.send(this.form_to_send);
 				}
 			} else if (this.readyState == 0) {
-				btn.style.visibility = "visible";
+				stop_waiting();
 			}
 		}
 
 		if (this.pid.csv_preprocess.checked == false) {
+
+			this.pid.from_server.innerHTML = "SENDING TO SERVER... this may take some time, like minutes -- even if the dataset is small the server is still gonna do some chewing, and in debug mode at that -- indubitably. The finally-submitted dataset is " + (file.size / (1024 * 1024)).toFixed(3) + "MB";
+
+
+			waiting_animation.start();
+
 			form.append("--fromrow", fromrow);
 			form.append("--respondent", respondent_i);
 			form.append("--choice_set", choice_set_i);
@@ -2006,6 +2025,8 @@ function new_task_type()
 						writer.add("dataset.csv", new zip.TextReader(e.data.csv), function() {
 							from_server.innerHTML = "ZIPPING CSV 100%... preparing to send to server...";
 							writer.close(function(blob) {
+								waiting_animation.start();
+
 								from_server.innerHTML = "SENDING TO SERVER... this may take some time, like minutes -- even if the dataset is small the server is still gonna do some chewing, and in debug mode at that -- indubitably. The finally-submitted dataset is " + (blob.size / (1024 * 1024)).toFixed(3) + "Mb in size, whilst the originally-selected dataset file is " + (file.size / (1024 * 1024)).toFixed(3) + "MB";
 								form.append("--filedata.zip", blob);
 								http_request.open("POST", server_at + "new_task");
@@ -2016,7 +2037,7 @@ function new_task_type()
 							});
 						}, function(error) {
 							from_server.innerHTML = "BOO -- zipping failed: " + error;
-							btn.style.visibility = "visible";
+							btn.disabled = true;
 						}
 					);
 				}
@@ -2222,6 +2243,125 @@ function draw_from_normal()
 	return x1 * Math.sqrt(-2 * Math.log(rad) / rad);
 }
 
+function waiting_animation_type(gui_holder)
+{
+	var gui = document.createElement("div");
+	gui.className = "waiting_animation";
+	var gui_holder = gui_holder;
+	gui_holder.appendChild(gui);
+	var canvas = document.createElement("canvas");
+	var diameter = 100;
+	var outer_radius = diameter * 0.5;
+	var inner_radius = 21;
+	canvas.width = diameter + 10;
+	canvas.height = diameter + 10;
+	var canvas_center = canvas.width * 0.5;
+	var animation_timer = null;
+	var stopped = false;
+	var current_radius = 0;
+	var target_radius_orientation = 1;
+	var target_radius = outer_radius;
+	var ctx = canvas.getContext("2d"); 
+
+	var rotation_speed = 0.001;
+	var current_rotation = 0;
+	var current_rotation_end = 0.1;
+	var current_rotation_end_speed = 0.001;
+	var rotation_pause_countdown = 0;
+	var rotation_gradient_choice = 1;
+
+	function tick()
+	{
+		if (stopped == true)
+			return;
+		gui.appendChild(canvas);
+		var diff = target_radius - current_radius;
+		var abs_diff = Math.abs(diff);
+		var shaking_threshold = target_radius_orientation ? 5.7 : 3;
+		var timeout = Math.max(30, 150 / (1 + 5 * abs_diff));
+		if (abs_diff < shaking_threshold) {
+			if (abs_diff > 0.03) {
+				timeout = 50;
+				current_radius = target_radius + 0.9 * diff;
+			} else {
+				timeout = 80;
+				if (!rotation_pause_countdown) {
+					rotation_pause_countdown = 30;
+					current_radius = target_radius;
+					if (target_radius_orientation) {
+						target_radius = inner_radius;
+					} else {
+						target_radius = outer_radius;
+					}
+					target_radius_orientation = !target_radius_orientation;
+				} else
+					--rotation_pause_countdown;
+			}
+		} else {
+			current_radius += (diff > 0 ?  2.1 : -2.1);
+			if (Math.abs(current_radius - target_radius) < shaking_threshold)
+				current_radius = target_radius - shaking_threshold * .8;
+		}
+		var me = this;
+		animation_timer = setTimeout(tick, timeout);
+
+		current_rotation += rotation_speed * timeout;
+		if (current_rotation > two_pi)
+			current_rotation %= two_pi;
+
+		current_rotation_end += current_rotation_end_speed * timeout;
+		if (current_rotation_end > two_pi) {
+			current_rotation_end %= two_pi;
+			rotation_gradient_choice = !rotation_gradient_choice;
+		}
+
+		ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+		// circle
+		var grd = ctx.createRadialGradient(canvas_center, canvas_center, 1, canvas_center, canvas_center, current_radius);
+		var blue_value = parseInt(Math.min(255, 100 + 180 * Math.abs(current_radius - inner_radius) / (outer_radius - inner_radius)));
+		grd.addColorStop(0, "rgba(0,0," + blue_value + ", 1)");
+		grd.addColorStop(1, "rgba(0,0," + blue_value + ", 0.2)");
+		ctx.fillStyle = grd;
+		ctx.beginPath();
+		ctx.arc(canvas_center, canvas_center, current_radius, 0, two_pi);
+		ctx.fill();
+		ctx.closePath();
+
+		// rotating portion
+		ctx.beginPath();
+		ctx.fillStyle = "rgba(0, 0, 128, 0.3)";
+		ctx.moveTo(canvas_center, canvas_center);
+		var rotation_start;
+		var arc_end = current_rotation + current_rotation_end;
+		if (rotation_gradient_choice) {
+			arc_start = current_rotation;
+			arc_end = current_rotation + current_rotation_end; 
+		} else {
+			arc_start = current_rotation + current_rotation_end;
+			arc_end = current_rotation; 
+		}
+		ctx.arc(canvas_center, canvas_center, current_radius, arc_start, arc_end);
+		ctx.lineTo(canvas_center, canvas_center);
+		ctx.fill();
+		ctx.closePath();
+	}
+	this.start = function()
+	{
+		stopped = false;
+		tick();
+	}
+	this.stop = function()
+	{
+		if (animation_timer != null) {
+			stopped = true;
+			clearTimeout(animation_timer);
+			gui.removeChild(canvas);
+		}
+	}
+}
+
+// todo perhaps have two types -- one for overlay comparison and another for animation (if any will prove to be of use that is).
 function canvas_painter_type(canvas, coefficients, task_name, model_id, betas_size) 
 {
 	this.betas_size = betas_size
@@ -2295,7 +2435,7 @@ function canvas_painter_type(canvas, coefficients, task_name, model_id, betas_si
 			context.beginPath();
 			for (var i = 0; i != this.betas_size; ++i, coefficient_centre += this.coefficient_centre_stepsize) {
 				context.beginPath();
-				context.arc(coefficient_centre, canvas_height - this.coefficients[this.betas_size + i].normalised_value * value_scaler, this.coefficient_circle_radius * .5, 0, Math.PI * 2);
+				context.arc(coefficient_centre, canvas_height - this.coefficients[this.betas_size + i].normalised_value * value_scaler, this.coefficient_circle_radius * .5, 0, two_pi);
 				context.stroke();
 				context.closePath();
 			}
@@ -2356,24 +2496,31 @@ function canvas_painter_type(canvas, coefficients, task_name, model_id, betas_si
 		*/
 
 
-		this.ctx.strokeStyle = "#a0a0b0";
-		this.ctx.lineWidth = 0.8;
-		this.ctx.beginPath();
-		this.ctx.moveTo(this.coefficient_circle_radius, this.coefficients[0].tmp_y);
-		var coefficient_centre = this.coefficient_circle_radius * 3 + this.coefficient_circle_padding;
-		for (var i = 1; i < this.betas_size; ++i, coefficient_centre += this.coefficient_centre_stepsize)
-			this.ctx.lineTo(coefficient_centre, this.coefficients[i].tmp_y);
-		this.ctx.stroke();
-		this.ctx.closePath();
-
-		this.ctx.fillStyle = "#ccccdd";
-		coefficient_centre = this.coefficient_circle_radius;
-		this.ctx.beginPath();
-		for (var i = 0; i != this.betas_size; ++i, coefficient_centre += this.coefficient_centre_stepsize) {
-			this.ctx.beginPath();
-			this.ctx.arc(coefficient_centre, this.coefficients[i].tmp_y, this.coefficient_circle_radius * .37, 0, Math.PI * 2);
-			this.ctx.fill();
-			this.ctx.closePath();
+		var max_diff = 0;
+		for (var i = 0; i < this.betas_size; ++i) {
+			var abs_diff = Math.abs(this.coefficients[i].tmp_y - this.coefficients[i].tmp_y_tmp);
+			if (abs_diff > max_diff)
+				max_diff = abs_diff;
+		}
+		this.interpolated = true;
+		for (var i = 0; i < this.betas_size; ++i) {
+			var diff = this.coefficients[i].tmp_y - this.coefficients[i].tmp_y_tmp;
+			var abs_diff = Math.abs(diff);
+			if (abs_diff < 7) {
+				if (abs_diff > 0.05) {
+					this.coefficients[i].tmp_y_tmp = this.coefficients[i].tmp_y + Math.max(0.85, 1 - 0.95 * abs_diff / max_diff) * diff;
+					this.interpolated = false;
+				} else
+					this.coefficients[i].tmp_y_tmp = this.coefficients[i].tmp_y;
+			} else {
+				this.interpolated = false;
+				var diff_scale = abs_diff / max_diff;
+				this.coefficients[i].tmp_y_tmp += (diff > 0 ?  3 * diff_scale : -3 * diff_scale);
+			}
+		}
+		if (this.interpolated == false) {
+			var me = this;
+			setTimeout(function() { me.do_paint_all() }, Math.min(70 / (1 + max_diff * 0.5), 30));
 		}
 
 		this.ctx.beginPath();
@@ -2384,7 +2531,7 @@ function canvas_painter_type(canvas, coefficients, task_name, model_id, betas_si
 		for (var i = 0; i != this.betas_size; ++i, coefficient_centre += this.coefficient_centre_stepsize) {
 			/*
 			this.ctx.beginPath();
-			this.ctx.arc(coefficient_centre, this.coefficients[i].render_value_y, this.coefficient_circle_radius * .33, 0, Math.PI * 2);
+			this.ctx.arc(coefficient_centre, this.coefficients[i].render_value_y, this.coefficient_circle_radius * .33, 0, two_pi);
 			this.ctx.fill();
 			this.ctx.closePath();
 			*/
@@ -2392,6 +2539,37 @@ function canvas_painter_type(canvas, coefficients, task_name, model_id, betas_si
 			this.ctx.lineTo(coefficient_centre + this.coefficient_circle_radius, this.coefficients[i].render_value_y);
 		}
 		this.ctx.stroke();
+		this.ctx.beginPath();
+
+		this.ctx.strokeStyle = "#a0a0b0";
+		this.ctx.lineWidth = 0.8;
+		this.ctx.beginPath();
+		this.ctx.moveTo(this.coefficient_circle_radius, this.coefficients[0].tmp_y_tmp);
+		var coefficient_centre = this.coefficient_circle_radius * 3 + this.coefficient_circle_padding;
+		for (var i = 1; i < this.betas_size; ++i, coefficient_centre += this.coefficient_centre_stepsize)
+			this.ctx.lineTo(coefficient_centre, this.coefficients[i].tmp_y_tmp);
+		this.ctx.stroke();
+		this.ctx.closePath();
+
+		coefficient_centre = this.coefficient_circle_radius;
+		for (var i = 0; i != this.betas_size; ++i, coefficient_centre += this.coefficient_centre_stepsize) {
+			if (this.model_id > 1) {
+				//this.ctx.fillStyle = "rgba(0, 250, 0, 0.1)";
+				var grd = this.ctx.createRadialGradient(coefficient_centre, this.coefficients[i].tmp_y_tmp, 1, coefficient_centre, this.coefficients[i].tmp_y_tmp, this.coefficient_circle_radius * 1.2);
+				grd.addColorStop(0, "rgba(0, 250, 250, 0.5)");
+				grd.addColorStop(1, "rgba(0, 250, 250, 0)");
+				this.ctx.fillStyle = grd;
+				this.ctx.beginPath();
+				this.ctx.arc(coefficient_centre, this.coefficients[i].tmp_y_tmp, this.coefficient_circle_radius * 1.2, 0, two_pi);
+				this.ctx.fill();
+				this.ctx.closePath();
+			}
+			this.ctx.fillStyle = "#ffffff";
+			this.ctx.beginPath();
+			this.ctx.arc(coefficient_centre, this.coefficients[i].tmp_y_tmp, this.coefficient_circle_radius * .2, 0, two_pi);
+			this.ctx.fill();
+			this.ctx.closePath();
+		}
 
 		/*
 		this.ctx.strokeStyle = "black";
@@ -2400,7 +2578,7 @@ function canvas_painter_type(canvas, coefficients, task_name, model_id, betas_si
 		this.ctx.beginPath();
 		for (var i = 0; i != this.betas_size; ++i, coefficient_centre += this.coefficient_centre_stepsize) {
 
-			var y = this.coefficients[i].tmp_y;
+			var y = this.coefficients[i].tmp_y_tmp;
 			var tmp = this.coefficient_circle_radius * .7;
 
 			this.ctx.moveTo(coefficient_centre - tmp, y - tmp);
@@ -2420,10 +2598,8 @@ function canvas_painter_type(canvas, coefficients, task_name, model_id, betas_si
 		this.ctx.closePath();
 	}
 
-	this.repaint = function() 
+	this.do_paint_all = function()
 	{
-		if (this.model_id > 1) {
-
 			this.ctx.clearRect(0, 0, this.width, this.height);
 
 			this.ctx.fillStyle = "#aaaaff";
@@ -2434,16 +2610,27 @@ function canvas_painter_type(canvas, coefficients, task_name, model_id, betas_si
 				this.ctx.fillRect(coefficient_centre - this.coefficient_circle_radius, this.coefficients[i].render_top, this.coefficient_circle_radius * 2, this.coefficients[i].render_bottom - this.coefficients[i].render_top);
 				//this.ctx.closePath();
 			}
+			this.do_paint();
+	}
+
+	this.repaint = function() 
+	{
+		if (this.model_id > 1) {
 			for (var i = 0; i < this.betas_size; ++i)
 				this.coefficients[i].tmp_y = this.value_to_y_coord(this.coefficients[i].normalised_value + normals[(i + normals_i * this.betas_size) % normals.length] * this.coefficients[i + this.betas_size].normalised_value);
-			this.do_paint();
+			this.do_paint_all();
 		} 
 	}
 
-	if (this.model_id > 1)
+	if (this.model_id > 1) {
+		for (var i = 0; i < this.betas_size; ++i)
+			this.coefficients[i].tmp_y_tmp = this.value_to_y_coord(this.coefficients[i].normalised_value + normals[(i + normals_i * this.betas_size) % normals.length] * this.coefficients[i + this.betas_size].normalised_value) + (i % 2 ? -50 : 50);
 		this.repaint();
-	else
+	} else {
+		for (var i = 0; i < this.betas_size; ++i)
+			this.coefficients[i].tmp_y_tmp = this.value_to_y_coord(this.coefficients[i].normalised_value);
 		this.do_paint();
+	}
 }
 
 function tasks_list_type()
@@ -2729,6 +2916,7 @@ function tasks_list_type()
 				checkbox.coefficients = obj.tasks[i].coefficients;
 				checkbox.e_min_value = obj.tasks[i].value; 
 			}
+			//}
 			checkbox.task_name = obj.tasks[i].name;
 			checkbox.task_complete = (obj.tasks[i].state == "complete" ? true : false);
 			checkbox.row = tr;
@@ -2886,6 +3074,16 @@ function tasks_list_type()
 						else
 							td_.className = "incomplete_normalised_value";
 						td_.appendChild(document.createTextNode("Normalised value"));
+
+						td_.appendChild(document.createElement("br"));
+						var checkbox = document.createElement("input");
+						checkbox.type = "checkbox";
+						var label = document.createElement("label");
+						label.appendChild(document.createTextNode("(animate"));
+						label.appendChild(checkbox);
+						label.appendChild(document.createTextNode(")"));
+						td_.appendChild(label);
+
 						tr_.appendChild(td_);
 						for (var i = 0; i != this.coefficients.length; ++i) {
 							td_ = document.createElement("td");
@@ -2913,14 +3111,32 @@ function tasks_list_type()
 						td.appendChild(document.createElement("br"));
 
 						var overflow_holder_2 = document.createElement("div");
+						overflow_holder_2.style.display = "none";
 						overflow_holder_2.id = "overflowish";
 						overflow_holder_2.style.maxWidth = (0.95 * document.documentElement.clientWidth) + "px";
 						this.pid.convergence_results_divs.push(overflow_holder_2);
 						overflow_holder_2.appendChild(canvas);
 						td.appendChild(overflow_holder_2);
 
-						if (repainting_timer == null)
-							repainting_timer = setInterval("timer_callback()", 3000);
+						var me = this;
+						checkbox.onchange = function()
+						{
+							if (this.checked == true) {
+								me.pid.existing_detail_showing_animated_tasks[me.task_name] = canvas;
+								overflow_holder_2.style.display = "block";
+								if (repainting_timer == null)
+									repainting_timer = setInterval("timer_callback()", 2000);
+							} else {
+								overflow_holder_2.style.display = "none";
+								delete me.pid.existing_detail_showing_animated_tasks[me.task_name];
+							}
+						}
+						if (this.pid.existing_detail_showing_animated_tasks[this.task_name]) {
+							checkbox.checked = true;
+							checkbox.onchange();
+						} else
+							checkbox.checked = false;
+
 						this.pid.existing_detail_showing_tasks[this.task_name] = { "canvas" : canvas , "divs" : [ overflow_holder_1, overflow_holder_2 ] }
 						this.pid.paint_comparison();
 
@@ -2929,13 +3145,15 @@ function tasks_list_type()
 						td.appendChild(document.createTextNode("Nothing is ready as of yet (convergence has not proceeded enough)..."));
 						td.appendChild(document.createElement("br"));
 						td.appendChild(document.createTextNode("Try again in a few minutes."));
-						this.pid.existing_detail_showing_tasks[this.task_name] = {};
+						delete this.pid.existing_detail_showing_tasks[this.task_name];
+						delete this.pid.existing_detail_showing_animated_tasks[this.task_name];
 						this.pid.paint_comparison();
 					}
 					tr.appendChild(td);
 					this.table.insertBefore(tr, this.row.nextSibling);
 				} else {
 					delete this.pid.existing_detail_showing_tasks[this.task_name];
+					delete this.pid.existing_detail_showing_animated_tasks[this.task_name];
 					//alert("Not yet implemented");
 					this.table.removeChild(this.row.nextSibling);
 					this.pid.paint_comparison();
@@ -3021,12 +3239,15 @@ function tasks_list_type()
 		// clean the existing set of 'detail-showing tasks'
 		var existing_detail_showing_tasks = Object.keys(this.existing_detail_showing_tasks);
 		for (var i = 0; i != existing_detail_showing_tasks.length; ++i)
-			if (new_task_names_set[existing_detail_showing_tasks[i]] != true)
+			if (new_task_names_set[existing_detail_showing_tasks[i]] != true) {
 				delete this.existing_detail_showing_tasks[existing_detail_showing_tasks[i]];
+				delete this.existing_detail_showing_animated_tasks[existing_detail_showing_tasks[i]];
+			}
 		this.paint_comparison();
 	}
 
 	this.existing_detail_showing_tasks = {};
+	this.existing_detail_showing_animated_tasks = {};
 
 
 	this.populate = function()
@@ -3223,16 +3444,18 @@ function main()
 var repainting_timer = null;
 function timer_callback()
 {
-	var keys = Object.keys(tasks_list.existing_detail_showing_tasks);
+	normals_i = ++normals_i % normals.length;
+	var keys = Object.keys(tasks_list.existing_detail_showing_animated_tasks);
 	if (!keys.length || tasks_list.gui != last_div) {
 		clearInterval(repainting_timer);
 		repainting_timer = null;
 	} else for (var i = 0; i != keys.length; ++i) {
-		var shown_task = tasks_list.existing_detail_showing_tasks[keys[i]];
-		if (shown_task["canvas"])
-			shown_task.canvas.painter.repaint();
+		var canvas = tasks_list.existing_detail_showing_animated_tasks[keys[i]];
+		if (canvas.painter.interpolated == true) {
+			at_least_one_animated = true;
+			canvas.painter.repaint();
+		}
 	}
-	normals_i = ++normals_i % normals.length;
 }
 
 </script>
