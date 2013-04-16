@@ -784,134 +784,133 @@ function subsequent_complexity_type(pid)
 	this.fill_to_corner = fill_to_corner;
 }
 
-function select_csv_column_type(pid, i)
+function select_csv_column_type(pid, index)
 {
-	this.index = i;
-	this.pid = pid;
-
-	this.gui = document.createElement("select");
-	this.gui.className = "full_width";
-	this.gui.size = 1;
-	this.gui.style.minWidth = "8.8em";
+	var gui = document.createElement("select");
+	gui.className = "full_width";
+	gui.size = 1;
+	gui.style.minWidth = "8.8em";
 
 	var tmp;
 
 	tmp = document.createElement("option");
 	tmp.value = 0;
 	tmp.appendChild(document.createTextNode("Unassigned"));
-	this.gui.appendChild(tmp);
+	gui.appendChild(tmp);
 
 	tmp = document.createElement("option");
 	tmp.value = 1;
 	tmp.appendChild(document.createTextNode("Respondent"));
-	this.gui.appendChild(tmp);
+	gui.appendChild(tmp);
 
 	tmp = document.createElement("option");
 	tmp.value = 2;
 	tmp.appendChild(document.createTextNode("Choice-Set"));
-	this.gui.appendChild(tmp);
+	gui.appendChild(tmp);
 
 	tmp = document.createElement("option");
 	tmp.value = 3;
 	tmp.appendChild(document.createTextNode("Alternative"));
-	this.gui.appendChild(tmp);
+	gui.appendChild(tmp);
 
 	tmp = document.createElement("option");
 	tmp.value = 4;
 	tmp.appendChild(document.createTextNode("Attribute"));
-	this.gui.appendChild(tmp);
+	gui.appendChild(tmp);
 
 	tmp = document.createElement("option");
 	tmp.value = 5;
 	tmp.appendChild(document.createTextNode("Choice"));
-	this.gui.appendChild(tmp);
+	gui.appendChild(tmp);
 
-	this.radio_button_style = function(x)
+	function radio_button_style(x)
 	{
-		for (var i = 0; x && i != this.pid.csv_column_types.length; ++i) {
-			if (this.pid.csv_column_types[i].gui != this.gui && this.pid.csv_column_types[i].gui.value == x) {
-				this.set_pid_csv_table_column_i("unspecified_csv", i);
-				this.pid.csv_column_types[i].gui.value = 0;
+		for (var i = 0; x && i != pid.csv_column_types.length; ++i) {
+			if (pid.csv_column_types[i].gui != gui && pid.csv_column_types[i].gui.value == x) {
+				set_pid_csv_table_column_i("unspecified_csv", i);
+				pid.csv_column_types[i].gui.value = 0;
 				break;
 			}
 		}
 	}
 
-	this.set_pid_csv_table_column = function(x)
+	function set_pid_csv_table_column(x)
 	{
-		this.set_pid_csv_table_column_i(x, this.index);
+		set_pid_csv_table_column_i(x, index);
 	}
-	this.set_pid_csv_table_column_i = function(x, index)
+	function set_pid_csv_table_column_i(x, index)
 	{
-		for (var i = 1; i !=  this.pid.csv_table.rows.length; ++i)
-			if (this.pid.csv_table.rows[i].cells.length > index)
-				this.pid.csv_table.rows[i].cells[index].className = x;
+		for (var i = 1; i !=  pid.csv_table.rows.length; ++i)
+			if (pid.csv_table.rows[i].cells.length > index)
+				pid.csv_table.rows[i].cells[index].className = x;
 	}
 
-	this.gui.pid = this;
-	this.gui.onchange = function () {
+	gui.onchange = function () {
 		var switch_value = parseInt(this.value);
 		switch (switch_value) {
 			case 0 :
-				this.pid.set_pid_csv_table_column("unspecified_csv");
+				set_pid_csv_table_column("unspecified_csv");
 				break;
 			case 1 :
-				this.pid.set_pid_csv_table_column("respondent_csv");
+				set_pid_csv_table_column("respondent_csv");
 				break;
 			case 2 :
-				this.pid.set_pid_csv_table_column("observation_csv");
+				set_pid_csv_table_column("observation_csv");
 				break;
 			case 3 :
-				this.pid.set_pid_csv_table_column("alternative_csv");
+				set_pid_csv_table_column("alternative_csv");
 				break;
 			case 4 :
-				this.pid.set_pid_csv_table_column("attribute_csv");
+				set_pid_csv_table_column("attribute_csv");
 				break;
 			case 5 :
-				this.pid.set_pid_csv_table_column("choice_csv");
+				set_pid_csv_table_column("choice_csv");
 				break;
 		}
 		if (switch_value != 4) {
-			this.pid.radio_button_style(switch_value);
-			if (this.pid.pid.attributes[this.pid.index] == true) {
-				delete this.pid.pid.attributes[this.pid.index];
-				this.pid.pid.model.onchange();
+			radio_button_style(switch_value);
+			if (pid.attributes[index] == true) {
+				delete pid.attributes[index];
+				pid.model.onchange();
 			}
 		} else {
-			this.pid.pid.attributes[this.pid.index] = true;
-			this.pid.pid.model.onchange();
+			pid.attributes[index] = true;
+			pid.model.onchange();
 		}
-	};
+	}
+
+	this.gui = gui;
 }
 
 function help_content_type(title, source_id)
 {
-	this.help_content = document.getElementById(source_id);
-	document.body.removeChild(this.help_content);
-	this.help_content.style.visibility = "visible";
+	var help_content = document.getElementById(source_id);
+	document.body.removeChild(help_content);
+	help_content.style.visibility = "visible";
 
-	this.gui = document.createElement("div");
+	var gui = document.createElement("div");
 	var title_span = document.createElement("span");
 	title_span.className = "help_content_title";
 	title_span.appendChild(document.createTextNode(title));
-	this.gui.appendChild(title_span);
+	gui.appendChild(title_span);
 	var label = document.createElement("label");
 	label.className = "help_content_title";
 	label.appendChild(document.createTextNode(" (show help"));
-	this.checkbox = document.createElement("input");
-	this.checkbox.type = "checkbox";
-	this.checkbox.checked = false;
-	this.checkbox.pid = this;
-	this.checkbox.onchange = function ()
+	var checkbox = document.createElement("input");
+	checkbox.type = "checkbox";
+	checkbox.checked = false;
+	checkbox.onchange = function ()
 	{
 		if (this.checked == true)
-			this.pid.gui.appendChild(this.pid.help_content);
+			gui.appendChild(help_content);
 		else
-			this.pid.gui.removeChild(this.pid.help_content);
+			gui.removeChild(help_content);
 	}
-	label.appendChild(this.checkbox);
+	label.appendChild(checkbox);
 	label.appendChild(document.createTextNode(")"));
-	this.gui.appendChild(label);
+	gui.appendChild(label);
+
+	this.gui = gui;
 }
 
 function new_task_type()
