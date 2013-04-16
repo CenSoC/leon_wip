@@ -393,321 +393,282 @@ var worker = new Worker("index_worker.js");
 var file;
 var csv_grid = [];
 
-function cli_coefficient_range_metadata_type(i, pid)
+function cli_coefficient_range_metadata_type(row_index, pid)
 {
-	this.i = i;
-	this.pid = pid;
-	this.from = document.createElement("input");
-	this.from.title = "Right-click for quick-fill menu...";
-	//this.from.type = "number";
-	this.from.pid = this;
-	this.from.className = "coeff_metadata";
-	this.from.size = 5;
-
-
-	this.common_context_menu_2 = function() 
+	function common_context_menu_1(x, y) 
 	{
-		batch_fill_context_menu.fill_down_column_button.pid = this.pid;
-		batch_fill_context_menu.fill_down_row_button.pid = this.pid;
-		batch_fill_context_menu.fill_right_row_button.pid = this.pid;
-		batch_fill_context_menu.fill_to_corner_button.pid = this.pid;
-	}
-
-	this.common_context_menu_1 = function(x, y) 
-	{
-		batch_fill_context_menu.x = x;
-		batch_fill_context_menu.y = y;
-		batch_fill_context_menu.fill_down_column_button.i = this.i;
-		batch_fill_context_menu.fill_down_row_button.i = this.i;
+		batch_fill_context_menu.set_coordinates(x, y);
 		batch_fill_context_menu.fill_right_row_button.disabled = true;
 		batch_fill_context_menu.fill_to_corner_button.disabled = true;
-		this.common_context_menu_2() ;
 
 		batch_fill_context_menu.fill_down_row_button.onclick = function () {
-			this.pid.fill_down_row(this.i);
+			pid.fill_down_row(row_index);
 			batch_fill_context_menu.hide();
 		}
-
 		batch_fill_context_menu.show();
 	}
 
-	this.from.oncontextmenu = function(event)
+	//{ from control
+	var from = document.createElement("input");
+	from.title = "Right-click for quick-fill menu...";
+	//from.type = "number";
+	from.className = "coeff_metadata";
+	from.size = 5;
+	from.oncontextmenu = function(event)
 	{
 		batch_fill_context_menu.cell_gui = this;
 		batch_fill_context_menu.fill_down_column_button.onclick = function () {
-			this.pid.fill_down_column_from(this.i);
+			pid.fill_down_column_from(row_index);
 			batch_fill_context_menu.hide();
 		}
-		this.pid.common_context_menu_1(event.clientX, event.clientY);
+		common_context_menu_1(event.clientX, event.clientY);
 		return false;
 	}
+	//}
 
-
-	this.to = document.createElement("input");
-	//this.to.type = "number";
-	this.to.title = "Right-click for quick-fill menu...";
-	this.to.pid = this;
-	this.to.className = "coeff_metadata";
-	this.to.size = 5;
-	this.to.oncontextmenu = function(event)
+	//{ to control
+	var to = document.createElement("input");
+	//to.type = "number";
+	to.title = "Right-click for quick-fill menu...";
+	to.className = "coeff_metadata";
+	to.size = 5;
+	to.oncontextmenu = function(event)
 	{
 		batch_fill_context_menu.cell_gui = this;
-		batch_fill_context_menu.fill_down_column_button.i = this.pid.i;
 		batch_fill_context_menu.fill_down_column_button.onclick = function () {
-			this.pid.fill_down_column_to(this.i);
-			this.pid.batch_fill_context_menu.hide();
+			pid.fill_down_column_to(row_index);
+			pid.batch_fill_context_menu.hide();
 		}
-		this.pid.common_context_menu_1(event.clientX, event.clientY);
+		common_context_menu_1(event.clientX, event.clientY);
 		return false;
 	}
+	//}
 
-	this.minstep = document.createElement("input");
-	//this.minstep.type = "number";
-	this.minstep.title = "Right-click for quick-fill menu...";
-	this.minstep.pid = this;
-	this.minstep.className = "coeff_metadata";
-	this.minstep.size = 5;
-	this.minstep.oncontextmenu = function(event)
+	//{ minstep control
+	var minstep = document.createElement("input");
+	//minstep.type = "number";
+	minstep.title = "Right-click for quick-fill menu...";
+	minstep.className = "coeff_metadata";
+	minstep.size = 5;
+	minstep.oncontextmenu = function(event)
 	{
 		batch_fill_context_menu.cell_gui = this;
-		batch_fill_context_menu.fill_down_column_button.i = this.pid.i;
 		batch_fill_context_menu.fill_down_column_button.onclick = function () {
-			this.pid.fill_down_column_minstep(this.i);
+			pid.fill_down_column_minstep(row_index);
 			batch_fill_context_menu.hide();
 		}
-		this.pid.common_context_menu_1(event.clientX, event.clientY);
+		common_context_menu_1(event.clientX, event.clientY);
 		return false;
 	}
+	//}
 
-	this.validate = function()
+	function validate()
 	{
-		var from = parseFloat(this.from.value); 
-		var to = parseFloat(this.to.value);
-		var minstep = parseFloat(this.minstep.value);
-		if (isNaN(from) == true ||
-				isNaN(to) == true ||
-				isNaN(minstep) == true ||
-				from >= to || minstep <= 0 ||
-				!this.grid_resolutions.length) {
-			alert("Initial complexity table's row(=" + this.i + ") does not have correct values.");
+		var from_value = parseFloat(from.value); 
+		var to_value = parseFloat(to.value);
+		var minstep_value = parseFloat(minstep.value);
+		if (isNaN(from_value) == true ||
+				isNaN(to_value) == true ||
+				isNaN(minstep_value) == true ||
+				from_value >= to_value || minstep_value <= 0 ||
+				!grid_resolutions.length) {
+			alert("Initial complexity table's row(=" + (row_index + 1) + ") does not have correct values.");
 			return false;
 		}
-		for (var i = 0; i != this.grid_resolutions.length; ++i) {
-			var value = parseInt(this.grid_resolutions[i].value);
-			if (isNaN(value) == true || value < 1) {
-				alert("Initial complexity table's row(=" + (this.i + 1) + ") 'Gridsteps for x-coefficients-@once modulations' column(=" + (i + 1) + ") does not have correct value.");
+		for (var i = 0; i != grid_resolutions.length; ++i) {
+			var value = parseInt(grid_resolutions[i].value);
+			if (isNaN(value) == true || value < 2) {
+				alert("Initial complexity table's row(=" + (row_index + 1) + ") 'Gridsteps for x-coefficients-@once modulations' column(=" + (i + 1) + ") does not have correct value.");
 				return false;
 			}
 		}
 		return true;
 	}
 
-
-	this.grid_resolutions = [];
-	this.allocate = function(x) 
+	var grid_resolutions = [];
+	function allocate(x) 
 	{
-		this.grid_resolutions.length = x;
-		for (var i = 0; i != x; ++i) {
+		grid_resolutions.length = x;
+		for (var i = 0; i != grid_resolutions.length; ++i) {
 			var tmp = document.createElement("input");
+			tmp.column_index = i;
 			tmp.className = "coeff_metadata";
 			tmp.size = 5;
 			tmp.title = "Right-click for quick-fill menu...";
-			tmp.pid = this;
-			tmp.y = i;
 			tmp.oncontextmenu = function(event)
 			{
-				this.pid.common_context_menu_2() ;
+				var column_index = this.column_index;
 				batch_fill_context_menu.cell_gui = this;
-				batch_fill_context_menu.x = event.clientX;
-				batch_fill_context_menu.y = event.clientY;
-				batch_fill_context_menu.fill_down_column_button.i = this.pid.i;
-				batch_fill_context_menu.fill_down_column_button.y = this.y;
+				batch_fill_context_menu.set_coordinates(event.clientX, event.clientY);
 				batch_fill_context_menu.fill_down_column_button.onclick = function () {
-					this.pid.fill_down_column_grid_resolutions(this.i, this.y);
+					pid.fill_down_column_grid_resolutions(row_index, column_index);
 					batch_fill_context_menu.hide();
 				}
-				batch_fill_context_menu.fill_down_row_button.i = this.pid.i;
 				batch_fill_context_menu.fill_down_row_button.onclick = function () {
-					this.pid.fill_down_row(this.i);
+					pid.fill_down_row(row_index);
 					batch_fill_context_menu.hide();
 				}
 				batch_fill_context_menu.fill_right_row_button.disabled = false;
-				batch_fill_context_menu.fill_right_row_button.i = this.pid.i;
-				batch_fill_context_menu.fill_right_row_button.y = this.y;
 				batch_fill_context_menu.fill_right_row_button.onclick = function () {
-					this.pid.fill_right_row_grid_resolutions(this.i, this.y);
+					pid.fill_right_row_grid_resolutions(row_index, column_index);
 					batch_fill_context_menu.hide();
 				}
 				batch_fill_context_menu.fill_to_corner_button.disabled = false;
-				batch_fill_context_menu.fill_to_corner_button.i = this.pid.i;
-				batch_fill_context_menu.fill_to_corner_button.y = this.y;
 				batch_fill_context_menu.fill_to_corner_button.onclick = function () {
-					this.pid.fill_to_corner(this.i, this.y);
+					pid.fill_to_corner(row_index, column_index);
 					batch_fill_context_menu.hide();
 				}
 				batch_fill_context_menu.show();
 				return false;
 			}
-			this.grid_resolutions[i] = tmp;
+			grid_resolutions[i] = tmp;
 		}
 	}
+
+	this.grid_resolutions = grid_resolutions;
+	this.from = from;
+	this.to = to;
+	this.minstep = minstep;
+	this.validate = validate;
+	this.allocate = allocate;
 }
 
-function cli_coefficient_range_metadata_x_type(i, pid)
+function cli_coefficient_range_metadata_x_type(row_index, pid)
 {
-	this.i = i;
-	this.pid = pid;
-	this.threshold = document.createElement("input");
-	this.threshold.title = "Right-click for quick-fill menu...";
-	//this.threshold.type = "number";
-	this.threshold.pid = this;
-	this.threshold.className = "coeff_metadata";
-	this.threshold.size = 5;
-
-	this.validate = function()
+	function common_context_menu_1(x, y) 
 	{
-		var threshold = parseFloat(this.threshold.value); 
-		if (isNaN(threshold) == true ||
-				threshold <= 0 ||
-				!this.grid_resolutions.length) {
-			alert("Subesquent complexity table's row(=" + this.i + ") does not have correct values.");
-			return false;
-		}
-		for (var i = 0; i != this.grid_resolutions.length; ++i) {
-			var value = parseInt(this.grid_resolutions[i].value);
-			if (isNaN(value) == true || value < 1) {
-				alert("One of the subsequent complexity table's row(=" + (this.i + 1) + ") 'Gridsteps for x-coefficients-@once modulations' column(=" + (i + 1) + ") does not have correct value.");
-				return false;
-			}
-		}
-		return true;
-	}
-
-	this.common_context_menu_2 = function() 
-	{
-		batch_fill_context_menu.fill_down_column_button.pid = this.pid;
-		batch_fill_context_menu.fill_down_row_button.pid = this.pid;
-		batch_fill_context_menu.fill_right_row_button.pid = this.pid;
-		batch_fill_context_menu.fill_to_corner_button.pid = this.pid;
-	}
-
-	this.common_context_menu_1 = function(x, y) 
-	{
-		batch_fill_context_menu.x = x;
-		batch_fill_context_menu.y = y;
-		batch_fill_context_menu.fill_down_column_button.i = this.i;
-		batch_fill_context_menu.fill_down_row_button.i = this.i;
+		batch_fill_context_menu.set_coordinates(x, y);
 		batch_fill_context_menu.fill_right_row_button.disabled = true;
 		batch_fill_context_menu.fill_to_corner_button.disabled = true;
-		this.common_context_menu_2() ;
 
 		batch_fill_context_menu.fill_down_row_button.onclick = function () {
-			this.pid.fill_down_row(this.i);
+			pid.fill_down_row(row_index);
 			batch_fill_context_menu.hide();
 		}
 
 		batch_fill_context_menu.show();
 	}
 
-	this.threshold.oncontextmenu = function(event)
+	//{ threshold control
+	var threshold = document.createElement("input");
+	threshold.title = "Right-click for quick-fill menu...";
+	//threshold.type = "number";
+	threshold.className = "coeff_metadata";
+	threshold.size = 5;
+	threshold.oncontextmenu = function(event)
 	{
 		batch_fill_context_menu.cell_gui = this;
 		batch_fill_context_menu.fill_down_column_button.onclick = function () {
-			this.pid.fill_down_column_threshold(this.i);
+			pid.fill_down_column_threshold(row_index);
 			batch_fill_context_menu.hide();
 		}
-		this.pid.common_context_menu_1(event.clientX, event.clientY);
+		common_context_menu_1(event.clientX, event.clientY);
 		return false;
 	}
+	//}
 
-	this.grid_resolutions = [];
-	this.allocate = function(x) 
+	function validate()
 	{
-		this.grid_resolutions.length = x;
+		var threshold_value = parseFloat(threshold.value); 
+		if (isNaN(threshold_value) == true ||
+				threshold_value <= 0 ||
+				!grid_resolutions.length) {
+			alert("Subesquent complexity table's row(=" + (row_index + 1) + ") does not have correct values.");
+			return false;
+		}
+		for (var i = 0; i != grid_resolutions.length; ++i) {
+			var value = parseInt(grid_resolutions[i].value);
+			if (isNaN(value) == true || value < 1) {
+				alert("One of the subsequent complexity table's row(=" + (row_index + 1) + ") 'Gridsteps for x-coefficients-@once modulations' column(=" + (i + 1) + ") does not have correct value.");
+				return false;
+			}
+		}
+		return true;
+	}
+
+	var grid_resolutions = [];
+	function allocate(x) 
+	{
+		grid_resolutions.length = x;
 		for (var i = 0; i != x; ++i) {
 			var tmp = document.createElement("input");
+			tmp.column_index = i;
 			tmp.className = "coeff_metadata";
 			tmp.title = "Right-click for quick-fill menu...";
-			tmp.pid = this;
-			tmp.y = i;
 			tmp.size = 5;
 			// todo -- common code with non _x inital complexity bits...
 			tmp.oncontextmenu = function(event)
 			{
-				this.pid.common_context_menu_2() ;
+				var column_index = this.column_index;
 				batch_fill_context_menu.cell_gui = this;
-				batch_fill_context_menu.x = event.clientX;
-				batch_fill_context_menu.y = event.clientY;
-				batch_fill_context_menu.fill_down_column_button.i = this.pid.i;
-				batch_fill_context_menu.fill_down_column_button.y = this.y;
+				batch_fill_context_menu.set_coordinates(event.clientX, event.clientY);
 				batch_fill_context_menu.fill_down_column_button.onclick = function () {
-					this.pid.fill_down_column_grid_resolutions(this.i, this.y);
+					pid.fill_down_column_grid_resolutions(row_index, column_index);
 					batch_fill_context_menu.hide();
 				}
-				batch_fill_context_menu.fill_down_row_button.i = this.pid.i;
 				batch_fill_context_menu.fill_down_row_button.onclick = function () {
-					this.pid.fill_down_row(this.i);
+					pid.fill_down_row(row_index);
 					batch_fill_context_menu.hide();
 				}
 				batch_fill_context_menu.fill_right_row_button.disabled = false;
-				batch_fill_context_menu.fill_right_row_button.i = this.pid.i;
-				batch_fill_context_menu.fill_right_row_button.y = this.y;
 				batch_fill_context_menu.fill_right_row_button.onclick = function () {
-					this.pid.fill_right_row_grid_resolutions(this.i, this.y);
+					pid.fill_right_row_grid_resolutions(row_index, column_index);
 					batch_fill_context_menu.hide();
 				}
 				batch_fill_context_menu.fill_to_corner_button.disabled = false;
-				batch_fill_context_menu.fill_to_corner_button.i = this.pid.i;
-				batch_fill_context_menu.fill_to_corner_button.y = this.y;
 				batch_fill_context_menu.fill_to_corner_button.onclick = function () {
-					this.pid.fill_to_corner(this.i, this.y);
+					pid.fill_to_corner(row_index, column_index);
 					batch_fill_context_menu.hide();
 				}
 				batch_fill_context_menu.show();
 				return false;
 			}
-			this.grid_resolutions[i] = tmp;
+			grid_resolutions[i] = tmp;
 		}
 	}
+
+	this.grid_resolutions = grid_resolutions;
+	this.threshold = threshold;
+	this.validate = validate;
+	this.allocate = allocate;
 }
 
 function subsequent_complexity_type(pid)
 {
-	this.pid = pid;
-	this.gui_deco = document.createElement("div");
-	this.coeffs_atonce = document.createElement("input");
-	//this.coeffs_atonce.type = "number";
-	this.coeffs_atonce.pid = this;
-	this.coeffs_atonce.size = 5;
-	this.coeffs_atonce.onchange = function () {
+	var me = this;
+	var gui_deco = document.createElement("div");
+	var coeffs_atonce = document.createElement("input");
+	//coeffs_atonce.type = "number";
+	coeffs_atonce.size = 5;
+	coeffs_atonce.onchange = function () {
 		var value = parseInt(this.value);
 		if (isNaN(value) == true || value < 1)
 			value = 0;
 		this.value = value;
-		this.pid.populate(this.pid.gui);
+		populate(gui);
 	};
 
-	this.gui_deco.appendChild(document.createElement("hr"));
-	this.gui_deco.appendChild(document.createTextNode("Additional x-coefficients-@-once complexity:"));
-	this.gui_deco.appendChild(this.coeffs_atonce);
-	this.gui_deco.appendChild(document.createElement("p"));
+	gui_deco.appendChild(document.createElement("hr"));
+	gui_deco.appendChild(document.createTextNode("Additional x-coefficients-@-once complexity:"));
+	gui_deco.appendChild(coeffs_atonce);
+	gui_deco.appendChild(document.createElement("p"));
 
-	this.cli_coefficient_range_metadata_x = [];
-	this.table = document.createElement("table");
+	cli_coefficient_range_metadata_x = [];
+	var table = document.createElement("table");
 
-	this.gui = null;
+	gui = null;
 
-	this.populate = function(gui) 
+	function populate(new_gui) 
 	{
-		if (gui !== this.gui)
-			gui.appendChild(this.gui_deco);
+		if (new_gui !== gui)
+			new_gui.appendChild(gui_deco);
 
-		var table = document.createElement("table");
-		table.className = "auto_table";
-		var coeffs_at_once_value = parseInt(this.coeffs_atonce.value);
-		if (Object.keys(this.pid.attributes).length && this.pid.coefficients.length && coeffs_at_once_value > 0) {
-			tr = document.createElement("tr");
-			td = document.createElement("td");
+		var new_table = document.createElement("table");
+		new_table.className = "auto_table";
+		var coeffs_at_once_value = parseInt(coeffs_atonce.value);
+		if (Object.keys(pid.attributes).length && pid.coefficients.length && coeffs_at_once_value > 0) {
+			var tr = document.createElement("tr");
+			var td = document.createElement("td");
 			td.className = "centered_td";
 			td.rowSpan = 2;
 			td.appendChild(document.createTextNode("Semantics"));
@@ -728,7 +689,7 @@ function subsequent_complexity_type(pid)
 			td.appendChild(document.createElement("br"));
 			td.appendChild(document.createTextNode("x-coefficients-@once modulations"));
 			tr.appendChild(td);
-			table.appendChild(tr);
+			new_table.appendChild(tr);
 
 			tr = document.createElement("tr");
 
@@ -738,82 +699,89 @@ function subsequent_complexity_type(pid)
 				td.appendChild(document.createTextNode(i + "-@once"));
 				tr.appendChild(td);
 			}
-			table.appendChild(tr);
+			new_table.appendChild(tr);
 
-			this.cli_coefficient_range_metadata_x.length = this.pid.coefficients.length;
-			for (var i = 0; i != this.pid.coefficients.length; ++i) {
-				this.cli_coefficient_range_metadata_x[i] = new cli_coefficient_range_metadata_x_type(i, this);
-				this.cli_coefficient_range_metadata_x[i].allocate(coeffs_at_once_value);
+			cli_coefficient_range_metadata_x.length = pid.coefficients.length;
+			for (var i = 0; i != pid.coefficients.length; ++i) {
+				cli_coefficient_range_metadata_x[i] = new cli_coefficient_range_metadata_x_type(i, me);
+				cli_coefficient_range_metadata_x[i].allocate(coeffs_at_once_value);
 
 				tr = document.createElement("tr");
 
 				td = document.createElement("td");
 				td.className = "centered_td";
-				td.innerHTML = this.pid.coefficients[i];
+				td.innerHTML = pid.coefficients[i];
 				tr.appendChild(td);
 
 				td = document.createElement("td");
 				td.className = "centered_td";
-				td.appendChild(this.cli_coefficient_range_metadata_x[i].threshold);
+				td.appendChild(cli_coefficient_range_metadata_x[i].threshold);
 				tr.appendChild(td);
 
-				for (var j = 0; j != this.coeffs_atonce.value; ++j) {
+				for (var j = 0; j != coeffs_atonce.value; ++j) {
 					td = document.createElement("td");
 					td.className = "centered_td";
-					td.appendChild(this.cli_coefficient_range_metadata_x[i].grid_resolutions[j]);
+					td.appendChild(cli_coefficient_range_metadata_x[i].grid_resolutions[j]);
 					tr.appendChild(td);
 				}
-				table.appendChild(tr);
+				new_table.appendChild(tr);
 			}
 		}
-		if (gui !== this.gui)
-			gui.appendChild(table);
+		if (new_gui !== gui)
+			new_gui.appendChild(new_table);
 		else 
-			gui.replaceChild(table, this.table);
-		this.table = table;
-		this.gui = gui;
+			new_gui.replaceChild(new_table, table);
+		table = new_table;
+		gui = new_gui;
 	}
 
-	this.fill_down_row = function(x)
+	function fill_down_row(x)
 	{
-		var source = this.cli_coefficient_range_metadata_x[x];
-		for (var i = x + 1; i != this.cli_coefficient_range_metadata_x.length; ++i) {
-			this.cli_coefficient_range_metadata_x[i].threshold.value = source.threshold.value;
+		var source = cli_coefficient_range_metadata_x[x];
+		for (var i = x + 1; i != cli_coefficient_range_metadata_x.length; ++i) {
+			cli_coefficient_range_metadata_x[i].threshold.value = source.threshold.value;
 			for (var j = 0; j != source.grid_resolutions.length; ++j)
-				this.cli_coefficient_range_metadata_x[i].grid_resolutions[j].value = source.grid_resolutions[j].value;
+				cli_coefficient_range_metadata_x[i].grid_resolutions[j].value = source.grid_resolutions[j].value;
 		}
 	}
 
-	this.fill_down_column_threshold = function(x)
+	function fill_down_column_threshold(x)
 	{
-		var value = this.cli_coefficient_range_metadata_x[x].from.value;
-		for (var i = x + 1; i != this.cli_coefficient_range_metadata_x.length; ++i)
-			this.cli_coefficient_range_metadata_x[i].threshold.value = value;
+		var value = cli_coefficient_range_metadata_x[x].from.value;
+		for (var i = x + 1; i != cli_coefficient_range_metadata_x.length; ++i)
+			cli_coefficient_range_metadata_x[i].threshold.value = value;
 	}
 
-	this.fill_down_column_grid_resolutions = function(x, y)
+	function fill_down_column_grid_resolutions(x, y)
 	{
-		var value = this.cli_coefficient_range_metadata_x[x].grid_resolutions[y].value;
-		for (var i = x + 1; i != this.cli_coefficient_range_metadata_x.length; ++i)
-			this.cli_coefficient_range_metadata_x[i].grid_resolutions[y].value = value;
+		var value = cli_coefficient_range_metadata_x[x].grid_resolutions[y].value;
+		for (var i = x + 1; i != cli_coefficient_range_metadata_x.length; ++i)
+			cli_coefficient_range_metadata_x[i].grid_resolutions[y].value = value;
 	}
 
-	this.fill_right_row_grid_resolutions = function(x, y)
+	function fill_right_row_grid_resolutions(x, y)
 	{
-		var value = this.cli_coefficient_range_metadata_x[x].grid_resolutions[y].value;
-		for (var i = y + 1; i != this.cli_coefficient_range_metadata_x[x].grid_resolutions.length; ++i)
-			this.cli_coefficient_range_metadata_x[x].grid_resolutions[i].value = value;
+		var value = cli_coefficient_range_metadata_x[x].grid_resolutions[y].value;
+		for (var i = y + 1; i != cli_coefficient_range_metadata_x[x].grid_resolutions.length; ++i)
+			cli_coefficient_range_metadata_x[x].grid_resolutions[i].value = value;
 	}
 
-	this.fill_to_corner = function(x, y)
+	function fill_to_corner(x, y)
 	{
-		var value = this.cli_coefficient_range_metadata_x[x].grid_resolutions[y].value;
-		for (var j = x; j != this.cli_coefficient_range_metadata_x.length; ++j) {
-			for (var i = y; i != this.cli_coefficient_range_metadata_x[j].grid_resolutions.length; ++i) {
-				this.cli_coefficient_range_metadata_x[j].grid_resolutions[i].value = value;
+		var value = cli_coefficient_range_metadata_x[x].grid_resolutions[y].value;
+		for (var j = x; j != cli_coefficient_range_metadata_x.length; ++j) {
+			for (var i = y; i != cli_coefficient_range_metadata_x[j].grid_resolutions.length; ++i) {
+				cli_coefficient_range_metadata_x[j].grid_resolutions[i].value = value;
 			}
 		}
 	}
+
+	this.populate = populate;
+	this.fill_down_row = fill_down_row;
+	this.fill_down_column_threshold = fill_down_column_threshold;
+	this.fill_down_column_grid_resolutions = fill_down_column_grid_resolutions;
+	this.fill_right_row_grid_resolutions = fill_right_row_grid_resolutions;
+	this.fill_to_corner = fill_to_corner;
 }
 
 function select_csv_column_type(pid, i)
@@ -2144,87 +2112,98 @@ function new_task_type()
 
 function batch_fill_context_menu_type()
 {
-	this.hidden = true;
-	this.show = function()
+	var hidden = true;
+	var highlighted_cell_gui;
+	var x, y;
+	function show()
 	{
-		if (this.hidden == false)
-			this.hide();
+		if (hidden == false)
+			hide();
 		this.cell_gui.className = "coeff_metadata_selected";
-		this.highlighted_cell_gui = this.cell_gui;
-		this.hidden = false;
+		highlighted_cell_gui = this.cell_gui;
+		hidden = false;
 
 		var visible_dims = document.getElementById("visible_dims");
 		
-		this.gui.style.left = "0px";
-		this.gui.style.top = "0px";
-		document.body.appendChild(this.gui);
+		gui.style.left = "0px";
+		gui.style.top = "0px";
+		document.body.appendChild(gui);
 
-		var right = this.gui.clientWidth + this.x;
+		var right = gui.clientWidth + x;
 		if (right > visible_dims.scrollWidth) {
-			this.x = this.x - right + visible_dims.scrollWidth;
-			if (this.x < 0)
-				this.x = 0;
-			this.gui.style.left = this.x + window.pageXOffset + "px";
+			x = x - right + visible_dims.scrollWidth;
+			if (x < 0)
+				x = 0;
+			gui.style.left = x + window.pageXOffset + "px";
 		} else
-			this.gui.style.left = this.x + window.pageXOffset + "px";
-		var bottom = this.gui.clientHeight + this.y;
+			gui.style.left = x + window.pageXOffset + "px";
+		var bottom = gui.clientHeight + y;
 		if (bottom > visible_dims.scrollHeight) {
-			this.y = this.y - bottom + visible_dims.scrollHeight;
-			if (this.y < 0)
-				this.y = 0;
-			this.gui.style.top = this.y + window.pageYOffset + "px";
+			y = y - bottom + visible_dims.scrollHeight;
+			if (y < 0)
+				y = 0;
+			gui.style.top = y + window.pageYOffset + "px";
 		} else
-			this.gui.style.top = this.y  + window.pageYOffset+ "px";
+			gui.style.top = y  + window.pageYOffset+ "px";
 	}
-	this.hide = function()
+	function hide()
 	{
-		if (this.hidden == false) {
-			this.highlighted_cell_gui.className = "coeff_metadata";
-			document.body.removeChild(this.gui);
-			this.hidden = true;
+		if (hidden == false) {
+			highlighted_cell_gui.className = "coeff_metadata";
+			document.body.removeChild(gui);
+			hidden = true;
 		}
 	}
 
-	this.gui = document.createElement("div");
-	this.gui.className = "contextmenu";
+	var gui = document.createElement("div");
+	gui.className = "contextmenu";
 
-	this.fill_right_row_button = document.createElement("button");
-	this.fill_right_row_button.className = "full_width";
-	this.fill_right_row_button.pid = this.pid;
-	this.fill_right_row_button.appendChild(document.createTextNode("Fill right"));
-	this.gui.appendChild(this.fill_right_row_button);
+	var fill_right_row_button = document.createElement("button");
+	fill_right_row_button.className = "full_width";
+	fill_right_row_button.appendChild(document.createTextNode("Fill right"));
+	gui.appendChild(fill_right_row_button);
 
-	this.gui.appendChild(document.createElement("br"));
-	this.fill_down_row_button = document.createElement("button");
-	this.fill_down_row_button.className = "full_width";
-	this.fill_down_row_button.pid = this.pid;
-	this.fill_down_row_button.appendChild(document.createTextNode("Fill row down"));
-	this.gui.appendChild(this.fill_down_row_button);
+	gui.appendChild(document.createElement("br"));
+	var fill_down_row_button = document.createElement("button");
+	fill_down_row_button.className = "full_width";
+	fill_down_row_button.appendChild(document.createTextNode("Fill row down"));
+	gui.appendChild(fill_down_row_button);
 
-	this.gui.appendChild(document.createElement("br"));
-	this.fill_down_column_button = document.createElement("button");
-	this.fill_down_column_button.className = "full_width";
-	this.fill_down_column_button.pid = this.pid;
-	this.fill_down_column_button.appendChild(document.createTextNode("Fill column down"));
-	this.gui.appendChild(this.fill_down_column_button);
+	gui.appendChild(document.createElement("br"));
+	var fill_down_column_button = document.createElement("button");
+	fill_down_column_button.className = "full_width";
+	fill_down_column_button.appendChild(document.createTextNode("Fill column down"));
+	gui.appendChild(fill_down_column_button);
 
-	this.gui.appendChild(document.createElement("br"));
-	this.fill_to_corner_button = document.createElement("button");
-	this.fill_to_corner_button.className = "full_width";
-	this.fill_to_corner_button.pid = this.pid;
-	this.fill_to_corner_button.appendChild(document.createTextNode("Fill down and right"));
-	this.gui.appendChild(this.fill_to_corner_button);
+	gui.appendChild(document.createElement("br"));
+	var fill_to_corner_button = document.createElement("button");
+	fill_to_corner_button.className = "full_width";
+	fill_to_corner_button.appendChild(document.createTextNode("Fill down and right"));
+	gui.appendChild(fill_to_corner_button);
 
-	this.gui.appendChild(document.createElement("br"));
+	gui.appendChild(document.createElement("br"));
 	var cancel_btn = document.createElement("button");
 	cancel_btn.className = "full_width";
-	cancel_btn.pid = this;
 	cancel_btn.appendChild(document.createTextNode("Cancel"));
 	cancel_btn.onclick = function() 
 	{
-		this.pid.hide();
+		hide();
 	}
-	this.gui.appendChild(cancel_btn);
+	gui.appendChild(cancel_btn);
+
+	function set_coordinates(new_x, new_y)
+	{
+		x = new_x;
+		y = new_y;
+	}
+
+	this.set_coordinates = set_coordinates;
+	this.show = show;
+	this.hide = hide;
+	this.fill_right_row_button = fill_right_row_button;
+	this.fill_down_row_button = fill_down_row_button;
+	this.fill_down_column_button = fill_down_column_button;
+	this.fill_to_corner_button = fill_to_corner_button;
 }
 
 var normals_i = 0;
