@@ -185,10 +185,8 @@ struct task_loader_detail : netcpu::io_wrapper<AsyncDriver> {
 
 				if (use_first_cm_semantics == 1)
 					coefficients_ranges.first = coeffs_at_once_size;
-				else {
+				else
 					coefficients_ranges_x.push_back(::std::make_pair(coeffs_at_once_size, ::std::set<cli_coefficient_range_metadata_x>()));
-					coefficients_ranges_x.back().first = coeffs_at_once_size;
-				}
 			} else if (i->first == "--cm") {
 
 				typedef ::boost::tokenizer< ::boost::char_separator<char> > tokenizer_type;
@@ -263,13 +261,13 @@ struct task_loader_detail : netcpu::io_wrapper<AsyncDriver> {
 
 					// grid_resolution(s)
 					for (unsigned j(0); ; ++j) {
-						if (j == coefficients_ranges_x.back().first)
-							throw netcpu::message::exception(xxx() << "incorrect --cm value: [" << i->second << "] need " << comment << ", where the size of set of grid resolutions is not > coeffs_at_once value");
 						if (++token_i == tokens.end())
 							if (!j)
 								throw netcpu::message::exception(xxx() << "incorrect --cm value: [" << i->second << "] need " << comment);
 							else 
 								break;
+						if (j == coefficients_ranges_x.back().first)
+							throw netcpu::message::exception(xxx() << "incorrect --cm value: [" << i->second << "] need " << comment << ", where the size of set of grid resolutions is not > coeffs_at_once value");
 
 						size_type const grid_resolution = censoc::lexicast<size_type>(*token_i);
 						if (grid_resolution < 2 || tmp.grid_resolutions.empty() == false && grid_resolution > tmp.grid_resolutions.front())
