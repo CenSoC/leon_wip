@@ -3372,10 +3372,8 @@ function timer_callback()
 		repainting_timer = null;
 	} else for (var i = 0; i != keys.length; ++i) {
 		var canvas = tasks_list.existing_detail_showing_animated_tasks[keys[i]];
-		if (canvas.painter.interpolated == true) {
-			at_least_one_animated = true;
+		if (canvas.painter.interpolated == true)
 			canvas.painter.repaint();
-		}
 	}
 }
 
