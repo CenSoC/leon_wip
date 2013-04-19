@@ -267,7 +267,7 @@ struct task {
 		assert(this == *i);
 		int tmp(steps_to_move_by);
 		if (steps_to_move_by > 0)
-			for (; tmp && i != pending_tasks.end(); ++i, --tmp);
+			for (::std::list<netcpu::task *>::iterator j(::std::prev(pending_tasks.end())); tmp && i != j; ++i, --tmp);
 		else
 			for (; tmp && i != pending_tasks.begin(); --i, ++tmp);
 

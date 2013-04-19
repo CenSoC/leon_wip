@@ -1027,7 +1027,12 @@ struct move_task_in_list : io_wrapper<http_adapter_driver> {
 					msg.task_name.resize(i->second.size());
 					::memcpy(msg.task_name.data(), i->second.c_str(), i->second.size());
 				} else if (i->first == "--steps_to_move_by") {
-					msg.steps_to_move_by(::boost::lexical_cast<int>(i->second));
+					try {
+						msg.steps_to_move_by(::boost::lexical_cast<int>(i->second));
+					} 
+					catch(::boost::bad_lexical_cast & e) {
+						throw netcpu::message::exception(xxx("on move_task_in_list the steps_to_move_by argument is invalid (=") << i->second << ')');
+					}
 					if (!msg.steps_to_move_by())
 						throw netcpu::message::exception("on move_task_in_list the steps_to_move_by argument is zero (not allowed)");
 				}

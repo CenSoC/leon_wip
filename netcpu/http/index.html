@@ -1875,8 +1875,6 @@ function new_task_type()
 
 		to_server.innerHTML = cli_string;
 
-		// todo -- move it into new_task_type namespace... as sooo many other quick hacks :-)
-
 		function stop_waiting()
 		{
 			send_to_server_button.disabled = false;
@@ -2075,10 +2073,10 @@ function batch_fill_context_menu_type()
 	var hidden = true;
 	var highlighted_cell_gui;
 	var x, y;
-	function show()
+	this.show = function()
 	{
 		if (hidden == false)
-			hide();
+			this.hide();
 		this.cell_gui.className = "coeff_metadata_selected";
 		highlighted_cell_gui = this.cell_gui;
 		hidden = false;
@@ -2106,7 +2104,7 @@ function batch_fill_context_menu_type()
 		} else
 			gui.style.top = y  + window.pageYOffset+ "px";
 	}
-	function hide()
+	this.hide = function()
 	{
 		if (hidden == false) {
 			highlighted_cell_gui.className = "coeff_metadata";
@@ -2118,28 +2116,28 @@ function batch_fill_context_menu_type()
 	var gui = document.createElement("div");
 	gui.className = "contextmenu";
 
-	var fill_right_row_button = document.createElement("button");
-	fill_right_row_button.className = "full_width";
-	fill_right_row_button.appendChild(document.createTextNode("Fill right"));
-	gui.appendChild(fill_right_row_button);
+	this.fill_right_row_button = document.createElement("button");
+	this.fill_right_row_button.className = "full_width";
+	this.fill_right_row_button.appendChild(document.createTextNode("Fill right"));
+	gui.appendChild(this.fill_right_row_button);
 
 	gui.appendChild(document.createElement("br"));
-	var fill_down_row_button = document.createElement("button");
-	fill_down_row_button.className = "full_width";
-	fill_down_row_button.appendChild(document.createTextNode("Fill row down"));
-	gui.appendChild(fill_down_row_button);
+	this.fill_down_row_button = document.createElement("button");
+	this.fill_down_row_button.className = "full_width";
+	this.fill_down_row_button.appendChild(document.createTextNode("Fill row down"));
+	gui.appendChild(this.fill_down_row_button);
 
 	gui.appendChild(document.createElement("br"));
-	var fill_down_column_button = document.createElement("button");
-	fill_down_column_button.className = "full_width";
-	fill_down_column_button.appendChild(document.createTextNode("Fill column down"));
-	gui.appendChild(fill_down_column_button);
+	this.fill_down_column_button = document.createElement("button");
+	this.fill_down_column_button.className = "full_width";
+	this.fill_down_column_button.appendChild(document.createTextNode("Fill column down"));
+	gui.appendChild(this.fill_down_column_button);
 
 	gui.appendChild(document.createElement("br"));
-	var fill_to_corner_button = document.createElement("button");
-	fill_to_corner_button.className = "full_width";
-	fill_to_corner_button.appendChild(document.createTextNode("Fill down and right"));
-	gui.appendChild(fill_to_corner_button);
+	this.fill_to_corner_button = document.createElement("button");
+	this.fill_to_corner_button.className = "full_width";
+	this.fill_to_corner_button.appendChild(document.createTextNode("Fill down and right"));
+	gui.appendChild(this.fill_to_corner_button);
 
 	gui.appendChild(document.createElement("br"));
 	var cancel_btn = document.createElement("button");
@@ -2147,23 +2145,15 @@ function batch_fill_context_menu_type()
 	cancel_btn.appendChild(document.createTextNode("Cancel"));
 	cancel_btn.onclick = function() 
 	{
-		hide();
+		this.hide();
 	}
 	gui.appendChild(cancel_btn);
 
-	function set_coordinates(new_x, new_y)
+	this.set_coordinates = function(new_x, new_y)
 	{
 		x = new_x;
 		y = new_y;
 	}
-
-	this.set_coordinates = set_coordinates;
-	this.show = show;
-	this.hide = hide;
-	this.fill_right_row_button = fill_right_row_button;
-	this.fill_down_row_button = fill_down_row_button;
-	this.fill_down_column_button = fill_down_column_button;
-	this.fill_to_corner_button = fill_to_corner_button;
 }
 
 var normals_i = 0;
@@ -2241,7 +2231,6 @@ function waiting_animation_type(gui_holder)
 			if (Math.abs(current_radius - target_radius) < shaking_threshold)
 				current_radius = target_radius - shaking_threshold * .8;
 		}
-		var me = this;
 		animation_timer = setTimeout(tick, timeout);
 
 		current_rotation += rotation_speed * timeout;
@@ -2301,51 +2290,47 @@ function waiting_animation_type(gui_holder)
 }
 
 // todo perhaps have two types -- one for overlay comparison and another for animation (if any will prove to be of use that is).
-function canvas_painter_type(canvas, coefficients, task_name, model_id, betas_size) 
+function canvas_painter_type(canvas, coefficients, task_name, model_id_, betas_size) 
 {
-	this.betas_size = betas_size
-	this.normal_trunc = 2.5;
-	this.model_id = parseInt(model_id);
-	this.task_name = task_name;
-	this.coefficients = coefficients;
+	var canvas_painter_type_this = this;
+	var normal_trunc = 2.5;
+	var model_id = parseInt(model_id_);
 
-	this.max = 1 + this.normal_trunc * .7;
-	this.min = -this.normal_trunc * .7;
-	this.range = this.max - this.min;
+	var max = 1 + normal_trunc * .7;
+	var min = -normal_trunc * .7;
+	var range = max - min;
 
-	this.coefficient_circle_radius = Math.min(0.8 * window.innerHeight, 7 * 20) / 20;
-	this.coefficient_circle_padding = this.coefficient_circle_radius * 5;
+	var coefficient_circle_radius = Math.min(0.8 * window.innerHeight, 7 * 20) / 20;
+	var coefficient_circle_padding = coefficient_circle_radius * 5;
 
-	canvas.width = (this.coefficient_circle_radius * 2 + this.coefficient_circle_padding) * this.coefficients.length - this.coefficient_circle_padding; 
-	canvas.height = this.coefficient_circle_radius * 30;
+	canvas.width = (coefficient_circle_radius * 2 + coefficient_circle_padding) * coefficients.length - coefficient_circle_padding; 
+	canvas.height = coefficient_circle_radius * 30;
 	//canvas.style.border = "1px solid black";
 
-	this.width = canvas.width; 
-	this.height = canvas.height; 
-	this.ctx = canvas.getContext("2d"); 
-	this.zero_line_y = this.height * this.max / this.range;
+	var ctx = canvas.getContext("2d"); 
+	var zero_line_y = canvas.height * max / range;
 
-	this.height_over_range = this.height / this.range;
+	var height_over_range = canvas.height / range;
 
-	this.value_to_y_coord = function(value)
+	function value_to_y_coord(value)
 	{
-		return this.height - (value - this.min) * this.height_over_range;
+		return canvas.height - (value - min) * height_over_range;
 	}
 
 	this.get_task_name_metrics = function(context)
 	{
-		return context.measureText(this.task_name);
+		return context.measureText(task_name);
 	}
 
 	this.get_max_normalised_value = function()
 	{
-		var rv = this.coefficients[0].normalised_value;
-		for (var i = 1; i < this.betas_size; ++i)
-			if (rv < this.coefficients[i].normalised_value)
-				rv = this.coefficients[i].normalised_value;
-		if (this.model_id > 1) 
-			for (var i = 0; i < this.betas_size; ++i) {
-				var tmp = Math.abs(this.coefficients[this.betas_size + i].normalised_value);
+		var rv = coefficients[0].normalised_value;
+		for (var i = 1; i < betas_size; ++i)
+			if (rv < coefficients[i].normalised_value)
+				rv = coefficients[i].normalised_value;
+		if (model_id > 1) 
+			for (var i = 0; i < betas_size; ++i) {
+				var tmp = Math.abs(coefficients[betas_size + i].normalised_value);
 				if (rv < tmp)
 					rv = tmp;
 			}
@@ -2354,27 +2339,27 @@ function canvas_painter_type(canvas, coefficients, task_name, model_id, betas_si
 
 	this.paint_comparison = function(context, label_y, label_width, value_scaler, canvas_height)
 	{
-		context.fillText(this.task_name, 0, canvas_height - label_y);
+		context.fillText(task_name, 0, canvas_height - label_y);
 
 		context.beginPath();
-		context.moveTo(label_width + this.coefficient_circle_radius, canvas_height - this.coefficients[0].normalised_value * value_scaler);
-		var coefficient_centre = label_width + this.coefficient_circle_radius * 3 + this.coefficient_circle_padding;
-		for (var i = 1; i < this.betas_size; ++i, coefficient_centre += this.coefficient_centre_stepsize)
-			context.lineTo(coefficient_centre, canvas_height - this.coefficients[i].normalised_value * value_scaler);
+		context.moveTo(label_width + coefficient_circle_radius, canvas_height - coefficients[0].normalised_value * value_scaler);
+		var coefficient_centre = label_width + coefficient_circle_radius * 3 + coefficient_circle_padding;
+		for (var i = 1; i < betas_size; ++i, coefficient_centre += coefficient_centre_stepsize)
+			context.lineTo(coefficient_centre, canvas_height - coefficients[i].normalised_value * value_scaler);
 		var variances_start = coefficient_centre;
-		if (this.model_id > 1) 
-			for (var i = 0; i < this.betas_size; ++i, coefficient_centre += this.coefficient_centre_stepsize)
-				context.lineTo(coefficient_centre, canvas_height - this.coefficients[this.betas_size + i].normalised_value * value_scaler);
+		if (model_id > 1) 
+			for (var i = 0; i < betas_size; ++i, coefficient_centre += coefficient_centre_stepsize)
+				context.lineTo(coefficient_centre, canvas_height - coefficients[betas_size + i].normalised_value * value_scaler);
 		context.stroke();
 		context.closePath();
 
 
-		if (this.model_id > 1) {
+		if (model_id > 1) {
 			coefficient_centre = variances_start;
 			context.beginPath();
-			for (var i = 0; i != this.betas_size; ++i, coefficient_centre += this.coefficient_centre_stepsize) {
+			for (var i = 0; i != betas_size; ++i, coefficient_centre += coefficient_centre_stepsize) {
 				context.beginPath();
-				context.arc(coefficient_centre, canvas_height - this.coefficients[this.betas_size + i].normalised_value * value_scaler, this.coefficient_circle_radius * .5, 0, two_pi);
+				context.arc(coefficient_centre, canvas_height - coefficients[betas_size + i].normalised_value * value_scaler, coefficient_circle_radius * .5, 0, two_pi);
 				context.stroke();
 				context.closePath();
 			}
@@ -2382,213 +2367,210 @@ function canvas_painter_type(canvas, coefficients, task_name, model_id, betas_si
 
 	}
 
-	this.max_painted_coefficient_value = 1;
-	if (this.model_id > 1) 
-		for (var i = 0; i != this.betas_size; ++i) {
+	var max_painted_coefficient_value = 1;
+	if (model_id > 1) 
+		for (var i = 0; i != betas_size; ++i) {
 
-			var variance_normalised_value = this.coefficients[i + this.betas_size].normalised_value;
+			var variance_normalised_value = coefficients[i + betas_size].normalised_value;
 
-			if (this.max_painted_coefficient_value < variance_normalised_value)
-				this.max_painted_coefficient_value = variance_normalised_value;
+			if (max_painted_coefficient_value < variance_normalised_value)
+				max_painted_coefficient_value = variance_normalised_value;
 
-			var top = this.value_to_y_coord(this.coefficients[i].normalised_value + this.normal_trunc * variance_normalised_value);
-			var bottom = this.value_to_y_coord(this.coefficients[i].normalised_value - this.normal_trunc * variance_normalised_value);
+			var top = value_to_y_coord(coefficients[i].normalised_value + normal_trunc * variance_normalised_value);
+			var bottom = value_to_y_coord(coefficients[i].normalised_value - normal_trunc * variance_normalised_value);
 
-			var grd = this.ctx.createLinearGradient(0, top, 0, bottom);
+			var grd = ctx.createLinearGradient(0, top, 0, bottom);
 
 			var steps_size = 10; 
 			var color_stop_step = 1.0 / steps_size; 
 			var color_stop = 0.0;
 			while (color_stop <= 1.0) {
-				var distance = (color_stop * this.normal_trunc * 2 - this.normal_trunc) ; // / this.coefficients[i + this.betas_size].normalised_value; 
+				var distance = (color_stop * normal_trunc * 2 - normal_trunc) ; // / coefficients[i + betas_size].normalised_value; 
 				grd.addColorStop(color_stop, "rgba(255, 0, 0, " + 
 						.88 * (Math.exp(distance * distance / -2)).toFixed(5) +
 						")"); 
 				color_stop += color_stop_step;
 			}
 
-			this.coefficients[i].render_top = top;
-			this.coefficients[i].render_bottom = bottom;
-			this.coefficients[i].render_gradient = grd;
+			coefficients[i].render_top = top;
+			coefficients[i].render_bottom = bottom;
+			coefficients[i].render_gradient = grd;
 		}
-	for (var i = 0; i != this.betas_size; ++i) {
-		this.coefficients[i].render_value_y = this.coefficients[i].tmp_y = this.value_to_y_coord(this.coefficients[i].normalised_value);
-		this.coefficient_centre_stepsize = this.coefficient_circle_radius * 2 + this.coefficient_circle_padding;
-	}
+	for (var i = 0; i != betas_size; ++i)
+		coefficients[i].render_value_y = coefficients[i].tmp_y = value_to_y_coord(coefficients[i].normalised_value);
+	var coefficient_centre_stepsize = coefficient_circle_radius * 2 + coefficient_circle_padding;
 
-	this.do_paint = function() 
+	function do_paint() 
 	{
-		//this.checked = false;
 		//ctx.translate(canvas.width / 2, canvas.height);
 		//ctx.rotate(Math.PI / -2);
 		//ctx.font="14pt mono";
 		//ctx.fillText("To do...",10,10);
 
-		this.ctx.fillStyle = "#000000";
-		this.ctx.strokeStyle = "#000000";
-		this.ctx.lineWidth = 0.5;
+		ctx.fillStyle = "#000000";
+		ctx.strokeStyle = "#000000";
+		ctx.lineWidth = 0.5;
 		/*
-		this.ctx.beginPath();
-		this.ctx.moveTo(0, this.zero_line_y);
-		this.ctx.lineTo(this.width, this.zero_line_y);
-		this.ctx.stroke();
+		ctx.beginPath();
+		ctx.moveTo(0, zero_line_y);
+		ctx.lineTo(canvas.width, zero_line_y);
+		ctx.stroke();
 		*/
 
 
 		var max_diff = 0;
-		for (var i = 0; i < this.betas_size; ++i) {
-			var abs_diff = Math.abs(this.coefficients[i].tmp_y - this.coefficients[i].tmp_y_tmp);
+		for (var i = 0; i < betas_size; ++i) {
+			var abs_diff = Math.abs(coefficients[i].tmp_y - coefficients[i].tmp_y_tmp);
 			if (abs_diff > max_diff)
 				max_diff = abs_diff;
 		}
-		this.interpolated = true;
-		for (var i = 0; i < this.betas_size; ++i) {
-			var diff = this.coefficients[i].tmp_y - this.coefficients[i].tmp_y_tmp;
+		canvas_painter_type_this.interpolated = true;
+		for (var i = 0; i < betas_size; ++i) {
+			var diff = coefficients[i].tmp_y - coefficients[i].tmp_y_tmp;
 			var abs_diff = Math.abs(diff);
 			if (abs_diff < 7) {
 				if (abs_diff > 0.05) {
-					this.coefficients[i].tmp_y_tmp = this.coefficients[i].tmp_y + Math.max(0.85, 1 - 0.95 * abs_diff / max_diff) * diff;
-					this.interpolated = false;
+					coefficients[i].tmp_y_tmp = coefficients[i].tmp_y + Math.max(0.85, 1 - 0.95 * abs_diff / max_diff) * diff;
+					canvas_painter_type_this.interpolated = false;
 				} else
-					this.coefficients[i].tmp_y_tmp = this.coefficients[i].tmp_y;
+					coefficients[i].tmp_y_tmp = coefficients[i].tmp_y;
 			} else {
-				this.interpolated = false;
+				canvas_painter_type_this.interpolated = false;
 				var diff_scale = abs_diff / max_diff;
-				this.coefficients[i].tmp_y_tmp += (diff > 0 ?  3 * diff_scale : -3 * diff_scale);
+				coefficients[i].tmp_y_tmp += (diff > 0 ?  3 * diff_scale : -3 * diff_scale);
 			}
 		}
-		if (this.interpolated == false) {
-			var me = this;
-			setTimeout(function() { me.do_paint_all() }, Math.min(70 / (1 + max_diff * 0.5), 30));
-		}
+		if (canvas_painter_type_this.interpolated == false)
+			setTimeout(function() { canvas_painter_type_this.do_paint_all() }, Math.min(70 / (1 + max_diff * 0.5), 30));
 
-		this.ctx.beginPath();
-		//this.ctx.fillStyle = "white";
-		this.ctx.strokeStyle = "darkred";
-		this.ctx.lineWidth = 3;
-		coefficient_centre = this.coefficient_circle_radius;
-		for (var i = 0; i != this.betas_size; ++i, coefficient_centre += this.coefficient_centre_stepsize) {
+		ctx.beginPath();
+		//ctx.fillStyle = "white";
+		ctx.strokeStyle = "darkred";
+		ctx.lineWidth = 3;
+		coefficient_centre = coefficient_circle_radius;
+		for (var i = 0; i != betas_size; ++i, coefficient_centre += coefficient_centre_stepsize) {
 			/*
-			this.ctx.beginPath();
-			this.ctx.arc(coefficient_centre, this.coefficients[i].render_value_y, this.coefficient_circle_radius * .33, 0, two_pi);
-			this.ctx.fill();
-			this.ctx.closePath();
+			ctx.beginPath();
+			ctx.arc(coefficient_centre, coefficients[i].render_value_y, coefficient_circle_radius * .33, 0, two_pi);
+			ctx.fill();
+			ctx.closePath();
 			*/
-			this.ctx.moveTo(coefficient_centre - this.coefficient_circle_radius, this.coefficients[i].render_value_y);
-			this.ctx.lineTo(coefficient_centre + this.coefficient_circle_radius, this.coefficients[i].render_value_y);
+			ctx.moveTo(coefficient_centre - coefficient_circle_radius, coefficients[i].render_value_y);
+			ctx.lineTo(coefficient_centre + coefficient_circle_radius, coefficients[i].render_value_y);
 		}
-		this.ctx.stroke();
-		this.ctx.beginPath();
+		ctx.stroke();
+		ctx.beginPath();
 
-		this.ctx.strokeStyle = "#a0a0b0";
-		this.ctx.lineWidth = 0.8;
-		this.ctx.beginPath();
-		this.ctx.moveTo(this.coefficient_circle_radius, this.coefficients[0].tmp_y_tmp);
-		var coefficient_centre = this.coefficient_circle_radius * 3 + this.coefficient_circle_padding;
-		for (var i = 1; i < this.betas_size; ++i, coefficient_centre += this.coefficient_centre_stepsize)
-			this.ctx.lineTo(coefficient_centre, this.coefficients[i].tmp_y_tmp);
-		this.ctx.stroke();
-		this.ctx.closePath();
+		ctx.strokeStyle = "#a0a0b0";
+		ctx.lineWidth = 0.8;
+		ctx.beginPath();
+		ctx.moveTo(coefficient_circle_radius, coefficients[0].tmp_y_tmp);
+		var coefficient_centre = coefficient_circle_radius * 3 + coefficient_circle_padding;
+		for (var i = 1; i < betas_size; ++i, coefficient_centre += coefficient_centre_stepsize)
+			ctx.lineTo(coefficient_centre, coefficients[i].tmp_y_tmp);
+		ctx.stroke();
+		ctx.closePath();
 
-		coefficient_centre = this.coefficient_circle_radius;
-		for (var i = 0; i != this.betas_size; ++i, coefficient_centre += this.coefficient_centre_stepsize) {
-			if (this.model_id > 1) {
-				//this.ctx.fillStyle = "rgba(0, 250, 0, 0.1)";
-				var grd = this.ctx.createRadialGradient(coefficient_centre, this.coefficients[i].tmp_y_tmp, 1, coefficient_centre, this.coefficients[i].tmp_y_tmp, this.coefficient_circle_radius * 1.2);
+		coefficient_centre = coefficient_circle_radius;
+		for (var i = 0; i != betas_size; ++i, coefficient_centre += coefficient_centre_stepsize) {
+			if (model_id > 1) {
+				//ctx.fillStyle = "rgba(0, 250, 0, 0.1)";
+				var grd = ctx.createRadialGradient(coefficient_centre, coefficients[i].tmp_y_tmp, 1, coefficient_centre, coefficients[i].tmp_y_tmp, coefficient_circle_radius * 1.2);
 				grd.addColorStop(0, "rgba(0, 250, 250, 0.5)");
 				grd.addColorStop(1, "rgba(0, 250, 250, 0)");
-				this.ctx.fillStyle = grd;
-				this.ctx.beginPath();
-				this.ctx.arc(coefficient_centre, this.coefficients[i].tmp_y_tmp, this.coefficient_circle_radius * 1.2, 0, two_pi);
-				this.ctx.fill();
-				this.ctx.closePath();
+				ctx.fillStyle = grd;
+				ctx.beginPath();
+				ctx.arc(coefficient_centre, coefficients[i].tmp_y_tmp, coefficient_circle_radius * 1.2, 0, two_pi);
+				ctx.fill();
+				ctx.closePath();
 			}
-			this.ctx.fillStyle = "#ffffff";
-			this.ctx.beginPath();
-			this.ctx.arc(coefficient_centre, this.coefficients[i].tmp_y_tmp, this.coefficient_circle_radius * .2, 0, two_pi);
-			this.ctx.fill();
-			this.ctx.closePath();
+			ctx.fillStyle = "#ffffff";
+			ctx.beginPath();
+			ctx.arc(coefficient_centre, coefficients[i].tmp_y_tmp, coefficient_circle_radius * .2, 0, two_pi);
+			ctx.fill();
+			ctx.closePath();
 		}
 
 		/*
-		this.ctx.strokeStyle = "black";
-		this.ctx.lineWidth = 0.77;
-		coefficient_centre = this.coefficient_circle_radius;
-		this.ctx.beginPath();
-		for (var i = 0; i != this.betas_size; ++i, coefficient_centre += this.coefficient_centre_stepsize) {
+		ctx.strokeStyle = "black";
+		ctx.lineWidth = 0.77;
+		coefficient_centre = coefficient_circle_radius;
+		ctx.beginPath();
+		for (var i = 0; i != betas_size; ++i, coefficient_centre += coefficient_centre_stepsize) {
 
-			var y = this.coefficients[i].tmp_y_tmp;
-			var tmp = this.coefficient_circle_radius * .7;
+			var y = coefficients[i].tmp_y_tmp;
+			var tmp = coefficient_circle_radius * .7;
 
-			this.ctx.moveTo(coefficient_centre - tmp, y - tmp);
-			this.ctx.lineTo(coefficient_centre + tmp, y + tmp);
-			this.ctx.moveTo(coefficient_centre + tmp, y - tmp);
-			this.ctx.lineTo(coefficient_centre - tmp, y + tmp);
+			ctx.moveTo(coefficient_centre - tmp, y - tmp);
+			ctx.lineTo(coefficient_centre + tmp, y + tmp);
+			ctx.moveTo(coefficient_centre + tmp, y - tmp);
+			ctx.lineTo(coefficient_centre - tmp, y + tmp);
 			//
-			//this.ctx.moveTo(coefficient_centre - this.coefficient_circle_radius, y);
-			//this.ctx.lineTo(coefficient_centre + this.coefficient_circle_radius, y);
-			//this.ctx.moveTo(coefficient_centre, y - this.coefficient_circle_radius);
-			//this.ctx.lineTo(coefficient_centre, y + this.coefficient_circle_radius);
+			//ctx.moveTo(coefficient_centre - coefficient_circle_radius, y);
+			//ctx.lineTo(coefficient_centre + coefficient_circle_radius, y);
+			//ctx.moveTo(coefficient_centre, y - coefficient_circle_radius);
+			//ctx.lineTo(coefficient_centre, y + coefficient_circle_radius);
 			//
 		}
-		this.ctx.stroke();
+		ctx.stroke();
 		*/
 
-		this.ctx.closePath();
+		ctx.closePath();
 	}
 
 	this.do_paint_all = function()
 	{
-			this.ctx.clearRect(0, 0, this.width, this.height);
+			ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-			this.ctx.fillStyle = "#aaaaff";
-			var coefficient_centre = this.coefficient_circle_radius;
-			//this.ctx.beginPath();
-			for (var i = 0; i != this.betas_size; ++i, coefficient_centre += this.coefficient_centre_stepsize) {
-				this.ctx.fillStyle = this.coefficients[i].render_gradient;
-				this.ctx.fillRect(coefficient_centre - this.coefficient_circle_radius, this.coefficients[i].render_top, this.coefficient_circle_radius * 2, this.coefficients[i].render_bottom - this.coefficients[i].render_top);
-				//this.ctx.closePath();
+			ctx.fillStyle = "#aaaaff";
+			var coefficient_centre = coefficient_circle_radius;
+			//ctx.beginPath();
+			for (var i = 0; i != betas_size; ++i, coefficient_centre += coefficient_centre_stepsize) {
+				ctx.fillStyle = coefficients[i].render_gradient;
+				ctx.fillRect(coefficient_centre - coefficient_circle_radius, coefficients[i].render_top, coefficient_circle_radius * 2, coefficients[i].render_bottom - coefficients[i].render_top);
+				//ctx.closePath();
 			}
-			this.do_paint();
+			do_paint();
 	}
 
 	this.repaint = function() 
 	{
-		if (this.model_id > 1) {
-			for (var i = 0; i < this.betas_size; ++i)
-				this.coefficients[i].tmp_y = this.value_to_y_coord(this.coefficients[i].normalised_value + normals[(i + normals_i * this.betas_size) % normals.length] * this.coefficients[i + this.betas_size].normalised_value);
+		if (model_id > 1) {
+			for (var i = 0; i < betas_size; ++i)
+				coefficients[i].tmp_y = value_to_y_coord(coefficients[i].normalised_value + normals[(i + normals_i * betas_size) % normals.length] * coefficients[i + betas_size].normalised_value);
 			this.do_paint_all();
 		} 
 	}
 
-	if (this.model_id > 1) {
-		for (var i = 0; i < this.betas_size; ++i)
-			this.coefficients[i].tmp_y_tmp = this.value_to_y_coord(this.coefficients[i].normalised_value + normals[(i + normals_i * this.betas_size) % normals.length] * this.coefficients[i + this.betas_size].normalised_value) + (i % 2 ? -50 : 50);
+	if (model_id > 1) {
+		for (var i = 0; i < betas_size; ++i)
+			coefficients[i].tmp_y_tmp = value_to_y_coord(coefficients[i].normalised_value + normals[(i + normals_i * betas_size) % normals.length] * coefficients[i + betas_size].normalised_value) + (i % 2 ? -50 : 50);
 		this.repaint();
 	} else {
-		for (var i = 0; i < this.betas_size; ++i)
-			this.coefficients[i].tmp_y_tmp = this.value_to_y_coord(this.coefficients[i].normalised_value);
-		this.do_paint();
+		for (var i = 0; i < betas_size; ++i)
+			coefficients[i].tmp_y_tmp = value_to_y_coord(coefficients[i].normalised_value);
+		do_paint();
 	}
 }
 
 function tasks_list_type()
 {
+	var tasks_list_type_this = this;
 	this.gui = document.createElement("table");
 	this.gui.className = "centered_table";
 
-	tr = document.createElement("tr");
-	td = document.createElement("td");
+	var tr = document.createElement("tr");
+	var td = document.createElement("td");
 	td.className = "page_title_td";
 	td.appendChild(document.createTextNode("LIST OF EXISTING TASKS"));
 	tr.appendChild(td);
 	this.gui.appendChild(tr);
 
 	var tr = document.createElement("tr");
-	this.tableHolder = document.createElement("td");
-	this.table = document.createElement("table");
-	this.tableHolder.appendChild(this.table);
-	tr.appendChild(this.tableHolder);
+	var tableHolder = document.createElement("td");
+	var table = document.createElement("table");
+	tableHolder.appendChild(table);
+	tr.appendChild(tableHolder);
 	this.gui.appendChild(tr);
 
 	tr = document.createElement("tr");
@@ -2597,20 +2579,20 @@ function tasks_list_type()
 	this.comparison_canvas_holder.id = "overflowish";
 	this.comparison_canvas_holder.style.maxWidth = (0.95 * document.documentElement.clientWidth) + "px";
 	this.comparison_canvas_holder.style.display = "none";
-	this.comparison_canvas = document.createElement("canvas");
+	var comparison_canvas = document.createElement("canvas");
 	this.comparison_canvas_holder.appendChild(document.createTextNode("Comparative overlay of shown(-detail) tasks..."));
 	this.comparison_canvas_holder.appendChild(document.createElement("br"));
-	this.comparison_canvas_holder.appendChild(this.comparison_canvas);
+	this.comparison_canvas_holder.appendChild(comparison_canvas);
 	td.appendChild(this.comparison_canvas_holder);
 	tr.appendChild(td);
 	this.gui.appendChild(tr);
 
-	this.paint_comparison = function()
+	function paint_comparison()
 	{
-		var keys = Object.keys(this.existing_detail_showing_tasks);
+		var keys = Object.keys(tasks_list_type_this.existing_detail_showing_tasks);
 		if (keys.length) {
 
-			var context = this.comparison_canvas.getContext("2d"); 
+			var context = comparison_canvas.getContext("2d"); 
 			context.font = "14px sans";
 
 			// find relevant dimension details for all of the labels
@@ -2621,7 +2603,7 @@ function tasks_list_type()
 			var max_normalised_value = 0;
 			var painters = [];
 			for (var i = 0; i != keys.length; ++i) {
-				var shown_task = this.existing_detail_showing_tasks[keys[i]];
+				var shown_task = tasks_list_type_this.existing_detail_showing_tasks[keys[i]];
 				if (shown_task["canvas"]) {
 					if (canvas_width < shown_task.canvas.width)
 						canvas_width = shown_task.canvas.width;
@@ -2637,62 +2619,65 @@ function tasks_list_type()
 						max_normalised_value = painter.get_max_normalised_value();
 				}
 			}
-			canvas_width += max_label_width;
 
+			if (max_normalised_value > 0) {
+				canvas_width += max_label_width;
 
-			this.comparison_canvas.width = canvas_width;
-			this.comparison_canvas.height = canvas_height;
-			context.clearRect(0, 0, canvas_width, canvas_height);
-			context.font = "14px sans"; 
+				comparison_canvas.width = canvas_width;
+				comparison_canvas.height = canvas_height;
+				context.clearRect(0, 0, canvas_width, canvas_height);
+				context.font = "14px sans"; 
 
-			// execute the painting call...
-			var value_scaler = canvas_height / max_normalised_value;
-			var intensity_step;
-			if (painters.length > 1)
-				intensity_step = 1 / (painters.length - 1);
-			var intensity_value = 0;
-			var hue_from = 0;
-			var hue_to = 1;
-			var hue_step = (hue_to - hue_from) * intensity_step;
-			var hue = hue_from;
-			context.lineWidth = 1.5;
-			for (var i = 0; i != painters.length; ++i, hue += hue_step, intensity_value += intensity_step) {
-				var rgb_scale = 255 * intensity_value;
-				var rgb_color = "rgb(";
-				var r, g, b;
-				var x = Math.floor(hue * 6);
-				var f = hue * 6 - x;
-				var q = (1 - f);
-				switch (x % 6) {
-				case 0: 
-					rgb_color += parseInt(rgb_scale) + ',' + parseInt(rgb_scale * f) + ",0)";
-					break;
-				case 1: 
-					rgb_color += parseInt(rgb_scale * q) + ',' + parseInt(rgb_scale) + ",0)";
-					break;
-				case 2: 
-					rgb_color += "0," + parseInt(rgb_scale) + ',' + parseInt(rgb_scale * f) + ')';
-					break;
-				case 3: 
-					rgb_color += "0," + parseInt(rgb_scale * q) + ',' + parseInt(rgb_scale) + ')';
-					break;
-				case 4: 
-					rgb_color += parseInt(rgb_scale * f) + ",0," + parseInt(rgb_scale) + ')';
-					break;
-				case 5: 
-					rgb_color += parseInt(rgb_scale) + ",0," + parseInt(rgb_scale * q) + ')';
-					break;
+				// execute the painting call...
+				var value_scaler = canvas_height / max_normalised_value;
+				var intensity_step;
+				if (painters.length > 1)
+					intensity_step = 1 / (painters.length - 1);
+				var intensity_value = 0;
+				var hue_from = 0;
+				var hue_to = 1;
+				var hue_step = (hue_to - hue_from) * intensity_step;
+				var hue = hue_from;
+				context.lineWidth = 1.5;
+				for (var i = 0; i != painters.length; ++i, hue += hue_step, intensity_value += intensity_step) {
+					var rgb_scale = 255 * intensity_value;
+					var rgb_color = "rgb(";
+					var r, g, b;
+					var x = Math.floor(hue * 6);
+					var f = hue * 6 - x;
+					var q = (1 - f);
+					switch (x % 6) {
+					case 0: 
+						rgb_color += parseInt(rgb_scale) + ',' + parseInt(rgb_scale * f) + ",0)";
+						break;
+					case 1: 
+						rgb_color += parseInt(rgb_scale * q) + ',' + parseInt(rgb_scale) + ",0)";
+						break;
+					case 2: 
+						rgb_color += "0," + parseInt(rgb_scale) + ',' + parseInt(rgb_scale * f) + ')';
+						break;
+					case 3: 
+						rgb_color += "0," + parseInt(rgb_scale * q) + ',' + parseInt(rgb_scale) + ')';
+						break;
+					case 4: 
+						rgb_color += parseInt(rgb_scale * f) + ",0," + parseInt(rgb_scale) + ')';
+						break;
+					case 5: 
+						rgb_color += parseInt(rgb_scale) + ",0," + parseInt(rgb_scale * q) + ')';
+						break;
+					}
+
+					context.strokeStyle = rgb_color;
+					context.fillStyle = rgb_color;
+
+					painters[i].painter.paint_comparison(context, painters[i].label_y, max_label_width, value_scaler, canvas_height);
 				}
 
-				context.strokeStyle = rgb_color;
-				context.fillStyle = rgb_color;
-
-				painters[i].painter.paint_comparison(context, painters[i].label_y, max_label_width, value_scaler, canvas_height);
+				tasks_list_type_this.comparison_canvas_holder.style.display = "block";
+				return;
 			}
-
-			this.comparison_canvas_holder.style.display = "block";
-		} else
-			this.comparison_canvas_holder.style.display = "none";
+		} 
+		tasks_list_type_this.comparison_canvas_holder.style.display = "none";
 
 	} // paint_comparison
 
@@ -2700,12 +2685,11 @@ function tasks_list_type()
 	td = document.createElement("td");
 
 	var refresh_button = document.createElement("button");
-	refresh_button.pid = this;
 	refresh_button.className = "full_width";
 	refresh_button.appendChild(document.createTextNode("Refresh/reload contents"));
 	refresh_button.onclick = function () 
 	{
-		this.pid.populate();
+		populate();
 	}
 	td.appendChild(refresh_button);
 
@@ -2729,11 +2713,11 @@ function tasks_list_type()
 		if (this.gui != last_div) {
 			document.body.replaceChild(this.gui, last_div);
 			last_div = this.gui;
-			this.populate();
+			populate();
 		}
 	}
 
-	this.display_status = function(error)
+	function display_status(error)
 	{
 		var tbl = document.createElement("table");
 		tbl.className = "full_width";
@@ -2743,12 +2727,11 @@ function tasks_list_type()
 		td.className = "debug_log_from_server";
 		tr.appendChild(td);
 		tbl.appendChild(tr);
-		this.tableHolder.replaceChild(tbl, this.table);
-		this.table = tbl;
+		tableHolder.replaceChild(tbl, table);
+		table = tbl;
 	}
 
-	this.convergence_results_divs = [];
-	this.blahblah = function(obj)
+	function blahblah(obj)
 	{
 		var tbl = document.createElement("table");
 		tbl.className = "full_width";
@@ -2769,429 +2752,430 @@ function tasks_list_type()
 		var new_task_names_set = {};
 
 		for (var i = 0; i != obj.tasks.length; ++i) {
-			this.convergence_results_divs = [];
-
-			new_task_names_set[obj.tasks[i].name] = true;
-			tr = document.createElement("tr");
-
-			//{ task position/order control
-			td = document.createElement("td");
-			td.className = "task_order_column";
-			td.style.borderBottom = "0";
-			var inpt = document.createElement("input");
-			//inpt.type = "number";
-			inpt.size = inpt_size;
-			inpt.size = 3;
-			inpt.old_value = i + 1;
-			inpt.title = "To change task's position in the list -- enter new position number and press enter";
-			inpt.pid = this;
-			inpt.value = i + 1;
-			inpt.task_name = obj.tasks[i].name;
-			if (obj.tasks[i].state == "complete")
-				inpt.disabled = true;
-			inpt.onchange = function ()
+			function individual_task_stub() 
 			{
-				this.disabled = true;
-				var steps_to_move_by = parseInt(this.value) - this.old_value;
-				var form = new FormData();
-				form.append("--task_name", this.task_name);
-				form.append("--steps_to_move_by", parseInt(this.value) - this.old_value);
-				http_request = new XMLHttpRequest();
-				http_request.pid = this.pid;
-				http_request.inpt = this;
-				http_request.spurious_try_again_flag = true;
-				http_request.form_to_send = form;
-				http_request.withCredentials = true;
-				http_request.onreadystatechange = function()
+				var task_name = obj.tasks[i].name;
+				var task_state = obj.tasks[i].state;
+				var task_complete = (task_state == "complete" ? true : false);
+
+				var model_id = parseInt(obj.tasks[i].name.split(/[_\-x]/g)[1]);
+
+				var meta_text;
+				if (obj.meta_text && !i)
+					meta_text = obj.meta_text;
+				else 
+					meta_text = null;
+				
+				var coefficients, e_min_value;
+				if (obj.tasks[i].coefficients) {
+					coefficients = obj.tasks[i].coefficients;
+					e_min_value = obj.tasks[i].value; 
+				} else
+					coefficients = e_min_value = null;
+
+				var td;
+
+				new_task_names_set[task_name] = true;
+
+				var header_row = document.createElement("tr");
+
+				//{ task position/order control
+				td = document.createElement("td");
+				td.className = "task_order_column";
+				td.style.borderBottom = "0";
+				var inpt = document.createElement("input");
+				//inpt.type = "number";
+				inpt.size = inpt_size;
+				inpt.size = 3;
+				var old_value = i + 1;
+				inpt.title = "To change task's position in the list -- enter new position number and press enter";
+				inpt.value = i + 1;
+				if (task_state == "complete")
+					inpt.disabled = true;
+				inpt.onchange = function ()
 				{
-					if (this.readyState == 4) {
-						this.inpt.disabled = false;
-						if (this.status == 200) {
-							//alert(this.responseText);
-							var obj = JSON.parse(this.responseText);
-							if (obj.echo) {
-								this.pid.populate();
-							} else if (obj.error) {
-								this.pid.display_status("Server says hmmm: " + obj.error);
-							}
-						} else if (this.status != 0 || this.spurious_try_again_flag == false) {
-							this.pid.display_status("Epic fail... [specifics are not yet diagnosed properly, the browser-communicated status code is " + this.status + ']');
-						} else {
-							this.spurious_try_again_flag = false;
-							http_request.open("POST", server_at + "move_task_in_list");
-							this.send(this.form_to_send);
-						}
-					} else if (this.readyState == 0) {
-						this.inpt.disabled = false;
+					var this_value = parseInt(this.value);
+					if (isNaN(this_value) == true) {
+						alert("Oooohh, the value " + this.value + " is really not right, now is it?");
+						return;
 					}
-				}
-				http_request.open("POST", server_at + "move_task_in_list");
-				http_request.send(form);
-			}
-			td.appendChild(inpt);
-			tr.appendChild(td);
-			//}
-
-
-			td = document.createElement("td");
-			td.appendChild(document.createTextNode(obj.tasks[i].name));
-			tr.appendChild(td);
-
-			//{ show details control
-			td = document.createElement("td");
-			var label = document.createElement("label");
-			label.className = "help_content_fieldname";
-			label.appendChild(document.createTextNode("show details"));
-			var checkbox = document.createElement("input");
-			checkbox.type = "checkbox";
-			if (this.existing_detail_showing_tasks[obj.tasks[i].name])
-				checkbox.checked = true;
-			else
-				checkbox.checked = false;
-			checkbox.pid = this;
-			if (obj.meta_text && !i)
-				checkbox.meta_text = obj.meta_text;
-			if (obj.tasks[i].coefficients) {
-				checkbox.coefficients = obj.tasks[i].coefficients;
-				checkbox.e_min_value = obj.tasks[i].value; 
-			}
-			checkbox.task_name = obj.tasks[i].name;
-			checkbox.task_complete = (obj.tasks[i].state == "complete" ? true : false);
-			checkbox.row = tr;
-			checkbox.table = tbl;
-			checkbox.model_id = parseInt(obj.tasks[i].name.split(/[_\-x]/g)[1]);
-			checkbox.onchange = function()
-			{
-				if (this.checked == true) {
-					var tr = document.createElement("tr");
-					var td = document.createElement("td");
-					//td.className = "centered_td";
-					td.colSpan = 5;
-
-					if (this.meta_text) {
-						var div = document.createElement("div");
-						//div.className = "active_task_meta_text";
-						//div.appendChild(document.createTextNode(this.meta_text));
-						div.innerHTML = "<pre class='active_task_meta_text'>" + this.meta_text + "\n(do not try to click/reload all the bloody time as numbers may update rarely -- like in a few minutes or so)</pre>";
-						td.appendChild(div);
-					}
-
-					if (this.coefficients) {
-
-						var calculate_normalised_betas = function(betas_size, coefficients, inv_distance)
-						{
-							var max = -Number.MAX_VALUE;
-							var min = Number.MAX_VALUE;
-							for (var i = 0; i != betas_size; ++i) {
-								if (coefficients[i].value > max)
-									max = coefficients[i].value;
-								if (coefficients[i].value < min)
-									min = coefficients[i].value;
-							}
-							var inv_distance;
-							if (max != min)
-								inv_distance = 1.0 / (max - min);
-							else
-								inv_distance = 1;
-							for (var i = 0; i != betas_size; ++i) 
-								coefficients[i].normalised_value = (coefficients[i].value - min) * inv_distance;
-							return inv_distance;
-						}
-						var generate_headings = function(txt, tr_, betas_size, post_txt) 
-						{
-							for (var i = 0; i != betas_size; ++i) {
-								td_ = document.createElement("td");
-								td.className = "help_content_title";
-								td_.innerHTML = txt + "<sub>" + (i + 1) + "</sub>" + post_txt;
-								tr_.appendChild(td_);
-							}
-						}
-
-						var tbl_ = document.createElement("table");
-						tbl_.className = "full_width";
-
-						var tr_ = document.createElement("tr");
-
-						var td_ = document.createElement("td");
-						td_.className = "terrain_elevation_value";
-
-						var betas_size = 0;
-						var inv_distance;
-						switch (this.model_id) {
-						case 1:
-							td_.appendChild(document.createTextNode("Log-likelihood: -" + parseFloat(parseFloat(this.e_min_value).toFixed(3))));
-							tr_.appendChild(td_);
-							betas_size = this.coefficients.length;
-							calculate_normalised_betas(betas_size, this.coefficients);
-							generate_headings("<b>&beta;</b>", tr_, betas_size, "");
-						break;
-						case 2:
-							td_.appendChild(document.createTextNode("Log-likelihood: -" + parseFloat(parseFloat(this.e_min_value).toFixed(3))));
-							tr_.appendChild(td_);
-							betas_size = this.coefficients.length / 2;
-							inv_distance = calculate_normalised_betas(betas_size, this.coefficients);
-							for (var i = 0; i != betas_size; ++i)
-								this.coefficients[i + betas_size].normalised_value = this.coefficients[i + betas_size].value * inv_distance;
-							generate_headings("<b>&beta;</b>", tr_, betas_size, "");
-							generate_headings("<b>&sigma;</b><sub>&beta;", tr_, betas_size, "</sub>");
-						break;
-						case 3:
-							td_.appendChild(document.createTextNode("Log-likelihood: -" + parseFloat(parseFloat(this.e_min_value).toFixed(3))));
-							tr_.appendChild(td_);
-							betas_size = (this.coefficients.length - 1) / 2;
-							inv_distance = calculate_normalised_betas(betas_size, this.coefficients);
-							for (var i = 0; i != betas_size; ++i)
-								this.coefficients[i + betas_size].normalised_value = this.coefficients[i + betas_size].value * inv_distance;
-							generate_headings("<b>&beta;</b>", tr_, betas_size, "");
-							generate_headings("<b>&sigma;</b><sub>&beta;", tr_, betas_size, "</sub>");
-							td_ = document.createElement("td");
-							td_.innerHTML = "&tau;";
-							tr_.appendChild(td_);
-						break;
-						case 4: {
-							td_.appendChild(document.createTextNode("Log-likelihood: -" + parseFloat(parseFloat(this.e_min_value).toFixed(3))));
-							tr_.appendChild(td_);
-							betas_size = (this.coefficients.length - 4) / 2;
-							var phi = this.coefficients[this.coefficients.length - 1].value;
-							inv_distance = calculate_normalised_betas(betas_size, this.coefficients);
-							for (var i = 0; i != betas_size; ++i)
-								this.coefficients[i + betas_size].normalised_value = this.coefficients[i + betas_size].value * inv_distance;
-							generate_headings("<b>&beta;</b>", tr_, betas_size, "");
-							generate_headings("<b>&sigma;</b><sub>&beta;", tr_, betas_size, "</sub>");
-							td_ = document.createElement("td");
-							td_.innerHTML = "&tau;";
-							tr_.appendChild(td_);
-							td_ = document.createElement("td");
-							td_.innerHTML = "<i>&mu;(&Phi;)</i>";
-							tr_.appendChild(td_);
-							td_ = document.createElement("td");
-							td_.innerHTML = "&sigma;<sub><i>&Phi;</i></sub>";
-							tr_.appendChild(td_);
-							td_ = document.createElement("td");
-							td_.innerHTML = "&rho;<sub>&tau;<i>&Phi;</i></sub>";
-							tr_.appendChild(td_);
-						}
-						break;
-						default:
-							td_.appendChild(document.createTextNode("Terrain minimisation: " + parseFloat(parseFloat(this.e_min_value).toFixed(3))));
-							tr_.appendChild(td_);
-						break;
-						}
-						tbl_.appendChild(tr_);
-
-						tr_ = document.createElement("tr");
-						td_ = document.createElement("td");
-						if (this.task_complete == false)
-							td_.className = "incomplete_value";
-						td_.appendChild(document.createTextNode("Range"));
-						tr_.appendChild(td_);
-						for (var i = 0; i != this.coefficients.length; ++i) {
-							td_ = document.createElement("td");
-							if (this.task_complete == false)
-								td_.className = "incomplete_value";
-							td_.appendChild(document.createTextNode(parseFloat(parseFloat(this.coefficients[i].range).toFixed(3))));
-							tr_.appendChild(td_);
-						}
-						tbl_.appendChild(tr_);
-
-						tr_ = document.createElement("tr");
-						td_ = document.createElement("td");
-						td_.appendChild(document.createTextNode("Raw value"));
-						tr_.appendChild(td_);
-						for (var i = 0; i != this.coefficients.length; ++i) {
-							td_ = document.createElement("td");
-							td_.appendChild(document.createTextNode(parseFloat(parseFloat(this.coefficients[i].value).toFixed(3))));
-							tr_.appendChild(td_);
-						}
-						tbl_.appendChild(tr_);
-
-						tr_ = document.createElement("tr");
-						td_ = document.createElement("td");
-						if (this.task_complete == true)
-							td_.className = "normalised_value";
-						else
-							td_.className = "incomplete_normalised_value";
-						td_.appendChild(document.createTextNode("Normalised value"));
-
-						td_.appendChild(document.createElement("br"));
-						var checkbox = document.createElement("input");
-						checkbox.type = "checkbox";
-						var label = document.createElement("label");
-						label.appendChild(document.createTextNode("(animate"));
-						label.appendChild(checkbox);
-						label.appendChild(document.createTextNode(")"));
-						td_.appendChild(label);
-
-						tr_.appendChild(td_);
-						for (var i = 0; i != this.coefficients.length; ++i) {
-							td_ = document.createElement("td");
-							if (this.coefficients[i]["normalised_value"] != null) {
-								if (this.task_complete == true)
-									td_.className = "normalised_value";
-								else
-									td_.className = "incomplete_normalised_value";
-								td_.appendChild(document.createTextNode(parseFloat(this.coefficients[i].normalised_value.toFixed(3))));
-							}
-							tr_.appendChild(td_);
-						}
-						tbl_.appendChild(tr_);
-
-						var overflow_holder_1 = document.createElement("div");
-						overflow_holder_1.id = "overflowish";
-						overflow_holder_1.style.maxWidth = (0.95 * document.documentElement.clientWidth) + "px";
-						this.pid.convergence_results_divs.push(overflow_holder_1);
-						overflow_holder_1.appendChild(tbl_);
-						td.appendChild(overflow_holder_1);
-
-						var canvas = document.createElement("canvas");
-						canvas.painter = new canvas_painter_type(canvas, this.coefficients, this.task_name, this.model_id, betas_size);
-
-						td.appendChild(document.createElement("br"));
-
-						var overflow_holder_2 = document.createElement("div");
-						overflow_holder_2.style.display = "none";
-						overflow_holder_2.id = "overflowish";
-						overflow_holder_2.style.maxWidth = (0.95 * document.documentElement.clientWidth) + "px";
-						this.pid.convergence_results_divs.push(overflow_holder_2);
-						overflow_holder_2.appendChild(canvas);
-						td.appendChild(overflow_holder_2);
-
-						var me = this;
-						checkbox.onchange = function()
-						{
-							if (this.checked == true) {
-								me.pid.existing_detail_showing_animated_tasks[me.task_name] = canvas;
-								overflow_holder_2.style.display = "block";
-								if (repainting_timer == null)
-									repainting_timer = setInterval("timer_callback()", 2000);
-							} else {
-								overflow_holder_2.style.display = "none";
-								delete me.pid.existing_detail_showing_animated_tasks[me.task_name];
-							}
-						}
-						if (this.pid.existing_detail_showing_animated_tasks[this.task_name]) {
-							checkbox.checked = true;
-							checkbox.onchange();
-						} else
-							checkbox.checked = false;
-
-						this.pid.existing_detail_showing_tasks[this.task_name] = { "canvas" : canvas , "divs" : [ overflow_holder_1, overflow_holder_2 ] }
-						this.pid.paint_comparison();
-
-					} else {
-						td.className = "coefficients_not_ready";
-						td.appendChild(document.createTextNode("Nothing is ready as of yet (convergence has not proceeded enough)..."));
-						td.appendChild(document.createElement("br"));
-						td.appendChild(document.createTextNode("Try again in a few minutes."));
-						delete this.pid.existing_detail_showing_tasks[this.task_name];
-						delete this.pid.existing_detail_showing_animated_tasks[this.task_name];
-						this.pid.paint_comparison();
-					}
-					tr.appendChild(td);
-					this.table.insertBefore(tr, this.row.nextSibling);
-				} else {
-					delete this.pid.existing_detail_showing_tasks[this.task_name];
-					delete this.pid.existing_detail_showing_animated_tasks[this.task_name];
-					//alert("Not yet implemented");
-					this.table.removeChild(this.row.nextSibling);
-					this.pid.paint_comparison();
-				}
-			}
-			label.appendChild(checkbox);
-			td.appendChild(label);
-			tr.appendChild(td);
-			//}
-
-			//{ status display
-			td = document.createElement("td");
-			if (!i && obj.tasks[i].state == "pending") {
-				td.className = "active_task_label";
-				td.appendChild(document.createTextNode("active"));
-			} else {
-				td.appendChild(document.createTextNode(obj.tasks[i].state));
-				if (obj.tasks[i].state == "pending")
-					td.className = "pending_task_label";
-				else
-					td.className = "complete_task_label";
-			}
-			tr.appendChild(td);
-			//}
-
-			//{ delete button
-			td = document.createElement("td");
-			var btn = document.createElement("button");
-			btn.appendChild(document.createTextNode("delete"));
-			btn.pid = this;
-			btn.task_name = obj.tasks[i].name;
-			btn.onclick = function ()
-			{
-				if (confirm("About to delete task \"" + this.task_name + "\"...\nDO YOU WANT TO PROCEED?") == true) {
 					this.disabled = true;
+					var steps_to_move_by = this_value - old_value;
 					var form = new FormData();
-					form.append("--task_name", this.task_name);
+					form.append("--task_name", task_name);
+					form.append("--steps_to_move_by", this_value - old_value);
+					var spurious_try_again_flag = true;
 					http_request = new XMLHttpRequest();
-					http_request.pid = this.pid;
-					http_request.btn = this;
-					http_request.spurious_try_again_flag = true;
-					http_request.form_to_send = form;
 					http_request.withCredentials = true;
 					http_request.onreadystatechange = function()
 					{
 						if (this.readyState == 4) {
-							this.btn.disabled = false;
+							inpt.disabled = false;
 							if (this.status == 200) {
 								//alert(this.responseText);
 								var obj = JSON.parse(this.responseText);
 								if (obj.echo) {
-									this.pid.populate();
+									populate();
 								} else if (obj.error) {
-									this.pid.display_status("Server says hmmm: " + obj.error);
+									display_status("Server says hmmm: " + obj.error);
 								}
-							} else if (this.status != 0 || this.spurious_try_again_flag == false) {
-								this.pid.display_status("Epic fail... [specifics are not yet diagnosed properly, the browser-communicated status code is " + this.status + ']');
+							} else if (this.status != 0 || spurious_try_again_flag == false) {
+								display_status("Epic fail... [specifics are not yet diagnosed properly, the browser-communicated status code is " + this.status + ']');
 							} else {
-								this.spurious_try_again_flag = false;
-								http_request.open("POST", server_at + "delete_task");
-								this.send(this.form_to_send);
+								spurious_try_again_flag = false;
+								http_request.open("POST", server_at + "move_task_in_list");
+								this.send(form);
 							}
 						} else if (this.readyState == 0) {
-							this.btn.disabled = false;
+							inpt.disabled = false;
 						}
 					}
-					http_request.open("POST", server_at + "delete_task");
+					http_request.open("POST", server_at + "move_task_in_list");
 					http_request.send(form);
 				}
+				td.appendChild(inpt);
+				header_row.appendChild(td);
+				//}
+
+				td = document.createElement("td");
+				td.appendChild(document.createTextNode(task_name));
+				header_row.appendChild(td);
+
+				//{ show details control
+				td = document.createElement("td");
+				var label = document.createElement("label");
+				label.className = "help_content_fieldname";
+				label.appendChild(document.createTextNode("show details"));
+				var checkbox = document.createElement("input");
+				checkbox.type = "checkbox";
+				if (tasks_list_type_this.existing_detail_showing_tasks[task_name])
+					checkbox.checked = true;
+				else
+					checkbox.checked = false;
+				checkbox.onchange = function()
+				{
+					if (this.checked == true) {
+						var tr = document.createElement("tr");
+						var td = document.createElement("td");
+						//td.className = "centered_td";
+						td.colSpan = 5;
+
+						if (meta_text) {
+							var div = document.createElement("div");
+							//div.className = "active_task_meta_text";
+							//div.appendChild(document.createTextNode(meta_text));
+							div.innerHTML = "<pre class='active_task_meta_text'>" + meta_text + "\n(do not try to click/reload all the bloody time as numbers may update rarely -- like in a few minutes or so)</pre>";
+							td.appendChild(div);
+						}
+
+						if (coefficients) {
+
+							var calculate_normalised_betas = function(betas_size, coefficients, inv_distance)
+							{
+								var max = -Number.MAX_VALUE;
+								var min = Number.MAX_VALUE;
+								for (var i = 0; i != betas_size; ++i) {
+									if (coefficients[i].value > max)
+										max = coefficients[i].value;
+									if (coefficients[i].value < min)
+										min = coefficients[i].value;
+								}
+								var inv_distance;
+								if (max != min)
+									inv_distance = 1.0 / (max - min);
+								else
+									inv_distance = 1;
+								for (var i = 0; i != betas_size; ++i) 
+									coefficients[i].normalised_value = (coefficients[i].value - min) * inv_distance;
+								return inv_distance;
+							}
+							var generate_headings = function(txt, tr_, betas_size, post_txt) 
+							{
+								for (var i = 0; i != betas_size; ++i) {
+									td_ = document.createElement("td");
+									td.className = "help_content_title";
+									td_.innerHTML = txt + "<sub>" + (i + 1) + "</sub>" + post_txt;
+									tr_.appendChild(td_);
+								}
+							}
+
+							var tbl_ = document.createElement("table");
+							tbl_.className = "full_width";
+
+							var tr_ = document.createElement("tr");
+
+							var td_ = document.createElement("td");
+							td_.className = "terrain_elevation_value";
+
+							var betas_size = 0;
+							var inv_distance;
+							switch (model_id) {
+							case 1:
+								td_.appendChild(document.createTextNode("Log-likelihood: -" + parseFloat(parseFloat(e_min_value).toFixed(3))));
+								tr_.appendChild(td_);
+								betas_size = coefficients.length;
+								calculate_normalised_betas(betas_size, coefficients);
+								generate_headings("<b>&beta;</b>", tr_, betas_size, "");
+							break;
+							case 2:
+								td_.appendChild(document.createTextNode("Log-likelihood: -" + parseFloat(parseFloat(e_min_value).toFixed(3))));
+								tr_.appendChild(td_);
+								betas_size = coefficients.length / 2;
+								inv_distance = calculate_normalised_betas(betas_size, coefficients);
+								for (var i = 0; i != betas_size; ++i)
+									coefficients[i + betas_size].normalised_value = coefficients[i + betas_size].value * inv_distance;
+								generate_headings("<b>&beta;</b>", tr_, betas_size, "");
+								generate_headings("<b>&sigma;</b><sub>&beta;", tr_, betas_size, "</sub>");
+							break;
+							case 3:
+								td_.appendChild(document.createTextNode("Log-likelihood: -" + parseFloat(parseFloat(e_min_value).toFixed(3))));
+								tr_.appendChild(td_);
+								betas_size = (coefficients.length - 1) / 2;
+								inv_distance = calculate_normalised_betas(betas_size, coefficients);
+								for (var i = 0; i != betas_size; ++i)
+									coefficients[i + betas_size].normalised_value = coefficients[i + betas_size].value * inv_distance;
+								generate_headings("<b>&beta;</b>", tr_, betas_size, "");
+								generate_headings("<b>&sigma;</b><sub>&beta;", tr_, betas_size, "</sub>");
+								td_ = document.createElement("td");
+								td_.innerHTML = "&tau;";
+								tr_.appendChild(td_);
+							break;
+							case 4: {
+								td_.appendChild(document.createTextNode("Log-likelihood: -" + parseFloat(parseFloat(e_min_value).toFixed(3))));
+								tr_.appendChild(td_);
+								betas_size = (coefficients.length - 4) / 2;
+								var phi = coefficients[coefficients.length - 1].value;
+								inv_distance = calculate_normalised_betas(betas_size, coefficients);
+								for (var i = 0; i != betas_size; ++i)
+									coefficients[i + betas_size].normalised_value = coefficients[i + betas_size].value * inv_distance;
+								generate_headings("<b>&beta;</b>", tr_, betas_size, "");
+								generate_headings("<b>&sigma;</b><sub>&beta;", tr_, betas_size, "</sub>");
+								td_ = document.createElement("td");
+								td_.innerHTML = "&tau;";
+								tr_.appendChild(td_);
+								td_ = document.createElement("td");
+								td_.innerHTML = "<i>&mu;(&Phi;)</i>";
+								tr_.appendChild(td_);
+								td_ = document.createElement("td");
+								td_.innerHTML = "&sigma;<sub><i>&Phi;</i></sub>";
+								tr_.appendChild(td_);
+								td_ = document.createElement("td");
+								td_.innerHTML = "&rho;<sub>&tau;<i>&Phi;</i></sub>";
+								tr_.appendChild(td_);
+							}
+							break;
+							default:
+								td_.appendChild(document.createTextNode("Terrain minimisation: " + parseFloat(parseFloat(e_min_value).toFixed(3))));
+								tr_.appendChild(td_);
+							break;
+							}
+							tbl_.appendChild(tr_);
+
+							tr_ = document.createElement("tr");
+							td_ = document.createElement("td");
+							if (task_complete == false)
+								td_.className = "incomplete_value";
+							td_.appendChild(document.createTextNode("Range"));
+							tr_.appendChild(td_);
+							for (var i = 0; i != coefficients.length; ++i) {
+								td_ = document.createElement("td");
+								if (task_complete == false)
+									td_.className = "incomplete_value";
+								td_.appendChild(document.createTextNode(parseFloat(parseFloat(coefficients[i].range).toFixed(3))));
+								tr_.appendChild(td_);
+							}
+							tbl_.appendChild(tr_);
+
+							tr_ = document.createElement("tr");
+							td_ = document.createElement("td");
+							td_.appendChild(document.createTextNode("Raw value"));
+							tr_.appendChild(td_);
+							for (var i = 0; i != coefficients.length; ++i) {
+								td_ = document.createElement("td");
+								td_.appendChild(document.createTextNode(parseFloat(parseFloat(coefficients[i].value).toFixed(3))));
+								tr_.appendChild(td_);
+							}
+							tbl_.appendChild(tr_);
+
+							tr_ = document.createElement("tr");
+							td_ = document.createElement("td");
+							if (task_complete == true)
+								td_.className = "normalised_value";
+							else
+								td_.className = "incomplete_normalised_value";
+							td_.appendChild(document.createTextNode("Normalised value"));
+
+							td_.appendChild(document.createElement("br"));
+							var checkbox = document.createElement("input");
+							checkbox.type = "checkbox";
+							var label = document.createElement("label");
+							label.appendChild(document.createTextNode("(animate"));
+							label.appendChild(checkbox);
+							label.appendChild(document.createTextNode(")"));
+							td_.appendChild(label);
+
+							tr_.appendChild(td_);
+							for (var i = 0; i != coefficients.length; ++i) {
+								td_ = document.createElement("td");
+								if (coefficients[i]["normalised_value"] != null) {
+									if (task_complete == true)
+										td_.className = "normalised_value";
+									else
+										td_.className = "incomplete_normalised_value";
+									td_.appendChild(document.createTextNode(parseFloat(coefficients[i].normalised_value.toFixed(3))));
+								}
+								tr_.appendChild(td_);
+							}
+							tbl_.appendChild(tr_);
+
+							var overflow_holder_1 = document.createElement("div");
+							overflow_holder_1.id = "overflowish";
+							overflow_holder_1.style.maxWidth = (0.95 * document.documentElement.clientWidth) + "px";
+							overflow_holder_1.appendChild(tbl_);
+							td.appendChild(overflow_holder_1);
+
+							var canvas = document.createElement("canvas");
+							canvas.painter = new canvas_painter_type(canvas, coefficients, task_name, model_id, betas_size);
+
+							td.appendChild(document.createElement("br"));
+
+							var overflow_holder_2 = document.createElement("div");
+							overflow_holder_2.style.display = "none";
+							overflow_holder_2.id = "overflowish";
+							overflow_holder_2.style.maxWidth = (0.95 * document.documentElement.clientWidth) + "px";
+							overflow_holder_2.appendChild(canvas);
+							td.appendChild(overflow_holder_2);
+
+							checkbox.onchange = function()
+							{
+								if (this.checked == true) {
+									tasks_list_type_this.existing_detail_showing_animated_tasks[task_name] = canvas;
+									overflow_holder_2.style.display = "block";
+									if (repainting_timer == null)
+										repainting_timer = setInterval("timer_callback()", 2000);
+								} else {
+									overflow_holder_2.style.display = "none";
+									delete tasks_list_type_this.existing_detail_showing_animated_tasks[task_name];
+								}
+							}
+							if (tasks_list_type_this.existing_detail_showing_animated_tasks[task_name]) {
+								checkbox.checked = true;
+								checkbox.onchange();
+							} else
+								checkbox.checked = false;
+
+							tasks_list_type_this.existing_detail_showing_tasks[task_name] = { "canvas" : canvas , "divs" : [ overflow_holder_1, overflow_holder_2 ] }
+						} else {
+							td.className = "coefficients_not_ready";
+							td.appendChild(document.createTextNode("Nothing is ready as of yet (convergence has not proceeded enough)..."));
+							td.appendChild(document.createElement("br"));
+							td.appendChild(document.createTextNode("Try again in a few minutes."));
+
+							tasks_list_type_this.existing_detail_showing_tasks[task_name] = {};
+							delete tasks_list_type_this.existing_detail_showing_animated_tasks[task_name];
+						}
+						tr.appendChild(td);
+						tbl.insertBefore(tr, header_row.nextSibling);
+					} else {
+						delete tasks_list_type_this.existing_detail_showing_tasks[task_name];
+						delete tasks_list_type_this.existing_detail_showing_animated_tasks[task_name];
+						//alert("Not yet implemented");
+						tbl.removeChild(header_row.nextSibling);
+					}
+					paint_comparison();
+				}
+				label.appendChild(checkbox);
+				td.appendChild(label);
+				header_row.appendChild(td);
+				//}
+
+				//{ status display
+				td = document.createElement("td");
+				if (!i && task_state == "pending") {
+					td.className = "active_task_label";
+					td.appendChild(document.createTextNode("active"));
+				} else {
+					td.appendChild(document.createTextNode(task_state));
+					if (task_state == "pending")
+						td.className = "pending_task_label";
+					else
+						td.className = "complete_task_label";
+				}
+				header_row.appendChild(td);
+				//}
+
+				//{ delete button
+				td = document.createElement("td");
+				var delete_button = document.createElement("button");
+				delete_button.appendChild(document.createTextNode("delete"));
+				delete_button.onclick = function ()
+				{
+					if (confirm("About to delete task \"" + task_name + "\"...\nDO YOU WANT TO PROCEED?") == true) {
+						var spurious_try_again_flag = true;
+						this.disabled = true;
+						var form = new FormData();
+						form.append("--task_name", task_name);
+						http_request = new XMLHttpRequest();
+						http_request.withCredentials = true;
+						http_request.onreadystatechange = function()
+						{
+							if (this.readyState == 4) {
+								delete_button.disabled = false;
+								if (this.status == 200) {
+									//alert(this.responseText);
+									var obj = JSON.parse(this.responseText);
+									if (obj.echo) {
+										populate();
+									} else if (obj.error) {
+										display_status("Server says hmmm: " + obj.error);
+									}
+								} else if (this.status != 0 || spurious_try_again_flag == false) {
+									display_status("Epic fail... [specifics are not yet diagnosed properly, the browser-communicated status code is " + this.status + ']');
+								} else {
+									spurious_try_again_flag = false;
+									http_request.open("POST", server_at + "delete_task");
+									this.send(form);
+								}
+							} else if (this.readyState == 0) {
+								delete_button.disabled = false;
+							}
+						}
+						http_request.open("POST", server_at + "delete_task");
+						http_request.send(form);
+					}
+				}
+				td.appendChild(delete_button);
+				header_row.appendChild(td);
+				//}
+
+				tbl.appendChild(header_row);
+
+				if (checkbox.checked == true)
+					checkbox.onchange();
 			}
-			td.appendChild(btn);
-			tr.appendChild(td);
-			//}
-
-			tbl.appendChild(tr);
-
-			if (checkbox.checked == true)
-				checkbox.onchange();
+			new individual_task_stub();
 		}
-		this.tableHolder.replaceChild(tbl, this.table);
-		this.table = tbl;
+		tableHolder.replaceChild(tbl, table);
+		table = tbl;
 
 		// clean the existing set of 'detail-showing tasks'
-		var existing_detail_showing_tasks = Object.keys(this.existing_detail_showing_tasks);
+		var existing_detail_showing_tasks = Object.keys(tasks_list_type_this.existing_detail_showing_tasks);
 		for (var i = 0; i != existing_detail_showing_tasks.length; ++i)
 			if (new_task_names_set[existing_detail_showing_tasks[i]] != true) {
-				delete this.existing_detail_showing_tasks[existing_detail_showing_tasks[i]];
-				delete this.existing_detail_showing_animated_tasks[existing_detail_showing_tasks[i]];
+				delete tasks_list_type_this.existing_detail_showing_tasks[existing_detail_showing_tasks[i]];
+				delete tasks_list_type_this.existing_detail_showing_animated_tasks[existing_detail_showing_tasks[i]];
 			}
-		this.paint_comparison();
+		paint_comparison();
 	}
 
 	this.existing_detail_showing_tasks = {};
 	this.existing_detail_showing_animated_tasks = {};
 
 
-	this.populate = function()
+	function populate()
 	{
-		this.comparison_canvas_holder.style.display = "none";
-		this.display_status("Please wait, processing...");
+		tasks_list_type_this.comparison_canvas_holder.style.display = "none";
+		display_status("Please wait, processing...");
 
 		/*
 		//{ offline testing
@@ -3239,13 +3223,12 @@ function tasks_list_type()
 			}
 		}
 		obj.meta_text = "processing peers: 3. \nblah blah blah";
-		this.blahblah(obj);
+		blahblah(obj);
 		return;
 		//}
 		*/
 
 		http_request = new XMLHttpRequest();
-		http_request.pid = this;
 		http_request.spurious_try_again_flag = true;
 		http_request.withCredentials = true;
 		http_request.onreadystatechange = function()
@@ -3255,14 +3238,14 @@ function tasks_list_type()
 					//alert(this.responseText);
 					var obj = JSON.parse(this.responseText);
 					if (obj.error) {
-						this.pid.display_status("Server says hmmm: " + obj.error);
+						display_status("Server says hmmm: " + obj.error);
 						return;
 					} else if (obj.tasks) {
-						this.pid.blahblah(obj);
+						blahblah(obj);
 						return;
 					}
 				} else if (this.status != 0 || this.spurious_try_again_flag == false) {
-					this.pid.display_status("Epic fail... [specifics are not yet diagnosed properly, the browser-communicated status code is " + this.status + ']');
+					display_status("Epic fail... [specifics are not yet diagnosed properly, the browser-communicated status code is " + this.status + ']');
 				} else {
 					this.spurious_try_again_flag = false;
 					http_request.open("GET", server_at + "get_tasks_list");
