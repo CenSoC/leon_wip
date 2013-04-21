@@ -380,6 +380,7 @@ input.number {
 <script type="text/javascript">
 
 var two_pi = Math.PI * 2;
+var half_pi = Math.PI / 2;
 
 // TODO -- later on will have a whole array of possible servers whilst being able to determine which one to use (ala partial remedy/mitigation w.r.t. denial of service attacks where load-balancing is also actively done at the client/browser end)
 //var server_at = "https://localhost:8055/";
@@ -2290,78 +2291,132 @@ function waiting_animation_type(gui_holder)
 }
 
 // todo perhaps have two types -- one for overlay comparison and another for animation (if any will prove to be of use that is).
-function canvas_painter_type(canvas, coefficients, task_name, model_id_, betas_size) 
+//{ canvas_painter_type static variables
+canvas_painter_type.normal_trunc = 2.5;
+canvas_painter_type.max = 1 + canvas_painter_type.normal_trunc * .7;
+canvas_painter_type.min = -canvas_painter_type.normal_trunc * .7;
+canvas_painter_type.range = canvas_painter_type.max - canvas_painter_type.min;
+canvas_painter_type.coefficient_circle_radius = Math.min(0.8 * window.innerHeight, 7 * 20) / 20;
+canvas_painter_type.coefficient_circle_padding = canvas_painter_type.coefficient_circle_radius * 5;
+canvas_painter_type.canvas_height = canvas_painter_type.coefficient_circle_radius * 30;
+canvas_painter_type.zero_line_y = canvas_painter_type.canvas_height * canvas_painter_type.max / canvas_painter_type.range;
+canvas_painter_type.height_over_range = canvas_painter_type.canvas_height / canvas_painter_type.range;
+canvas_painter_type.comparative_chart_coeff_center_radius = canvas_painter_type.coefficient_circle_radius * 1.5;
+canvas_painter_type.comparative_chart_coeff_center_diameter = canvas_painter_type.comparative_chart_coeff_center_radius * 2;
+canvas_painter_type.comparative_chart_coeff_center_line_width = 0.5;
+canvas_painter_type.comparative_chart_coeff_center_y_padding = canvas_painter_type.comparative_chart_coeff_center_radius + canvas_painter_type.comparative_chart_coeff_center_line_width;
+canvas_painter_type.comparative_chart_y_padding = canvas_painter_type.comparative_chart_coeff_center_y_padding * 2;
+//}
+
+function canvas_painter_type(canvas, terrain_elevation_value_, coefficients, task_name, model_id_, betas_size) 
 {
 	var canvas_painter_type_this = this;
-	var normal_trunc = 2.5;
 	var model_id = parseInt(model_id_);
 
-	var max = 1 + normal_trunc * .7;
-	var min = -normal_trunc * .7;
-	var range = max - min;
+	var terrain_elevation_value = model_id < 5 ? -terrain_elevation_value_ : terrain_elevation_value_;
+	var drawn_coefficients_size = model_id == 1 ? betas_size : betas_size * 2;
 
-	var coefficient_circle_radius = Math.min(0.8 * window.innerHeight, 7 * 20) / 20;
-	var coefficient_circle_padding = coefficient_circle_radius * 5;
-
-	canvas.width = (coefficient_circle_radius * 2 + coefficient_circle_padding) * coefficients.length - coefficient_circle_padding; 
-	canvas.height = coefficient_circle_radius * 30;
+	canvas.width = (canvas_painter_type.coefficient_circle_radius * 2 + canvas_painter_type.coefficient_circle_padding) * drawn_coefficients_size - canvas_painter_type.coefficient_circle_padding + 20; // todo (make it more proper: add proper font-text-labels overflow to the right...  
+	canvas.height = canvas_painter_type.canvas_height;
 	//canvas.style.border = "1px solid black";
 
 	var ctx = canvas.getContext("2d"); 
-	var zero_line_y = canvas.height * max / range;
-
-	var height_over_range = canvas.height / range;
 
 	function value_to_y_coord(value)
 	{
-		return canvas.height - (value - min) * height_over_range;
+		return canvas_painter_type.canvas_height - (value - canvas_painter_type.min) * canvas_painter_type.height_over_range;
 	}
-
+	
 	this.get_task_name_metrics = function(context)
 	{
 		return context.measureText(task_name);
 	}
 
-	this.get_max_normalised_value = function()
+	this.get_terrain_elevation_value = function()
 	{
-		var rv = coefficients[0].normalised_value;
-		for (var i = 1; i < betas_size; ++i)
-			if (rv < coefficients[i].normalised_value)
-				rv = coefficients[i].normalised_value;
-		if (model_id > 1) 
-			for (var i = 0; i < betas_size; ++i) {
-				var tmp = Math.abs(coefficients[betas_size + i].normalised_value);
-				if (rv < tmp)
-					rv = tmp;
-			}
-		return rv;
+		return terrain_elevation_value;
 	}
 
-	this.paint_comparison = function(context, label_y, label_width, value_scaler, canvas_height)
-	{
-		context.fillText(task_name, 0, canvas_height - label_y);
+	var normalised_value = coefficients[0].normalised_value;
+	for (var i = 1; i < betas_size; ++i)
+		if (normalised_value < coefficients[i].normalised_value)
+			normalised_value = coefficients[i].normalised_value;
+	if (model_id > 1) 
+		for (var i = 0; i < betas_size; ++i) {
+			var tmp = Math.abs(coefficients[betas_size + i].normalised_value);
+			if (normalised_value < tmp)
+				normalised_value = tmp;
+		}
 
+	this.get_max_normalised_value = function()
+	{
+		return normalised_value;
+	}
+
+	this.paint_comparison = function(context, label_y, label_font_size, terrain_elevation_value_left, terrain_elevation_value_middle, terrain_elevation_value_right, task_name_left, coefficients_left, min_terrain_elevation_value, terrain_elevation_value_scaler, coefficients_value_scaler, canvas_height)
+	{
+		context.lineWidth = 1.5;
+
+		context.fillText(task_name, task_name_left, canvas_height - label_y);
 		context.beginPath();
-		context.moveTo(label_width + coefficient_circle_radius, canvas_height - coefficients[0].normalised_value * value_scaler);
-		var coefficient_centre = label_width + coefficient_circle_radius * 3 + coefficient_circle_padding;
-		for (var i = 1; i < betas_size; ++i, coefficient_centre += coefficient_centre_stepsize)
-			context.lineTo(coefficient_centre, canvas_height - coefficients[i].normalised_value * value_scaler);
-		var variances_start = coefficient_centre;
-		if (model_id > 1) 
-			for (var i = 0; i < betas_size; ++i, coefficient_centre += coefficient_centre_stepsize)
-				context.lineTo(coefficient_centre, canvas_height - coefficients[betas_size + i].normalised_value * value_scaler);
+		var terrain_elevation_value_y = canvas_height - (terrain_elevation_value - min_terrain_elevation_value) * terrain_elevation_value_scaler - canvas_painter_type.comparative_chart_coeff_center_y_padding;
+		context.moveTo(terrain_elevation_value_left, terrain_elevation_value_y);
+		context.lineTo(terrain_elevation_value_right, terrain_elevation_value_y);
+		context.stroke();
+		context.closePath();
+		context.lineWidth = 0.47;
+		context.beginPath();
+		context.moveTo(terrain_elevation_value_middle, terrain_elevation_value_y);
+		context.lineTo(task_name_left, canvas_height - label_y - label_font_size * .3);
 		context.stroke();
 		context.closePath();
 
+		var first_coefficient_centre = coefficients_left + canvas_painter_type.coefficient_circle_radius;
+
+		context.beginPath();
+		context.moveTo(task_name_left + this.get_task_name_metrics(context).width, canvas_height - label_y - label_font_size * .3);
+		var coefficient_centre = first_coefficient_centre;
+		for (var i = 0; i < betas_size; ++i, coefficient_centre += coefficient_centre_stepsize)
+			context.lineTo(coefficient_centre, canvas_height - coefficients[i].normalised_value * coefficients_value_scaler - canvas_painter_type.comparative_chart_coeff_center_y_padding);
+		var variances_start = coefficient_centre;
+		if (model_id > 1) 
+			for (var i = 0; i < betas_size; ++i, coefficient_centre += coefficient_centre_stepsize)
+				context.lineTo(coefficient_centre, canvas_height - coefficients[betas_size + i].normalised_value * coefficients_value_scaler - canvas_painter_type.comparative_chart_coeff_center_y_padding);
+		context.stroke();
+		context.closePath();
+
+		var font_size = canvas_painter_type.comparative_chart_coeff_center_diameter * .8;
+		var font_offset = canvas_painter_type.comparative_chart_coeff_center_diameter - font_size;
+		context.font = font_size + "px sans";
+		context.lineWidth = canvas_painter_type.comparative_chart_coeff_center_line_width;
+
+		function number_to_subscript_string(x)
+		{
+			var rv = "";
+			var str = x.toString();
+			for (var str_i = 0; str_i != str.length; ++str_i)
+				rv += String.fromCharCode(8320 + parseInt(str[str_i]));
+			return rv;
+		}
+
+		coefficient_centre = first_coefficient_centre;
+		// todo -- currently still escaping (in case the code is being edited with fonts which do not have displaying symobls)
+		var beta_text = "\u03b2";
+		var beta_char_half_width = context.measureText(beta_text).width * .5;
+		for (var i = 0; i != betas_size; ++i, coefficient_centre += coefficient_centre_stepsize) {
+			var y_value = canvas_height - coefficients[i].normalised_value * coefficients_value_scaler - canvas_painter_type.comparative_chart_coeff_center_y_padding + font_offset;
+			context.fillText(beta_text + number_to_subscript_string(i + 1), coefficient_centre - beta_char_half_width, y_value);
+ 
+		}
 
 		if (model_id > 1) {
+			var sigma_text = "\u03c3";
+			var sigma_char_half_width = context.measureText(sigma_text).width * .5;
+			sigma_text += "\u1D66";
 			coefficient_centre = variances_start;
-			context.beginPath();
 			for (var i = 0; i != betas_size; ++i, coefficient_centre += coefficient_centre_stepsize) {
-				context.beginPath();
-				context.arc(coefficient_centre, canvas_height - coefficients[betas_size + i].normalised_value * value_scaler, coefficient_circle_radius * .5, 0, two_pi);
-				context.stroke();
-				context.closePath();
+				var y_value = canvas_height - coefficients[betas_size + i].normalised_value * coefficients_value_scaler - canvas_painter_type.comparative_chart_coeff_center_y_padding + font_offset;
+				context.fillText(sigma_text + number_to_subscript_string(i + 1), coefficient_centre - sigma_char_half_width, y_value);
 			}
 		}
 
@@ -2376,8 +2431,8 @@ function canvas_painter_type(canvas, coefficients, task_name, model_id_, betas_s
 			if (max_painted_coefficient_value < variance_normalised_value)
 				max_painted_coefficient_value = variance_normalised_value;
 
-			var top = value_to_y_coord(coefficients[i].normalised_value + normal_trunc * variance_normalised_value);
-			var bottom = value_to_y_coord(coefficients[i].normalised_value - normal_trunc * variance_normalised_value);
+			var top = value_to_y_coord(coefficients[i].normalised_value + canvas_painter_type.normal_trunc * variance_normalised_value);
+			var bottom = value_to_y_coord(coefficients[i].normalised_value - canvas_painter_type.normal_trunc * variance_normalised_value);
 
 			var grd = ctx.createLinearGradient(0, top, 0, bottom);
 
@@ -2385,7 +2440,7 @@ function canvas_painter_type(canvas, coefficients, task_name, model_id_, betas_s
 			var color_stop_step = 1.0 / steps_size; 
 			var color_stop = 0.0;
 			while (color_stop <= 1.0) {
-				var distance = (color_stop * normal_trunc * 2 - normal_trunc) ; // / coefficients[i + betas_size].normalised_value; 
+				var distance = (color_stop * canvas_painter_type.normal_trunc * 2 - canvas_painter_type.normal_trunc) ; // / coefficients[i + betas_size].normalised_value; 
 				grd.addColorStop(color_stop, "rgba(255, 0, 0, " + 
 						.88 * (Math.exp(distance * distance / -2)).toFixed(5) +
 						")"); 
@@ -2398,11 +2453,11 @@ function canvas_painter_type(canvas, coefficients, task_name, model_id_, betas_s
 		}
 	for (var i = 0; i != betas_size; ++i)
 		coefficients[i].render_value_y = coefficients[i].tmp_y = value_to_y_coord(coefficients[i].normalised_value);
-	var coefficient_centre_stepsize = coefficient_circle_radius * 2 + coefficient_circle_padding;
+	var coefficient_centre_stepsize = canvas_painter_type.coefficient_circle_radius * 2 + canvas_painter_type.coefficient_circle_padding;
 
 	function do_paint() 
 	{
-		//ctx.translate(canvas.width / 2, canvas.height);
+		//ctx.translate(canvas.width / 2, canvas_painter_type.canvas_height);
 		//ctx.rotate(Math.PI / -2);
 		//ctx.font="14pt mono";
 		//ctx.fillText("To do...",10,10);
@@ -2412,8 +2467,8 @@ function canvas_painter_type(canvas, coefficients, task_name, model_id_, betas_s
 		ctx.lineWidth = 0.5;
 		/*
 		ctx.beginPath();
-		ctx.moveTo(0, zero_line_y);
-		ctx.lineTo(canvas.width, zero_line_y);
+		ctx.moveTo(0, canvas_painter_type.zero_line_y);
+		ctx.lineTo(canvas.width, canvas_painter_type.zero_line_y);
 		ctx.stroke();
 		*/
 
@@ -2447,16 +2502,16 @@ function canvas_painter_type(canvas, coefficients, task_name, model_id_, betas_s
 		//ctx.fillStyle = "white";
 		ctx.strokeStyle = "darkred";
 		ctx.lineWidth = 3;
-		coefficient_centre = coefficient_circle_radius;
+		coefficient_centre = canvas_painter_type.coefficient_circle_radius;
 		for (var i = 0; i != betas_size; ++i, coefficient_centre += coefficient_centre_stepsize) {
 			/*
 			ctx.beginPath();
-			ctx.arc(coefficient_centre, coefficients[i].render_value_y, coefficient_circle_radius * .33, 0, two_pi);
+			ctx.arc(coefficient_centre, coefficients[i].render_value_y, canvas_painter_type.coefficient_circle_radius * .33, 0, two_pi);
 			ctx.fill();
 			ctx.closePath();
 			*/
-			ctx.moveTo(coefficient_centre - coefficient_circle_radius, coefficients[i].render_value_y);
-			ctx.lineTo(coefficient_centre + coefficient_circle_radius, coefficients[i].render_value_y);
+			ctx.moveTo(coefficient_centre - canvas_painter_type.coefficient_circle_radius, coefficients[i].render_value_y);
+			ctx.lineTo(coefficient_centre + canvas_painter_type.coefficient_circle_radius, coefficients[i].render_value_y);
 		}
 		ctx.stroke();
 		ctx.beginPath();
@@ -2464,29 +2519,29 @@ function canvas_painter_type(canvas, coefficients, task_name, model_id_, betas_s
 		ctx.strokeStyle = "#a0a0b0";
 		ctx.lineWidth = 0.8;
 		ctx.beginPath();
-		ctx.moveTo(coefficient_circle_radius, coefficients[0].tmp_y_tmp);
-		var coefficient_centre = coefficient_circle_radius * 3 + coefficient_circle_padding;
+		ctx.moveTo(canvas_painter_type.coefficient_circle_radius, coefficients[0].tmp_y_tmp);
+		var coefficient_centre = canvas_painter_type.coefficient_circle_radius * 3 + canvas_painter_type.coefficient_circle_padding;
 		for (var i = 1; i < betas_size; ++i, coefficient_centre += coefficient_centre_stepsize)
 			ctx.lineTo(coefficient_centre, coefficients[i].tmp_y_tmp);
 		ctx.stroke();
 		ctx.closePath();
 
-		coefficient_centre = coefficient_circle_radius;
+		coefficient_centre = canvas_painter_type.coefficient_circle_radius;
 		for (var i = 0; i != betas_size; ++i, coefficient_centre += coefficient_centre_stepsize) {
 			if (model_id > 1) {
 				//ctx.fillStyle = "rgba(0, 250, 0, 0.1)";
-				var grd = ctx.createRadialGradient(coefficient_centre, coefficients[i].tmp_y_tmp, 1, coefficient_centre, coefficients[i].tmp_y_tmp, coefficient_circle_radius * 1.2);
+				var grd = ctx.createRadialGradient(coefficient_centre, coefficients[i].tmp_y_tmp, 1, coefficient_centre, coefficients[i].tmp_y_tmp, canvas_painter_type.coefficient_circle_radius * 1.2);
 				grd.addColorStop(0, "rgba(0, 250, 250, 0.5)");
 				grd.addColorStop(1, "rgba(0, 250, 250, 0)");
 				ctx.fillStyle = grd;
 				ctx.beginPath();
-				ctx.arc(coefficient_centre, coefficients[i].tmp_y_tmp, coefficient_circle_radius * 1.2, 0, two_pi);
+				ctx.arc(coefficient_centre, coefficients[i].tmp_y_tmp, canvas_painter_type.coefficient_circle_radius * 1.2, 0, two_pi);
 				ctx.fill();
 				ctx.closePath();
 			}
 			ctx.fillStyle = "#ffffff";
 			ctx.beginPath();
-			ctx.arc(coefficient_centre, coefficients[i].tmp_y_tmp, coefficient_circle_radius * .2, 0, two_pi);
+			ctx.arc(coefficient_centre, coefficients[i].tmp_y_tmp, canvas_painter_type.coefficient_circle_radius * .2, 0, two_pi);
 			ctx.fill();
 			ctx.closePath();
 		}
@@ -2494,22 +2549,22 @@ function canvas_painter_type(canvas, coefficients, task_name, model_id_, betas_s
 		/*
 		ctx.strokeStyle = "black";
 		ctx.lineWidth = 0.77;
-		coefficient_centre = coefficient_circle_radius;
+		coefficient_centre = canvas_painter_type.coefficient_circle_radius;
 		ctx.beginPath();
 		for (var i = 0; i != betas_size; ++i, coefficient_centre += coefficient_centre_stepsize) {
 
 			var y = coefficients[i].tmp_y_tmp;
-			var tmp = coefficient_circle_radius * .7;
+			var tmp = canvas_painter_type.coefficient_circle_radius * .7;
 
 			ctx.moveTo(coefficient_centre - tmp, y - tmp);
 			ctx.lineTo(coefficient_centre + tmp, y + tmp);
 			ctx.moveTo(coefficient_centre + tmp, y - tmp);
 			ctx.lineTo(coefficient_centre - tmp, y + tmp);
 			//
-			//ctx.moveTo(coefficient_centre - coefficient_circle_radius, y);
-			//ctx.lineTo(coefficient_centre + coefficient_circle_radius, y);
-			//ctx.moveTo(coefficient_centre, y - coefficient_circle_radius);
-			//ctx.lineTo(coefficient_centre, y + coefficient_circle_radius);
+			//ctx.moveTo(coefficient_centre - canvas_painter_type.coefficient_circle_radius, y);
+			//ctx.lineTo(coefficient_centre + canvas_painter_type.coefficient_circle_radius, y);
+			//ctx.moveTo(coefficient_centre, y - canvas_painter_type.coefficient_circle_radius);
+			//ctx.lineTo(coefficient_centre, y + canvas_painter_type.coefficient_circle_radius);
 			//
 		}
 		ctx.stroke();
@@ -2520,14 +2575,14 @@ function canvas_painter_type(canvas, coefficients, task_name, model_id_, betas_s
 
 	this.do_paint_all = function()
 	{
-			ctx.clearRect(0, 0, canvas.width, canvas.height);
+			ctx.clearRect(0, 0, canvas.width, canvas_painter_type.canvas_height);
 
 			ctx.fillStyle = "#aaaaff";
-			var coefficient_centre = coefficient_circle_radius;
+			var coefficient_centre = canvas_painter_type.coefficient_circle_radius;
 			//ctx.beginPath();
 			for (var i = 0; i != betas_size; ++i, coefficient_centre += coefficient_centre_stepsize) {
 				ctx.fillStyle = coefficients[i].render_gradient;
-				ctx.fillRect(coefficient_centre - coefficient_circle_radius, coefficients[i].render_top, coefficient_circle_radius * 2, coefficients[i].render_bottom - coefficients[i].render_top);
+				ctx.fillRect(coefficient_centre - canvas_painter_type.coefficient_circle_radius, coefficients[i].render_top, canvas_painter_type.coefficient_circle_radius * 2, coefficients[i].render_bottom - coefficients[i].render_top);
 				//ctx.closePath();
 			}
 			do_paint();
@@ -2580,7 +2635,7 @@ function tasks_list_type()
 	this.comparison_canvas_holder.style.maxWidth = (0.95 * document.documentElement.clientWidth) + "px";
 	this.comparison_canvas_holder.style.display = "none";
 	var comparison_canvas = document.createElement("canvas");
-	this.comparison_canvas_holder.appendChild(document.createTextNode("Comparative overlay of shown(-detail) tasks..."));
+	//this.comparison_canvas_holder.appendChild(document.createTextNode("[comparator of shown-detail tasks]"));
 	this.comparison_canvas_holder.appendChild(document.createElement("br"));
 	this.comparison_canvas_holder.appendChild(comparison_canvas);
 	td.appendChild(this.comparison_canvas_holder);
@@ -2592,15 +2647,24 @@ function tasks_list_type()
 		var keys = Object.keys(tasks_list_type_this.existing_detail_showing_tasks);
 		if (keys.length) {
 
+			var font_size = 14;
+			var terrain_elevation_value_left = font_size + 15;
+			var terrain_elevation_value_right = terrain_elevation_value_left + 15; 
+			var terrain_elevation_value_middle = terrain_elevation_value_left + (terrain_elevation_value_right - terrain_elevation_value_left) * 0.5;
+			var task_name_left = terrain_elevation_value_right + 30;
+
 			var context = comparison_canvas.getContext("2d"); 
-			context.font = "14px sans";
+			context.font = font_size + "px sans";
 
 			// find relevant dimension details for all of the labels
-			var canvas_height = 200;
+			var canvas_inner_height = 200;
+			var canvas_height = canvas_inner_height + canvas_painter_type.comparative_chart_y_padding; 
 			var canvas_width = 0;
 			var max_label_width = 0;
 			var tmp_offset = 10;
 			var max_normalised_value = 0;
+			var min_terrain_elevation_value = Number.MAX_VALUE;
+			var max_terrain_elevation_value = -Number.MAX_VALUE;
 			var painters = [];
 			for (var i = 0; i != keys.length; ++i) {
 				var shown_task = tasks_list_type_this.existing_detail_showing_tasks[keys[i]];
@@ -2608,7 +2672,7 @@ function tasks_list_type()
 					if (canvas_width < shown_task.canvas.width)
 						canvas_width = shown_task.canvas.width;
 					var painter = shown_task.canvas.painter;
-					painters.push({ "label_y" : tmp_offset, "painter" : painter });
+					painters.push(painter);
 					tmp_offset += 17;
 					if (canvas_height < tmp_offset)
 						canvas_height = tmp_offset;
@@ -2617,19 +2681,56 @@ function tasks_list_type()
 						max_label_width = metrics.width;
 					if (max_normalised_value < painter.get_max_normalised_value())
 						max_normalised_value = painter.get_max_normalised_value();
+					var terrain_elevation_value = painter.get_terrain_elevation_value();
+					if (terrain_elevation_value < min_terrain_elevation_value)
+						min_terrain_elevation_value = terrain_elevation_value;
+					if (terrain_elevation_value > max_terrain_elevation_value)
+						max_terrain_elevation_value = terrain_elevation_value;
 				}
 			}
+			painters.sort(function(a, b) { return a.get_terrain_elevation_value() - b.get_terrain_elevation_value()} );
 
 			if (max_normalised_value > 0) {
-				canvas_width += max_label_width;
+
+				context.font = "italic " + font_size + "px sans"; 
+				var tmp_label = "tasks";
+				var tmp_width = context.measureText(tmp_label).width;
+				if (max_label_width < tmp_width)
+					max_label_width = tmp_width;
+				var tmp_offset = (max_label_width - tmp_width) * .5;
+
+				var coefficients_left = task_name_left + max_label_width + 30;
+				var norm_coeffs_label_left = canvas_width + coefficients_left + 5;
+
+				canvas_width = norm_coeffs_label_left + font_size;
+
 
 				comparison_canvas.width = canvas_width;
 				comparison_canvas.height = canvas_height;
 				context.clearRect(0, 0, canvas_width, canvas_height);
-				context.font = "14px sans"; 
+				context.font = "italic " + font_size + "px sans"; 
+
+				context.fillText(tmp_label, task_name_left + tmp_offset, canvas_height);
+
+				tmp_label = "terrain elevation";
+				tmp_width = context.measureText(tmp_label).width;
+				tmp_offset = (canvas_height - tmp_width) * .5;
+				context.save();
+				context.rotate(-half_pi);
+				context.fillText(tmp_label, tmp_offset - canvas_height, font_size);
+				context.restore();
+				tmp_label = "normalised coefficients";
+				tmp_width = context.measureText(tmp_label).width;
+				tmp_offset = (canvas_height - tmp_width) * .5;
+				context.save();
+				context.rotate(half_pi);
+				context.fillText(tmp_label, tmp_offset, -norm_coeffs_label_left);
+				context.restore();
 
 				// execute the painting call...
-				var value_scaler = canvas_height / max_normalised_value;
+				var terrain_elevation_value_range = max_terrain_elevation_value - min_terrain_elevation_value;
+				var terrain_elevation_value_scaler = terrain_elevation_value_range ? canvas_inner_height / terrain_elevation_value_range : 0;
+				var coefficients_value_scaler = canvas_inner_height / max_normalised_value;
 				var intensity_step;
 				if (painters.length > 1)
 					intensity_step = 1 / (painters.length - 1);
@@ -2639,6 +2740,8 @@ function tasks_list_type()
 				var hue_step = (hue_to - hue_from) * intensity_step;
 				var hue = hue_from;
 				context.lineWidth = 1.5;
+
+				tmp_offset = font_size + 8;
 				for (var i = 0; i != painters.length; ++i, hue += hue_step, intensity_value += intensity_step) {
 					var rgb_scale = 255 * intensity_value;
 					var rgb_color = "rgb(";
@@ -2667,10 +2770,13 @@ function tasks_list_type()
 						break;
 					}
 
+					context.font = font_size + "px sans";
 					context.strokeStyle = rgb_color;
 					context.fillStyle = rgb_color;
 
-					painters[i].painter.paint_comparison(context, painters[i].label_y, max_label_width, value_scaler, canvas_height);
+					painters[i].paint_comparison(context, tmp_offset, font_size, terrain_elevation_value_left, terrain_elevation_value_middle, terrain_elevation_value_right, task_name_left, coefficients_left, min_terrain_elevation_value, terrain_elevation_value_scaler, coefficients_value_scaler, canvas_height);
+
+					tmp_offset += 17;
 				}
 
 				tasks_list_type_this.comparison_canvas_holder.style.display = "block";
@@ -2766,12 +2872,12 @@ function tasks_list_type()
 				else 
 					meta_text = null;
 				
-				var coefficients, e_min_value;
+				var coefficients, terrain_elevation_value;
 				if (obj.tasks[i].coefficients) {
 					coefficients = obj.tasks[i].coefficients;
-					e_min_value = obj.tasks[i].value; 
+					terrain_elevation_value = obj.tasks[i].value; 
 				} else
-					coefficients = e_min_value = null;
+					coefficients = terrain_elevation_value = null;
 
 				var td;
 
@@ -2909,16 +3015,20 @@ function tasks_list_type()
 
 							var betas_size = 0;
 							var inv_distance;
+							function display_float(x)
+							{
+								return parseFloat(parseFloat(x).toFixed(3));
+							}
 							switch (model_id) {
 							case 1:
-								td_.appendChild(document.createTextNode("Log-likelihood: -" + parseFloat(parseFloat(e_min_value).toFixed(3))));
+								td_.appendChild(document.createTextNode("Log-likelihood: -" + display_float(terrain_elevation_value)));
 								tr_.appendChild(td_);
 								betas_size = coefficients.length;
 								calculate_normalised_betas(betas_size, coefficients);
 								generate_headings("<b>&beta;</b>", tr_, betas_size, "");
 							break;
 							case 2:
-								td_.appendChild(document.createTextNode("Log-likelihood: -" + parseFloat(parseFloat(e_min_value).toFixed(3))));
+								td_.appendChild(document.createTextNode("Log-likelihood: -" + display_float(terrain_elevation_value)));
 								tr_.appendChild(td_);
 								betas_size = coefficients.length / 2;
 								inv_distance = calculate_normalised_betas(betas_size, coefficients);
@@ -2928,7 +3038,7 @@ function tasks_list_type()
 								generate_headings("<b>&sigma;</b><sub>&beta;", tr_, betas_size, "</sub>");
 							break;
 							case 3:
-								td_.appendChild(document.createTextNode("Log-likelihood: -" + parseFloat(parseFloat(e_min_value).toFixed(3))));
+								td_.appendChild(document.createTextNode("Log-likelihood: -" + display_float(terrain_elevation_value)));
 								tr_.appendChild(td_);
 								betas_size = (coefficients.length - 1) / 2;
 								inv_distance = calculate_normalised_betas(betas_size, coefficients);
@@ -2941,7 +3051,7 @@ function tasks_list_type()
 								tr_.appendChild(td_);
 							break;
 							case 4: {
-								td_.appendChild(document.createTextNode("Log-likelihood: -" + parseFloat(parseFloat(e_min_value).toFixed(3))));
+								td_.appendChild(document.createTextNode("Log-likelihood: -" + display_float(terrain_elevation_value)));
 								tr_.appendChild(td_);
 								betas_size = (coefficients.length - 4) / 2;
 								var phi = coefficients[coefficients.length - 1].value;
@@ -2965,7 +3075,7 @@ function tasks_list_type()
 							}
 							break;
 							default:
-								td_.appendChild(document.createTextNode("Terrain minimisation: " + parseFloat(parseFloat(e_min_value).toFixed(3))));
+								td_.appendChild(document.createTextNode("Terrain minimisation: " + display_float(terrain_elevation_value)));
 								tr_.appendChild(td_);
 							break;
 							}
@@ -2981,7 +3091,7 @@ function tasks_list_type()
 								td_ = document.createElement("td");
 								if (task_complete == false)
 									td_.className = "incomplete_value";
-								td_.appendChild(document.createTextNode(parseFloat(parseFloat(coefficients[i].range).toFixed(3))));
+								td_.appendChild(document.createTextNode(display_float(coefficients[i].range)));
 								tr_.appendChild(td_);
 							}
 							tbl_.appendChild(tr_);
@@ -2992,7 +3102,7 @@ function tasks_list_type()
 							tr_.appendChild(td_);
 							for (var i = 0; i != coefficients.length; ++i) {
 								td_ = document.createElement("td");
-								td_.appendChild(document.createTextNode(parseFloat(parseFloat(coefficients[i].value).toFixed(3))));
+								td_.appendChild(document.createTextNode(display_float(coefficients[i].value)));
 								tr_.appendChild(td_);
 							}
 							tbl_.appendChild(tr_);
@@ -3022,7 +3132,7 @@ function tasks_list_type()
 										td_.className = "normalised_value";
 									else
 										td_.className = "incomplete_normalised_value";
-									td_.appendChild(document.createTextNode(parseFloat(coefficients[i].normalised_value.toFixed(3))));
+									td_.appendChild(document.createTextNode(display_float(coefficients[i].normalised_value)));
 								}
 								tr_.appendChild(td_);
 							}
@@ -3035,7 +3145,7 @@ function tasks_list_type()
 							td.appendChild(overflow_holder_1);
 
 							var canvas = document.createElement("canvas");
-							canvas.painter = new canvas_painter_type(canvas, coefficients, task_name, model_id, betas_size);
+							canvas.painter = new canvas_painter_type(canvas, terrain_elevation_value, coefficients, task_name, model_id, betas_size);
 
 							td.appendChild(document.createElement("br"));
 
@@ -3184,21 +3294,21 @@ function tasks_list_type()
 		obj.tasks.length = 8;
 		for (var i = 0; i != 5; ++i) {
 			obj.tasks[i] = new function() {
-				this.value = -11.2;
+				this.value = 11.2 + i;
 				this.name = i + "_3-1x2";
 				this.state = "pending";
 				this.coefficients = [
-					{ value : 0.3 , from : 0.1 , range : 0.5 }, 
-					{ value : -0.7 , from : -0.8 , range : 0.2 }, 
-					{ value : 0.9 , from : 0.89 , range : 0.1 }, 
-					{ value : 0.1 , from : 0.1 , range : 0.1 }, 
-					{ value : -0.7 , from : -0.8 , range : 0.2 }, 
+					{ value : 0.3 + i * .5 , from : 0.1 , range : 0.5 }, 
+					{ value : -0.7 + i , from : -0.8 , range : 0.2 }, 
+					{ value : 0.9 + i , from : 0.89 , range : 0.1 }, 
+					{ value : 0.1 + i , from : 0.1 , range : 0.1 }, 
+					{ value : -0.7 + i , from : -0.8 , range : 0.2 }, 
 				];
 			}
 		}
 		for (var i = 5; i != 8; ++i) {
 			obj.tasks[i] = new function() {
-				this.value = -11.2;
+				this.value = 11.2;
 				this.name = i + "_1-1x2";
 				this.state = "complete";
 				this.coefficients = [];
@@ -3502,12 +3612,12 @@ This is an over-generalized (accuracy sacrificed for the sake of brevity) descri
 Imagining the whole of the problem space as a multidimensional terrain where each coefficient is a dimension and the terrain's elevation is a likelihood-value produced by the chosen computational model, the algorithm may: 
 <ol>
 <li>Divide each dimension into an evenly-spaced grid of points between the boundaries (<span class="help_content_fieldname">to</span> and <span class="help_content_fieldname">from</span> configuration values). This is the overall exploration constraints of the terrain.</li>
-<li>Pick a starting (reference) sampling point -- combination of randomly chosen grid-point from every coefficient.</li>
+<li>Pick a starting (reference) sampling point -- by randomly selecting a grid-point/coordinate from every dimension/coefficient.</li>
 <li>
-Evaluate a bunch of <em>different</em> sampling points (looking for a better likelihood) by changing only <em>one</em> coefficient at a time w.r.t. the starting point:</li>
+Evaluate a bunch of <em>different</em> sampling locations (looking for a better likelihood) by changing only <em>one</em> coefficient at a time w.r.t. the starting point:</li>
 <ul>
-<li>if no better likelihood was found, consider more sampling points but now by changing <em>two</em> coefficients at a time, and so on (three coefficients at once, four, five, etc.) -- until a certain limit ("complexity size" of <span class="help_content_fieldname">max-coefficients-@once</span>) has been reached</li>
-<li>if there a better likelihood was found, walk to the newly found location and make it a new point-of-reference and then repeat the whole process (e.g. starting with "fewer-coefficients-at-once" and progressing to "maximum-allowed-coefficients-at-once" complexity)</li>
+<li>if no better likelihood was found -- consider more sampling points but now by changing <em>two</em> coefficients at a time, and so on (three coefficients at once, four, five, etc.) -- until a certain limit ("complexity size" of <span class="help_content_fieldname">max-coefficients-@once</span>) has been reached</li>
+<li>if a better likelihood <em>was</em> found -- walk to the newly found location and make it a new point-of-reference and then repeat the whole process (e.g. starting with "fewer-coefficients-at-once" and progressing to "maximum-allowed-coefficients-at-once" complexity)</li>
 </ul>
 </li>
 <li>

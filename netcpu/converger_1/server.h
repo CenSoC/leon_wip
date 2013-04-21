@@ -2039,7 +2039,7 @@ struct task : netcpu::task {
 			// todo -- really a quick and nasty hack at the moment. later must refactor interface to the task_processor so as not to do "active_task_processor->" all the time, etc.
 
 			//todo -- the newline escaping for the sake of the JSON formatting should be done elsewhere!!
-			censoc::lexicast< ::std::string> xxx("There are potentially ");
+			censoc::lexicast< ::std::string> xxx("DEBUG output: there are potentially ");
 			xxx << active_task_processor->processing_peers.size() << " processing workers (productivity of each is not yet accounted for, with " << active_task_processor->scoped_peers.size() << " total registered connections).\\n";
 #ifndef NDEBUG
 			typename ::std::map<size_type, ::std::vector<size_type> >::const_iterator tmp; // assert parsing otherwise barfs if putting all into the assert macro...
