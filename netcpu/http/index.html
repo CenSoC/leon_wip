@@ -2611,25 +2611,34 @@ function canvas_painter_type(canvas, terrain_elevation_value_, coefficients, tas
 			do_paint();
 	}
 
+	this.reset_repainting = function()
+	{
+		interpolated = false;
+		reselect_target_interpolation_value();
+	}
+
+	function reselect_target_interpolation_value()
+	{
+		for (var i = 0; i < betas_size; ++i) {
+			var from = coefficients[i].value_interpolator.get_current_value();
+			var to = value_to_y_coord(coefficients[i].normalised_value + normals[(i + normals_i * betas_size) % normals.length] * coefficients[i + betas_size].normalised_value);
+			var tmp = from > to ? 5 : -5;
+			coefficients[i].value_interpolator.reset(from, to, tmp);
+		}
+	}
+
 	this.repaint = function() 
 	{
 		if (model_id > 1) {
 			if (repainting_timer_do_paint_hint == true && interpolated == true) 
-				for (var i = 0; i < betas_size; ++i) {
-					var from = coefficients[i].value_interpolator.get_current_value();
-					var to = value_to_y_coord(coefficients[i].normalised_value + normals[(i + normals_i * betas_size) % normals.length] * coefficients[i + betas_size].normalised_value);
-					var tmp = from > to ? 5 : -5;
-					coefficients[i].value_interpolator.reset(from, to, tmp);
-				}
+				reselect_target_interpolation_value();
 			if (repainting_timer_do_paint_hint == true || interpolated == false)
 				do_paint_all();
 		} 
 		return interpolated;
 	}
 
-	if (model_id > 1)
-		do_paint_all();
-	else
+	if (model_id == 1)
 		do_paint();
 }
 
@@ -3188,6 +3197,10 @@ function tasks_list_type()
 									overflow_holder_2.style.display = "block";
 									if (repainting_timer == null)
 										repainting_timer = request_animation_frame(timer_callback);
+									else {
+										canvas.painter.reset_repainting();
+										reset_repainting_timer_repaints();
+									}
 								} else {
 									overflow_holder_2.style.display = "none";
 									delete tasks_list_type_this.existing_detail_showing_animated_tasks[task_name];
@@ -3503,6 +3516,13 @@ var repainting_timer_do_paint_hint = true;
 
 var repainting_timer_timestamp = 0;
 var repainting_timer_idle_remaining = 0;
+
+function reset_repainting_timer_repaints()
+{
+	repainting_timer_do_paint_hint = false;
+	repainting_timer_idle_remaining = 2000;
+}
+
 function timer_callback(now)
 {
 	repainting_timer = request_animation_frame(timer_callback);
