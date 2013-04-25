@@ -382,6 +382,9 @@ input.number {
 var two_pi = Math.PI * 2;
 var half_pi = Math.PI / 2;
 
+var request_animation_frame = window.requestAnimationFrame || window.webkitRequestAnimationFrame || window.mozRequestAnimationFrame;
+var cancel_animation_frame = window.cancelAnimationFrame || window.webkitCancelAnimationFrame || window.mozCancelAnimationFrame;
+
 // TODO -- later on will have a whole array of possible servers whilst being able to determine which one to use (ala partial remedy/mitigation w.r.t. denial of service attacks where load-balancing is also actively done at the client/browser end)
 //var server_at = "https://localhost:8055/";
 //var server_at = "https://localhost:8081/";
@@ -2173,6 +2176,88 @@ function draw_from_normal()
 	return x1 * Math.sqrt(-2 * Math.log(rad) / rad);
 }
 
+// todo -- later, if need be, introduce more tuning params
+function shaking_oscillator_type()
+{
+	var amplitude_end = 0.003
+	var amplitude = 0;
+	var rotation_speed;
+	var rotation;
+
+	this.reset = function()
+	{
+		amplitude = 1;
+		rotation_speed = 0.1;
+		rotation = 0;
+	}
+
+	this.is_shaking = function()
+	{
+		return amplitude > amplitude_end ? true : false;
+	}
+
+	this.ping = function(duration)
+	{
+		rotation += rotation_speed;
+		rotation_speed += duration * 0.0013;
+		amplitude -= duration * 0.0008;
+		return Math.max(0, amplitude) * Math.cos(rotation);
+	}
+}
+
+function value_interpolator_type(interpolation_speed)
+{
+	var current_value;
+	var target_value;
+	var shaker = new shaking_oscillator_type();
+	var ping_helper;;
+	var done;
+	var initial_shaking;
+
+	this.reset = function(current_value_, target_value_, initial_shaking_)
+	{
+		current_value = current_value_;
+		target_value = target_value_;
+		initial_shaking = initial_shaking_;
+		done = false;
+		shaker.reset();
+		ping_helper = ping_helper_on_travelling;
+	}
+
+	function ping_helper_on_shaking(duration_since_last)
+	{
+		current_value = target_value + initial_shaking * shaker.ping(duration_since_last);
+		if (shaker.is_shaking() == false)
+			done = true;
+	}
+
+	function ping_helper_on_travelling(duration_since_last)
+	{
+		var diff = target_value - current_value;
+		var abs_diff = Math.abs(diff);
+		if (abs_diff < target_value * 0.03)
+			ping_helper = ping_helper_on_shaking;
+		else 
+			current_value += Math.min(0.9, interpolation_speed * duration_since_last) * diff;
+	}
+
+	this.ping = function(duration_since_last)
+	{
+		ping_helper(duration_since_last);
+	}
+
+	this.is_done = function()
+	{
+		return done;
+	}
+
+	this.get_current_value = function()
+	{
+		return current_value;
+	}
+
+}
+
 function waiting_animation_type(gui_holder)
 {
 	var gui = document.createElement("div");
@@ -2182,16 +2267,17 @@ function waiting_animation_type(gui_holder)
 	var canvas = document.createElement("canvas");
 	var diameter = 100;
 	var outer_radius = diameter * 0.5;
-	var inner_radius = 21;
-	canvas.width = diameter + 10;
-	canvas.height = diameter + 10;
+	var inner_radius = 15;
+	canvas.width = diameter + 20;
+	canvas.height = diameter + 20;
 	var canvas_center = canvas.width * 0.5;
 	var animation_timer = null;
 	var stopped = false;
-	var current_radius = 0;
 	var target_radius_orientation = 1;
-	var target_radius = outer_radius;
 	var ctx = canvas.getContext("2d"); 
+
+	var value_interpolator = new value_interpolator_type(0.005);
+	value_interpolator.reset(outer_radius, outer_radius, 7);
 
 	var rotation_speed = 0.001;
 	var current_rotation = 0;
@@ -2200,45 +2286,35 @@ function waiting_animation_type(gui_holder)
 	var rotation_pause_countdown = 0;
 	var rotation_gradient_choice = 1;
 
-	function tick()
+	var prev_tick_timestamp = 0;
+	var tick_duration;
+
+	function tick(now)
 	{
 		if (stopped == true)
 			return;
-		gui.appendChild(canvas);
-		var diff = target_radius - current_radius;
-		var abs_diff = Math.abs(diff);
-		var shaking_threshold = target_radius_orientation ? 5.7 : 3;
-		var timeout = Math.max(30, 150 / (1 + 5 * abs_diff));
-		if (abs_diff < shaking_threshold) {
-			if (abs_diff > 0.03) {
-				timeout = 50;
-				current_radius = target_radius + 0.9 * diff;
-			} else {
-				timeout = 80;
-				if (!rotation_pause_countdown) {
-					rotation_pause_countdown = 30;
-					current_radius = target_radius;
-					if (target_radius_orientation) {
-						target_radius = inner_radius;
-					} else {
-						target_radius = outer_radius;
-					}
-					target_radius_orientation = !target_radius_orientation;
-				} else
-					--rotation_pause_countdown;
-			}
-		} else {
-			current_radius += (diff > 0 ?  2.1 : -2.1);
-			if (Math.abs(current_radius - target_radius) < shaking_threshold)
-				current_radius = target_radius - shaking_threshold * .8;
-		}
-		animation_timer = setTimeout(tick, timeout);
 
-		current_rotation += rotation_speed * timeout;
+		tick_duration = now - prev_tick_timestamp;
+		prev_tick_timestamp = now;
+
+		if (value_interpolator.is_done() == false)
+			value_interpolator.ping(tick_duration);
+		else if ((rotation_pause_countdown -= tick_duration) < 0) {
+			if (target_radius_orientation) {
+				rotation_pause_countdown = 3000;
+				value_interpolator.reset(outer_radius, inner_radius, -3);
+			} else {
+				rotation_pause_countdown = 5000;
+				value_interpolator.reset(inner_radius, outer_radius, 7);
+			}
+			target_radius_orientation = !target_radius_orientation;
+		} 
+
+		current_rotation += rotation_speed * tick_duration;
 		if (current_rotation > two_pi)
 			current_rotation %= two_pi;
 
-		current_rotation_end += current_rotation_end_speed * timeout;
+		current_rotation_end += current_rotation_end_speed * tick_duration;
 		if (current_rotation_end > two_pi) {
 			current_rotation_end %= two_pi;
 			rotation_gradient_choice = !rotation_gradient_choice;
@@ -2247,13 +2323,13 @@ function waiting_animation_type(gui_holder)
 		ctx.clearRect(0, 0, canvas.width, canvas.height);
 
 		// circle
-		var grd = ctx.createRadialGradient(canvas_center, canvas_center, 1, canvas_center, canvas_center, current_radius);
-		var blue_value = parseInt(Math.min(255, 100 + 180 * Math.abs(current_radius - inner_radius) / (outer_radius - inner_radius)));
+		var grd = ctx.createRadialGradient(canvas_center, canvas_center, 1, canvas_center, canvas_center, value_interpolator.get_current_value());
+		var blue_value = parseInt(Math.min(255, 100 + 180 * Math.abs(value_interpolator.get_current_value() - inner_radius) / (outer_radius - inner_radius)));
 		grd.addColorStop(0, "rgba(0,0," + blue_value + ", 1)");
 		grd.addColorStop(1, "rgba(0,0," + blue_value + ", 0.2)");
 		ctx.fillStyle = grd;
 		ctx.beginPath();
-		ctx.arc(canvas_center, canvas_center, current_radius, 0, two_pi);
+		ctx.arc(canvas_center, canvas_center, value_interpolator.get_current_value(), 0, two_pi);
 		ctx.fill();
 		ctx.closePath();
 
@@ -2270,21 +2346,24 @@ function waiting_animation_type(gui_holder)
 			arc_start = current_rotation + current_rotation_end;
 			arc_end = current_rotation; 
 		}
-		ctx.arc(canvas_center, canvas_center, current_radius, arc_start, arc_end);
+		ctx.arc(canvas_center, canvas_center, value_interpolator.get_current_value(), arc_start, arc_end);
 		ctx.lineTo(canvas_center, canvas_center);
 		ctx.fill();
 		ctx.closePath();
+
+		animation_timer = request_animation_frame(tick);
 	}
 	this.start = function()
 	{
+		gui.appendChild(canvas);
 		stopped = false;
-		tick();
+		tick(prev_tick_timestamp);
 	}
 	this.stop = function()
 	{
 		if (animation_timer != null) {
 			stopped = true;
-			clearTimeout(animation_timer);
+			cancel_animation_frame(animation_timer);
 			gui.removeChild(canvas);
 		}
 	}
@@ -2451,65 +2530,32 @@ function canvas_painter_type(canvas, terrain_elevation_value_, coefficients, tas
 			coefficients[i].render_bottom = bottom;
 			coefficients[i].render_gradient = grd;
 		}
-	for (var i = 0; i != betas_size; ++i)
-		coefficients[i].render_value_y = coefficients[i].tmp_y = value_to_y_coord(coefficients[i].normalised_value);
+	for (var i = 0; i != betas_size; ++i) {
+		coefficients[i].render_value_y = value_to_y_coord(coefficients[i].normalised_value);
+		coefficients[i].value_interpolator = new value_interpolator_type(0.015);
+		coefficients[i].value_interpolator.reset(coefficients[i].render_value_y, coefficients[i].render_value_y, 5);
+	}
 	var coefficient_centre_stepsize = canvas_painter_type.coefficient_circle_radius * 2 + canvas_painter_type.coefficient_circle_padding;
 
+	var interpolated = true;
 	function do_paint() 
 	{
-		//ctx.translate(canvas.width / 2, canvas_painter_type.canvas_height);
-		//ctx.rotate(Math.PI / -2);
-		//ctx.font="14pt mono";
-		//ctx.fillText("To do...",10,10);
-
 		ctx.fillStyle = "#000000";
 		ctx.strokeStyle = "#000000";
 		ctx.lineWidth = 0.5;
-		/*
-		ctx.beginPath();
-		ctx.moveTo(0, canvas_painter_type.zero_line_y);
-		ctx.lineTo(canvas.width, canvas_painter_type.zero_line_y);
-		ctx.stroke();
-		*/
 
-
-		var max_diff = 0;
+		interpolated = true;
 		for (var i = 0; i < betas_size; ++i) {
-			var abs_diff = Math.abs(coefficients[i].tmp_y - coefficients[i].tmp_y_tmp);
-			if (abs_diff > max_diff)
-				max_diff = abs_diff;
+			coefficients[i].value_interpolator.ping(repainting_timer_duration);
+			if (coefficients[i].value_interpolator.is_done() == false)
+				interpolated = false;
 		}
-		canvas_painter_type_this.interpolated = true;
-		for (var i = 0; i < betas_size; ++i) {
-			var diff = coefficients[i].tmp_y - coefficients[i].tmp_y_tmp;
-			var abs_diff = Math.abs(diff);
-			if (abs_diff < 7) {
-				if (abs_diff > 0.05) {
-					coefficients[i].tmp_y_tmp = coefficients[i].tmp_y + Math.max(0.85, 1 - 0.95 * abs_diff / max_diff) * diff;
-					canvas_painter_type_this.interpolated = false;
-				} else
-					coefficients[i].tmp_y_tmp = coefficients[i].tmp_y;
-			} else {
-				canvas_painter_type_this.interpolated = false;
-				var diff_scale = abs_diff / max_diff;
-				coefficients[i].tmp_y_tmp += (diff > 0 ?  3 * diff_scale : -3 * diff_scale);
-			}
-		}
-		if (canvas_painter_type_this.interpolated == false)
-			setTimeout(function() { canvas_painter_type_this.do_paint_all() }, Math.min(70 / (1 + max_diff * 0.5), 30));
 
 		ctx.beginPath();
-		//ctx.fillStyle = "white";
 		ctx.strokeStyle = "darkred";
 		ctx.lineWidth = 3;
 		coefficient_centre = canvas_painter_type.coefficient_circle_radius;
 		for (var i = 0; i != betas_size; ++i, coefficient_centre += coefficient_centre_stepsize) {
-			/*
-			ctx.beginPath();
-			ctx.arc(coefficient_centre, coefficients[i].render_value_y, canvas_painter_type.coefficient_circle_radius * .33, 0, two_pi);
-			ctx.fill();
-			ctx.closePath();
-			*/
 			ctx.moveTo(coefficient_centre - canvas_painter_type.coefficient_circle_radius, coefficients[i].render_value_y);
 			ctx.lineTo(coefficient_centre + canvas_painter_type.coefficient_circle_radius, coefficients[i].render_value_y);
 		}
@@ -2519,61 +2565,36 @@ function canvas_painter_type(canvas, terrain_elevation_value_, coefficients, tas
 		ctx.strokeStyle = "#a0a0b0";
 		ctx.lineWidth = 0.8;
 		ctx.beginPath();
-		ctx.moveTo(canvas_painter_type.coefficient_circle_radius, coefficients[0].tmp_y_tmp);
+		ctx.moveTo(canvas_painter_type.coefficient_circle_radius, coefficients[0].value_interpolator.get_current_value());
 		var coefficient_centre = canvas_painter_type.coefficient_circle_radius * 3 + canvas_painter_type.coefficient_circle_padding;
 		for (var i = 1; i < betas_size; ++i, coefficient_centre += coefficient_centre_stepsize)
-			ctx.lineTo(coefficient_centre, coefficients[i].tmp_y_tmp);
+			ctx.lineTo(coefficient_centre, coefficients[i].value_interpolator.get_current_value());
 		ctx.stroke();
 		ctx.closePath();
 
 		coefficient_centre = canvas_painter_type.coefficient_circle_radius;
 		for (var i = 0; i != betas_size; ++i, coefficient_centre += coefficient_centre_stepsize) {
 			if (model_id > 1) {
-				//ctx.fillStyle = "rgba(0, 250, 0, 0.1)";
-				var grd = ctx.createRadialGradient(coefficient_centre, coefficients[i].tmp_y_tmp, 1, coefficient_centre, coefficients[i].tmp_y_tmp, canvas_painter_type.coefficient_circle_radius * 1.2);
+				var grd = ctx.createRadialGradient(coefficient_centre, coefficients[i].value_interpolator.get_current_value(), 1, coefficient_centre, coefficients[i].value_interpolator.get_current_value(), canvas_painter_type.coefficient_circle_radius * 1.2);
 				grd.addColorStop(0, "rgba(0, 250, 250, 0.5)");
 				grd.addColorStop(1, "rgba(0, 250, 250, 0)");
 				ctx.fillStyle = grd;
 				ctx.beginPath();
-				ctx.arc(coefficient_centre, coefficients[i].tmp_y_tmp, canvas_painter_type.coefficient_circle_radius * 1.2, 0, two_pi);
+				ctx.arc(coefficient_centre, coefficients[i].value_interpolator.get_current_value(), canvas_painter_type.coefficient_circle_radius * 1.2, 0, two_pi);
 				ctx.fill();
 				ctx.closePath();
 			}
 			ctx.fillStyle = "#ffffff";
 			ctx.beginPath();
-			ctx.arc(coefficient_centre, coefficients[i].tmp_y_tmp, canvas_painter_type.coefficient_circle_radius * .2, 0, two_pi);
+			ctx.arc(coefficient_centre, coefficients[i].value_interpolator.get_current_value(), canvas_painter_type.coefficient_circle_radius * .2, 0, two_pi);
 			ctx.fill();
 			ctx.closePath();
 		}
 
-		/*
-		ctx.strokeStyle = "black";
-		ctx.lineWidth = 0.77;
-		coefficient_centre = canvas_painter_type.coefficient_circle_radius;
-		ctx.beginPath();
-		for (var i = 0; i != betas_size; ++i, coefficient_centre += coefficient_centre_stepsize) {
-
-			var y = coefficients[i].tmp_y_tmp;
-			var tmp = canvas_painter_type.coefficient_circle_radius * .7;
-
-			ctx.moveTo(coefficient_centre - tmp, y - tmp);
-			ctx.lineTo(coefficient_centre + tmp, y + tmp);
-			ctx.moveTo(coefficient_centre + tmp, y - tmp);
-			ctx.lineTo(coefficient_centre - tmp, y + tmp);
-			//
-			//ctx.moveTo(coefficient_centre - canvas_painter_type.coefficient_circle_radius, y);
-			//ctx.lineTo(coefficient_centre + canvas_painter_type.coefficient_circle_radius, y);
-			//ctx.moveTo(coefficient_centre, y - canvas_painter_type.coefficient_circle_radius);
-			//ctx.lineTo(coefficient_centre, y + canvas_painter_type.coefficient_circle_radius);
-			//
-		}
-		ctx.stroke();
-		*/
-
 		ctx.closePath();
 	}
 
-	this.do_paint_all = function()
+	function do_paint_all()
 	{
 			ctx.clearRect(0, 0, canvas.width, canvas_painter_type.canvas_height);
 
@@ -2591,21 +2612,23 @@ function canvas_painter_type(canvas, terrain_elevation_value_, coefficients, tas
 	this.repaint = function() 
 	{
 		if (model_id > 1) {
-			for (var i = 0; i < betas_size; ++i)
-				coefficients[i].tmp_y = value_to_y_coord(coefficients[i].normalised_value + normals[(i + normals_i * betas_size) % normals.length] * coefficients[i + betas_size].normalised_value);
-			this.do_paint_all();
+			if (repainting_timer_do_paint_hint == true && interpolated == true) 
+				for (var i = 0; i < betas_size; ++i) {
+					var from = coefficients[i].value_interpolator.get_current_value();
+					var to = value_to_y_coord(coefficients[i].normalised_value + normals[(i + normals_i * betas_size) % normals.length] * coefficients[i + betas_size].normalised_value);
+					var tmp = from > to ? 5 : -5;
+					coefficients[i].value_interpolator.reset(from, to, tmp);
+				}
+			if (repainting_timer_do_paint_hint == true || interpolated == false)
+				do_paint_all();
 		} 
+		return interpolated;
 	}
 
-	if (model_id > 1) {
-		for (var i = 0; i < betas_size; ++i)
-			coefficients[i].tmp_y_tmp = value_to_y_coord(coefficients[i].normalised_value + normals[(i + normals_i * betas_size) % normals.length] * coefficients[i + betas_size].normalised_value) + (i % 2 ? -50 : 50);
-		this.repaint();
-	} else {
-		for (var i = 0; i < betas_size; ++i)
-			coefficients[i].tmp_y_tmp = value_to_y_coord(coefficients[i].normalised_value);
+	if (model_id > 1)
+		do_paint_all();
+	else
 		do_paint();
-	}
 }
 
 function tasks_list_type()
@@ -3162,7 +3185,7 @@ function tasks_list_type()
 									tasks_list_type_this.existing_detail_showing_animated_tasks[task_name] = canvas;
 									overflow_holder_2.style.display = "block";
 									if (repainting_timer == null)
-										repainting_timer = setInterval("timer_callback()", 2000);
+										repainting_timer = request_animation_frame(timer_callback);
 								} else {
 									overflow_holder_2.style.display = "none";
 									delete tasks_list_type_this.existing_detail_showing_animated_tasks[task_name];
@@ -3457,7 +3480,7 @@ function main()
 {
 	zip.workerScriptsPath = "third_party/zip/";
 	var elem = document.createElement("canvas");
-	if (window["innerHeight"] != null && window["pageXOffset"] != null && setInterval && clearInterval && Blob && elem && elem["getContext"] != null && File && FileReader && XMLHttpRequest) {
+	if (request_animation_frame && cancel_animation_frame && window["innerHeight"] != null && window["pageXOffset"] != null && setInterval && clearInterval && Blob && elem && elem["getContext"] != null && File && FileReader && XMLHttpRequest) {
 		var ctx = elem.getContext("2d");
 		var blob = new Blob;
 		if (ctx != null && ctx["createLinearGradient"] != null && (blob.slice || blob.webkitSlice)) {
@@ -3473,17 +3496,36 @@ function main()
 }
 
 var repainting_timer = null;
-function timer_callback()
+var repainting_timer_duration = 0;
+var repainting_timer_do_paint_hint = true;
+
+var repainting_timer_timestamp = 0;
+var repainting_timer_idle_remaining = 0;
+function timer_callback(now)
 {
-	normals_i = ++normals_i % normals.length;
+	repainting_timer = request_animation_frame(timer_callback);
+	repainting_timer_duration = now - repainting_timer_timestamp;
+	repainting_timer_timestamp = now;
+	if (repainting_timer_do_paint_hint == true) {
+		repainting_timer_idle_remaining -= repainting_timer_duration; 
+		if (repainting_timer_idle_remaining < 0) {
+			repainting_timer_idle_remaining = 2000;
+			normals_i = ++normals_i % normals.length;
+		} else
+			return;
+	} 
 	var keys = Object.keys(tasks_list.existing_detail_showing_animated_tasks);
 	if (!keys.length || tasks_list.gui != last_div) {
-		clearInterval(repainting_timer);
+		cancel_animation_frame(repainting_timer);
 		repainting_timer = null;
-	} else for (var i = 0; i != keys.length; ++i) {
-		var canvas = tasks_list.existing_detail_showing_animated_tasks[keys[i]];
-		if (canvas.painter.interpolated == true)
-			canvas.painter.repaint();
+	} else {
+		var tmp = true;
+		for (var i = 0; i != keys.length; ++i) {
+			var canvas = tasks_list.existing_detail_showing_animated_tasks[keys[i]];
+			if (canvas.painter.repaint() == false)
+				tmp = false;
+		}
+		repainting_timer_do_paint_hint = tmp;
 	}
 }
 
