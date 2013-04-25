@@ -2209,6 +2209,7 @@ function value_interpolator_type(interpolation_speed)
 {
 	var current_value;
 	var target_value;
+	var abs_target_value;
 	var shaker = new shaking_oscillator_type();
 	var ping_helper;;
 	var done;
@@ -2218,6 +2219,7 @@ function value_interpolator_type(interpolation_speed)
 	{
 		current_value = current_value_;
 		target_value = target_value_;
+		abs_target_value = Math.abs(target_value);
 		initial_shaking = initial_shaking_;
 		done = false;
 		shaker.reset();
@@ -2235,7 +2237,7 @@ function value_interpolator_type(interpolation_speed)
 	{
 		var diff = target_value - current_value;
 		var abs_diff = Math.abs(diff);
-		if (abs_diff < target_value * 0.03)
+		if (abs_diff < abs_target_value * 0.03)
 			ping_helper = ping_helper_on_shaking;
 		else 
 			current_value += Math.min(0.9, interpolation_speed * duration_since_last) * diff;
