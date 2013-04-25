@@ -42,6 +42,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define CENSOC_COMPARE_H
 
 namespace censoc {
-	enum compared {lt, le, eq, ge, gt};
+	enum compared {lt, le, eq, ne, ge, gt};
 }
 #endif

@@ -302,6 +302,8 @@ struct composite_matrix_loader {
 				delby_op = censoc::le;
 			} else if (delby_op_string == "eq") {
 				delby_op = censoc::eq;
+			} else if (delby_op_string == "ne") {
+				delby_op = censoc::ne;
 			} else if (delby_op_string == "ge") {
 				delby_op = censoc::ge;
 			} else if (delby_op_string == "gt") {
@@ -337,6 +339,9 @@ private:
 				return true;
 		} else if (meta_op == censoc::eq) {
 			if (value == meta_value)
+				return true;
+		} else if (meta_op == censoc::ne) {
+			if (value != meta_value)
 				return true;
 		} else if (meta_op == censoc::ge) {
 			if (value >= meta_value)
