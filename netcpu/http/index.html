@@ -2177,7 +2177,7 @@ function draw_from_normal()
 }
 
 // todo -- later, if need be, introduce more tuning params
-function shaking_oscillator_type()
+function shaking_oscillator_type(initial_shaking_frequency, shaking_amplitude_reduction, shaking_frequency_increase)
 {
 	var amplitude_end = 0.003
 	var amplitude = 0;
@@ -2187,7 +2187,7 @@ function shaking_oscillator_type()
 	this.reset = function()
 	{
 		amplitude = 1;
-		rotation_speed = 0.1;
+		rotation_speed = initial_shaking_frequency;
 		rotation = 0;
 	}
 
@@ -2198,19 +2198,20 @@ function shaking_oscillator_type()
 
 	this.ping = function(duration)
 	{
+		var rv = Math.max(0, amplitude) * Math.cos(rotation);
 		rotation += rotation_speed;
-		rotation_speed += duration * 0.0013;
-		amplitude -= duration * 0.0008;
-		return Math.max(0, amplitude) * Math.cos(rotation);
+		rotation_speed += duration * shaking_frequency_increase;
+		amplitude -= duration * shaking_amplitude_reduction;
+		return rv;
 	}
 }
 
-function value_interpolator_type(interpolation_speed)
+function value_interpolator_type(interpolation_speed, initial_shaking_frequency, shaking_amplitude_reduction, shaking_frequency_increase)
 {
 	var current_value;
 	var target_value;
 	var abs_target_value;
-	var shaker = new shaking_oscillator_type();
+	var shaker = new shaking_oscillator_type(initial_shaking_frequency, shaking_amplitude_reduction, shaking_frequency_increase);
 	var ping_helper;;
 	var done;
 	var initial_shaking;
@@ -2278,8 +2279,8 @@ function waiting_animation_type(gui_holder)
 	var target_radius_orientation = 1;
 	var ctx = canvas.getContext("2d"); 
 
-	var value_interpolator = new value_interpolator_type(0.005);
-	value_interpolator.reset(outer_radius, outer_radius, 7);
+	var value_interpolator = new value_interpolator_type(0.005, 0.1, 0.00065, 0.0012);
+	value_interpolator.reset(outer_radius, outer_radius, 5.7);
 
 	var rotation_speed = 0.001;
 	var current_rotation = 0;
@@ -2307,7 +2308,7 @@ function waiting_animation_type(gui_holder)
 				value_interpolator.reset(outer_radius, inner_radius, -3);
 			} else {
 				rotation_pause_countdown = 5000;
-				value_interpolator.reset(inner_radius, outer_radius, 7);
+				value_interpolator.reset(inner_radius, outer_radius, 5.7);
 			}
 			target_radius_orientation = !target_radius_orientation;
 		} 
@@ -2389,10 +2390,9 @@ canvas_painter_type.comparative_chart_coeff_center_y_padding = canvas_painter_ty
 canvas_painter_type.comparative_chart_y_padding = canvas_painter_type.comparative_chart_coeff_center_y_padding * 2;
 //}
 
-function canvas_painter_type(canvas, terrain_elevation_value_, coefficients, task_name, model_id_, betas_size) 
+function canvas_painter_type(canvas, terrain_elevation_value_, coefficients, task_name, model_id, betas_size) 
 {
 	var canvas_painter_type_this = this;
-	var model_id = parseInt(model_id_);
 
 	var terrain_elevation_value = model_id < 5 ? -terrain_elevation_value_ : terrain_elevation_value_;
 	var drawn_coefficients_size = model_id == 1 ? betas_size : betas_size * 2;
@@ -2534,8 +2534,8 @@ function canvas_painter_type(canvas, terrain_elevation_value_, coefficients, tas
 		}
 	for (var i = 0; i != betas_size; ++i) {
 		coefficients[i].render_value_y = value_to_y_coord(coefficients[i].normalised_value);
-		coefficients[i].value_interpolator = new value_interpolator_type(0.015);
-		coefficients[i].value_interpolator.reset(coefficients[i].render_value_y, coefficients[i].render_value_y, 5);
+		coefficients[i].value_interpolator = new value_interpolator_type(0.019, 0.98, 0.0025, 0.0039);
+		coefficients[i].value_interpolator.reset(coefficients[i].render_value_y, coefficients[i].render_value_y, 3);
 	}
 	var coefficient_centre_stepsize = canvas_painter_type.coefficient_circle_radius * 2 + canvas_painter_type.coefficient_circle_padding;
 
@@ -2622,19 +2622,17 @@ function canvas_painter_type(canvas, terrain_elevation_value_, coefficients, tas
 		for (var i = 0; i < betas_size; ++i) {
 			var from = coefficients[i].value_interpolator.get_current_value();
 			var to = value_to_y_coord(coefficients[i].normalised_value + normals[(i + normals_i * betas_size) % normals.length] * coefficients[i + betas_size].normalised_value);
-			var tmp = from > to ? 5 : -5;
+			var tmp = from > to ? 3 : -3;
 			coefficients[i].value_interpolator.reset(from, to, tmp);
 		}
 	}
 
 	this.repaint = function() 
 	{
-		if (model_id > 1) {
-			if (repainting_timer_do_paint_hint == true && interpolated == true) 
-				reselect_target_interpolation_value();
-			if (repainting_timer_do_paint_hint == true || interpolated == false)
-				do_paint_all();
-		} 
+		if (repainting_timer_do_paint_hint == true && interpolated == true) 
+			reselect_target_interpolation_value();
+		if (repainting_timer_do_paint_hint == true || interpolated == false)
+			do_paint_all();
 		return interpolated;
 	}
 
@@ -3193,13 +3191,15 @@ function tasks_list_type()
 							checkbox.onchange = function()
 							{
 								if (this.checked == true) {
-									tasks_list_type_this.existing_detail_showing_animated_tasks[task_name] = canvas;
 									overflow_holder_2.style.display = "block";
-									if (repainting_timer == null)
-										repainting_timer = request_animation_frame(timer_callback);
-									else {
-										canvas.painter.reset_repainting();
-										reset_repainting_timer_repaints();
+									if (model_id > 1) {
+										tasks_list_type_this.existing_detail_showing_animated_tasks[task_name] = canvas;
+										if (repainting_timer == null)
+											repainting_timer = request_animation_frame(timer_callback);
+										else {
+											canvas.painter.reset_repainting();
+											reset_repainting_timer_repaints();
+										}
 									}
 								} else {
 									overflow_holder_2.style.display = "none";
@@ -3497,8 +3497,13 @@ function main()
 	var elem = document.createElement("canvas");
 	if (request_animation_frame && cancel_animation_frame && window["innerHeight"] != null && window["pageXOffset"] != null && setInterval && clearInterval && Blob && elem && elem["getContext"] != null && File && FileReader && XMLHttpRequest) {
 		var ctx = elem.getContext("2d");
-		var blob = new Blob;
-		if (ctx != null && ctx["createLinearGradient"] != null && (blob.slice || blob.webkitSlice)) {
+		var blob;
+		try {
+			blob = new Blob;
+		} catch(e) {
+			blob = null;
+		}
+		if (ctx != null && ctx["createLinearGradient"] != null && blob != null &&  (blob.slice || blob.webkitSlice)) {
 			loading_please_wait_title = document.createElement("div");
 			loading_please_wait_title.className = "loading_please_wait";
 			loading_please_wait_title.appendChild(document.createTextNode("Loading..."));
