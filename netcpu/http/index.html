@@ -1786,7 +1786,7 @@ function new_task_type()
 				return bail_on_wrong_user_values("\"Exclude rows foo\" is incorrectly formed.");
 			for (var i = 0; i != tmps.length; ++i) {
 				var tmp_ = tmps[i].split(':');
-				if (tmp_.length != 3 || isNaN(tmp_[2]) || (tmp_[1] != "eq" && tmp_[1] != "lt" && tmp_[1] != "gt"))
+				if (tmp_.length != 3 || isNaN(tmp_[2]) || (tmp_[1] != "lt" && tmp_[1] != "le" && tmp_[1] != "eq" && tmp_[1] != "ne" && tmp_[1] != "ge" && tmp_[1] != "gt"))
 					return bail_on_wrong_user_values("One of the specifications in \"Exclude rows foo\" is incorrectly formed: " + tmps[i]);
 				cli_string += "--del " + tmps[i] + '\n';
 				del_strings.push(tmps[i]);
