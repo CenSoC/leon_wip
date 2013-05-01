@@ -856,6 +856,7 @@ struct task_processor : ::boost::noncopyable {
 
 	netcpu::message::async_timer server_state_sync_timer;
 	::time_t server_state_sync_timeout_checkpoint;
+	netcpu::message::async_timer save_convergence_state_timer;
 
 	// grid-related accounting
 	netcpu::combos_builder<size_type, coefficients_metadata_type> combos_modem;
@@ -1071,6 +1072,7 @@ struct task_processor : ::boost::noncopyable {
 		complete_server_state_sync_msg();
 
 		server_state_sync_timer.timeout_callback(&task_processor::on_sync_timeout, this);
+		save_convergence_state_timer.timeout_callback(&task_processor::save_convergence_state, this);
 	}
 
 	~task_processor()
@@ -1586,12 +1588,8 @@ struct task_processor : ::boost::noncopyable {
 				//@note -- also, keep in mind that really, the occasional reply from peer (when not needed) will not really break anything; and, in fact, will be of some use as the server can update its 'rollback'/'recovery' condition to a more recent state.
 			}
 
-			// for writing to disk... (a simple hack for the time-being)
-			size_type static write_to_disk_wait(3);
-			if (!--write_to_disk_wait) {
-				write_to_disk_wait = 1200;
-				save_convergence_state();
-			}
+			if (save_convergence_state_timer.is_pending() == false)
+				save_convergence_state_timer.timeout(boost::posix_time::minutes(55));
 		}
 
 		peer2peer_assisted_complexity_present = redistribute_remaining_complexities = false;
