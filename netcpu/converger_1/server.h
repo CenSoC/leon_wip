@@ -1040,6 +1040,7 @@ struct task_processor : ::boost::noncopyable {
 				for (size_type i(0); i != convergence_state.get_header().complexities_size(); ++i) {
 					convergence_state.load_complexity();
 					// todo -- after getting a more c++11 compliant version of the compiler, use emplace instead of insert
+					// todo -- also, after testing/verifying that such may be done reliably, leverage the increasing (i.e. ordered) nature of the complexity values in order to provide the hint when calling implace/insert (for faster map-population).
 					remaining_complexities.insert(::std::pair<size_type, size_type>(convergence_state.get_complexity().complexity_begin(), convergence_state.get_complexity().complexity_size()));
 				}
 			}
