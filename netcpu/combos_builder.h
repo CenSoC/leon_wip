@@ -112,14 +112,18 @@ public:
 			}
 
 			assert(complexity_index);
-			::std::pair<typename ::std::map<size_type, ::std::vector<size_type> >::iterator, bool> combos_metadata_i(
-				combos_metadata.insert(::std::make_pair(complexity_index, ::std::vector<size_type>()))
+#ifndef NDEBUG
+				if (combos_metadata.empty() == false)
+					assert(combos_metadata.rbegin()->first < complexity_index);
+#endif
+			assert(combos_metadata.find(complexity_index) == combos_metadata.end());
+			typename ::std::map<size_type, ::std::vector<size_type> >::iterator combos_metadata_i(
+				combos_metadata.insert(combos_metadata.end(), ::std::make_pair(complexity_index, ::std::vector<size_type>()))
 			);
-			assert(combos_metadata_i.second == true);
-			assert(combos_metadata_i.first->first == complexity_index);
-			combos_metadata_i.first->second.resize(coefficients_size);
+			assert(combos_metadata_i->first == complexity_index);
+			combos_metadata_i->second.resize(coefficients_size);
 			for (size_type k(0); k != coefficients_size; ++k) 
-				combos_metadata_i.first->second[k] = ::std::max(coefficients_metadata[k].grid_resolutions[i], static_cast<size_type>(2));
+				combos_metadata_i->second[k] = ::std::max(coefficients_metadata[k].grid_resolutions[i], static_cast<size_type>(2));
 
 		}
 
@@ -175,7 +179,12 @@ private:
 		} else {
 			for (size_type i(start_i); i != end_i; transient_vector[combo_i] = ++i) {
 				assert(transient_vector[combo_i] < coefficients_size);
-				combos_iterator_type combos_i = combos.insert(::std::make_pair(complexity_index, combo_instance())).first;
+
+#ifndef NDEBUG
+				if (combos.empty() == false)
+					assert(combos.rbegin()->first < complexity_index);
+#endif
+				combos_iterator_type combos_i(combos.insert(combos.end(), ::std::make_pair(complexity_index, combo_instance())));
 				combos_i->second.coeffs = transient_vector;
 
 				if (combo_size > 1)

@@ -107,7 +107,7 @@ namespace censoc { namespace netcpu { namespace range_utils {
 
 		while (j != a.end()) {
 
-			// @NOTE watch out for relevant map element not to be erased before any referencing to the given temporary is made!!!
+			// @NOTE watch out for relevant map element not to be erased before any referencing to the given temporary is made!!! (it is referenced because the code may be used with BIGNUM, etc. where the types are not primitive)
 			size_paramtype j_begin(j->first);
 			size_paramtype j_end(j->first + j->second);
 			assert(j_begin != j_end);
@@ -121,17 +121,35 @@ namespace censoc { namespace netcpu { namespace range_utils {
 			} else if (i_begin > j_begin && i_end < j_end) { // split 
 				j->second = i_begin - j_begin;
 				assert(j->second != static_cast<typename MAP::value_type::second_type>(0));
-				assert(j_end - i_end != static_cast<size_type>(0));
-				j = a.insert(j, ::std::make_pair(i_end, j_end - i_end));
+#ifndef NDEBUG
+				typename MAP::iterator j_ = 
+#endif
+				// todo -- when gcc stdlibc++ compiler (or other, relevant ones) begin to support emplace_hint on ordered maps, then use emplace_hint instead of insert
+				a.insert(++j, ::std::make_pair(i_end, j_end - i_end));
+#ifndef NDEBUG
+				assert(j_->second != static_cast<typename MAP::value_type::second_type>(0));
+				assert(++j_ == j);
+#endif
 				return;
 			} else if (i_begin < j_end && i_begin > j_begin && i_end >= j_end) { // shorten from the right
 				j->second = i_begin - j_begin;
 				assert(j->second != static_cast<typename MAP::value_type::second_type>(0));
 				++j;
 			} else if (i_begin <= j_begin && i_end < j_end) { // shorten from left
-				assert(j_end - i_end != static_cast<size_type>(0));
-				a.insert(j, ::std::make_pair(i_end, j_end - i_end));
-				a.erase(j++);
+				typename MAP::iterator j_(j);
+#ifndef NDEBUG
+				typename MAP::iterator j_inc_(j);
+				++j_inc_;
+#endif
+				// todo -- when gcc stdlibc++ compiler (or other, relevant ones) begin to support emplace_hint on ordered maps, then use emplace_hint instead of insert
+				j = a.insert(++j, ::std::make_pair(i_end, j_end - i_end));
+				assert(j->second != static_cast<typename MAP::value_type::second_type>(0));
+#ifndef NDEBUG
+				typename MAP::iterator tmp_(j_);
+				assert(++tmp_ == j);
+				assert(++tmp_ == j_inc_);
+#endif
+				a.erase(j_);
 			} else  
 				++j;
 		}
@@ -180,7 +198,7 @@ namespace censoc { namespace netcpu { namespace range_utils {
 			size_paramtype i_end(i->first + i->second);
 			assert(i_begin != i_end);
 
-			// @NOTE watch out for relevant map element not to be erased before any referencing to the given temporary is made!!!
+			// @NOTE watch out for relevant map element not to be erased before any referencing to the given temporary is made!!! (it is referenced because the code may be used with BIGNUM, etc. where the types are not primitive)
 			size_paramtype j_begin(j->first);
 			size_paramtype j_end(j->first + j->second);
 			assert(j_begin != j_end);
@@ -195,8 +213,9 @@ namespace censoc { namespace netcpu { namespace range_utils {
 			} else if (i_begin > j_begin && i_end < j_end) { // split
 				j->second = i_begin - j_begin;
 				assert(j->second != static_cast<typename MAP::value_type::second_type>(0));
-				assert(j_end - i_end != static_cast<size_type>(0));
-				j = a.insert(j, ::std::make_pair(i_end, j_end - i_end));
+				// todo -- when gcc stdlibc++ compiler (or other, relevant ones) begin to support emplace_hint on ordered maps, then use emplace_hint instead of insert
+				j = a.insert(++j, ::std::make_pair(i_end, j_end - i_end));
+				assert(j->second != static_cast<typename MAP::value_type::second_type>(0));
 				++i;
 				rv = true;
 			} else if (i_begin < j_end && i_begin > j_begin && i_end >= j_end) { // shorten from the right 
@@ -205,9 +224,20 @@ namespace censoc { namespace netcpu { namespace range_utils {
 				++j;
 				rv = true;
 			} else if (i_begin <= j_begin && i_end < j_end) { // shorten from left
-				assert(j_end - i_end != static_cast<size_type>(0));
-				a.insert(j, ::std::make_pair(i_end, j_end - i_end));
-				a.erase(j++);
+				typename MAP::iterator j_(j);
+#ifndef NDEBUG
+				typename MAP::iterator j_inc_(j);
+				++j_inc_;
+#endif
+				// todo -- when gcc stdlibc++ compiler (or other, relevant ones) begin to support emplace_hint on ordered maps, then use emplace_hint instead of insert
+				j = a.insert(++j, ::std::make_pair(i_end, j_end - i_end));
+				assert(j->second != static_cast<typename MAP::value_type::second_type>(0));
+#ifndef NDEBUG
+				typename MAP::iterator tmp_(j_);
+				assert(++tmp_ == j);
+				assert(++tmp_ == j_inc_);
+#endif
+				a.erase(j_);
 				rv = true;
 			} else  
 				++j;
@@ -249,7 +279,7 @@ namespace censoc { namespace netcpu { namespace range_utils {
 
 		while (j != a.end()) {
 
-			// @NOTE watch out for relevant map element not to be erased before any referencing to the given temporary is made!!!
+			// @NOTE watch out for relevant map element not to be erased before any referencing to the given temporary is made!!! (it is referenced because the code may be used with BIGNUM, etc. where the types are not primitive)
 			size_paramtype j_begin(j->first);
 			size_paramtype j_end(j->first + j->second);
 			assert(j_begin != j_end);
@@ -257,7 +287,12 @@ namespace censoc { namespace netcpu { namespace range_utils {
 			// quick-basic hacking for the time-being
 
 			if (i_end < j_begin) { // add new (nothing in common with existing)
+#ifndef NDEBUG
+				typename MAP::iterator j_ = 
+#endif
+				// todo -- when gcc stdlibc++ compiler (or other, relevant ones) begin to support emplace_hint on ordered maps, then use emplace_hint instead of insert
 				a.insert(j, i);
+				assert(++j_ == j);
 				return;
 			} else if (i_begin >= j_begin && i_end <= j_end) { // do nothing (all of the to-add range is already present) 
 				return;
@@ -279,9 +314,14 @@ namespace censoc { namespace netcpu { namespace range_utils {
 						}
 					}
 			} else if (i_begin < j_begin) { // at least partially will need to extend to the left 
-				typename MAP::iterator tmp(j);
+				typename MAP::iterator j_(j);
+				// todo -- when gcc stdlibc++ compiler (or other, relevant ones) begin to support emplace_hint on ordered maps, then use emplace_hint instead of insert
 				j = a.insert(j, ::std::make_pair(i_begin, j->second + j_begin - i_begin));
-				a.erase(tmp);
+#ifndef NDEBUG
+				typename MAP::iterator tmp_(j);
+				assert(++tmp_ == j_);
+#endif
+				a.erase(j_);
 			} else  
 				++j;
 		}
@@ -291,7 +331,8 @@ namespace censoc { namespace netcpu { namespace range_utils {
 		assert(a.empty() == false);
 
 		if (a.rbegin()->first + a.rbegin()->second < i_begin)
-			a.insert(i);
+			// todo -- when gcc stdlibc++ compiler (or other, relevant ones) begin to support emplace_hint on ordered maps, then use emplace_hint instead of insert
+			a.insert(a.end(), i);
 
 	}
 
@@ -332,7 +373,7 @@ namespace censoc { namespace netcpu { namespace range_utils {
 			size_paramtype i_end(i->first + i->second);
 			assert(i_begin != i_end);
 
-			// @NOTE watch out for relevant map element not to be erased before any referencing to the given temporary is made!!!
+			// @NOTE watch out for relevant map element not to be erased before any referencing to the given temporary is made!!! (it is referenced because the code may be used with BIGNUM, etc. where the types are not primitive)
 			size_paramtype j_begin(j->first);
 			size_paramtype j_end(j->first + j->second);
 			assert(j_begin != j_end);
@@ -340,7 +381,12 @@ namespace censoc { namespace netcpu { namespace range_utils {
 			// quick-basic hacking for the time-being
 
 			if (i_end < j_begin) { // add new (nothing in common with existing)
+#ifndef NDEBUG
+				typename MAP::iterator j_ = 
+#endif
+				// todo -- when gcc stdlibc++ compiler (or other, relevant ones) begin to support emplace_hint on ordered maps, then use emplace_hint instead of insert
 				a.insert(j, *i++);
+				assert(++j_ == j);
 			} else if (i_begin >= j_begin && i_end <= j_end) { // do nothing (all of the to-add range is already present) 
 				++i;
 			} else if (i_begin <= j_end && i_end > j_end) { // at least partially will need to extend to the right 
@@ -361,9 +407,15 @@ namespace censoc { namespace netcpu { namespace range_utils {
 						}
 					}
 			} else if (i_begin < j_begin) { // at least partially will need to extend to the left 
-				typename MAP::iterator tmp(j);
+				typename MAP::iterator j_(j);
+				// todo -- when gcc stdlibc++ compiler (or other, relevant ones) begin to support emplace_hint on ordered maps, then use emplace_hint instead of insert
 				j = a.insert(j, ::std::make_pair(i_begin, j->second + j_begin - i_begin));
-				a.erase(tmp);
+				assert(j->second != static_cast<typename MAP::value_type::second_type>(0));
+#ifndef NDEBUG
+				typename MAP::iterator tmp_(j);
+				assert(++tmp_ == j_);
+#endif
+				a.erase(j_);
 			} else  
 				++j;
 		}
@@ -378,7 +430,8 @@ namespace censoc { namespace netcpu { namespace range_utils {
 			assert(j == a.end());
 
 			if (a.rbegin()->first + a.rbegin()->second < i_begin)
-				a.insert(*i);
+				// todo -- when gcc stdlibc++ compiler (or other, relevant ones) begin to support emplace_hint on ordered maps, then use emplace_hint instead of insert
+				a.insert(a.end(), *i);
 
 			++i;
 		}
