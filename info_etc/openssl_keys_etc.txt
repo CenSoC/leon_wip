@@ -64,3 +64,6 @@ openssl pkcs12 -export -out netcpu_client_certificate.p12 -inkey client_key.pem 
 
 to strip remove passphrase password from a key:
 openssl rsa -in key.pem -out key_nopassword.pem
+
+to print fingerprint of certificate:
+openssl x509 -sha1 -in certificate.pem -noout -fingerprint
