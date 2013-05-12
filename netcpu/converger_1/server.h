@@ -857,6 +857,7 @@ struct task_processor : ::boost::noncopyable {
 	netcpu::message::async_timer server_state_sync_timer;
 	::time_t server_state_sync_timeout_checkpoint;
 	netcpu::message::async_timer save_convergence_state_timer;
+	bool dont_delay_saving_convergence_state;
 
 	// grid-related accounting
 	netcpu::combos_builder<size_type, coefficients_metadata_type> combos_modem;
@@ -878,7 +879,7 @@ struct task_processor : ::boost::noncopyable {
 #ifndef NDEBUG
 	intended_coeffs_at_once(0),
 #endif
-	e_min_complexity(-1), better_find_since_last_recentered_sync(false), server_state_sync_timeout_checkpoint(0), redistribute_remaining_complexities(false), peer2peer_assisted_complexity_present(false), io_key(0) { 
+	e_min_complexity(-1), better_find_since_last_recentered_sync(false), server_state_sync_timeout_checkpoint(0), dont_delay_saving_convergence_state(false), redistribute_remaining_complexities(false), peer2peer_assisted_complexity_present(false), io_key(0) { 
 
 		visited_places.reserve(50000000);
 
@@ -1587,7 +1588,10 @@ struct task_processor : ::boost::noncopyable {
 			//@note -- also, keep in mind that really, the occasional reply from peer (when not needed) will not really break anything; and, in fact, will be of some use as the server can update its 'rollback'/'recovery' condition to a more recent state.
 		}
 
-		if (save_convergence_state_timer.is_pending() == false)
+		if (dont_delay_saving_convergence_state == true) {
+			dont_delay_saving_convergence_state = false;
+			save_convergence_state();
+		} else if (save_convergence_state_timer.is_pending() == false)
 			save_convergence_state_timer.timeout(boost::posix_time::minutes(55));
 
 		peer2peer_assisted_complexity_present = redistribute_remaining_complexities = false;
@@ -1598,64 +1602,70 @@ struct task_processor : ::boost::noncopyable {
 #endif
 	}
 
+	/**
+		@note ideally should only happen when 'on_sync_timeout' has synchronised all of the state-related data...
+		*/
 	void
 	save_convergence_state()
 	{
-		assert(better_find_since_last_recentered_sync == false);
+		if (server_state_sync_timer.is_pending() == true) // otherwise will come around shortly anyway...
+			dont_delay_saving_convergence_state = true;
+		else {
+			assert(better_find_since_last_recentered_sync == false); 
+			censoc::llog() << "Writing convergence state to disk...\n";
 
-		censoc::llog() << "Writing convergence state to disk...\n";
+			::std::string const convergence_state_filepath(netcpu::root_path + netcpu::pending_tasks.front()->name() + "/convergence_state.bin");
+			{
+				converger_1::fstreamer::convergence_state_ofstreamer<N> convergence_state;
 
-		::std::string const convergence_state_filepath(netcpu::root_path + netcpu::pending_tasks.front()->name() + "/convergence_state.bin");
-		{
-			converger_1::fstreamer::convergence_state_ofstreamer<N> convergence_state;
-
-			netcpu::message::serialise_to_decomposed_floating(e_min, convergence_state.get_header().value);
-			convergence_state.get_header().am_bootstrapping(am_bootstrapping == true ? 1 : 0);
-			convergence_state.get_header().intended_coeffs_at_once(intended_coeffs_at_once);
-			convergence_state.get_header().coefficients_rand_range_ended_wait(coefficients_rand_range_ended_wait);
-			convergence_state.get_header().coefficients_size(coefficients_size);
-			if (current_complexity_level != combos_modem.metadata().end())
-				convergence_state.get_header().current_complexity_level_first(current_complexity_level->first);
+				netcpu::message::serialise_to_decomposed_floating(e_min, convergence_state.get_header().value);
+				convergence_state.get_header().am_bootstrapping(am_bootstrapping == true ? 1 : 0);
+				convergence_state.get_header().intended_coeffs_at_once(intended_coeffs_at_once);
+				convergence_state.get_header().coefficients_rand_range_ended_wait(coefficients_rand_range_ended_wait);
+				convergence_state.get_header().coefficients_size(coefficients_size);
+				if (current_complexity_level != combos_modem.metadata().end())
+					convergence_state.get_header().current_complexity_level_first(current_complexity_level->first);
 #ifndef NDEBUG
-			else
-				convergence_state.get_header().current_complexity_level_first(0); // noop really...
+				else
+					convergence_state.get_header().current_complexity_level_first(0); // noop really...
 #endif
-			convergence_state.get_header().complexities_size(remaining_complexities.size());
-			convergence_state.get_header().visited_places_size(visited_places.size());
+				convergence_state.get_header().complexities_size(remaining_complexities.size());
+				convergence_state.get_header().visited_places_size(visited_places.size());
 
-			convergence_state.store_header(convergence_state_filepath + ".tmp");
+				convergence_state.store_header(convergence_state_filepath + ".tmp");
 
-			for (size_type i(0); i != coefficients_size; ++i) {
-				coefficient_metadata<N, F> const & ram(coefficients_metadata[i]);
-				convergence_state.get_coefficient().value(ram.saved_index());
-				convergence_state.get_coefficient().range_ended(ram.range_ended() == true ? 1 : 0);
-				netcpu::message::serialise_to_decomposed_floating(ram.saved_value(), convergence_state.get_coefficient().value_f);
-				netcpu::message::serialise_to_decomposed_floating(ram.value_from(), convergence_state.get_coefficient().value_from);
-				netcpu::message::serialise_to_decomposed_floating(ram.rand_range(), convergence_state.get_coefficient().rand_range);
-				size_type const grid_resolutions_size(ram.grid_resolutions.size());
-				convergence_state.get_coefficient().grid_resolutions.resize(grid_resolutions_size);
-				for (size_type i(0); i != grid_resolutions_size; ++i)
-					convergence_state.get_coefficient().grid_resolutions(i, ram.grid_resolutions[i]);
-				convergence_state.store_coefficient();
+				for (size_type i(0); i != coefficients_size; ++i) {
+					coefficient_metadata<N, F> const & ram(coefficients_metadata[i]);
+					convergence_state.get_coefficient().value(ram.saved_index());
+					convergence_state.get_coefficient().range_ended(ram.range_ended() == true ? 1 : 0);
+					netcpu::message::serialise_to_decomposed_floating(ram.saved_value(), convergence_state.get_coefficient().value_f);
+					netcpu::message::serialise_to_decomposed_floating(ram.value_from(), convergence_state.get_coefficient().value_from);
+					netcpu::message::serialise_to_decomposed_floating(ram.rand_range(), convergence_state.get_coefficient().rand_range);
+					size_type const grid_resolutions_size(ram.grid_resolutions.size());
+					convergence_state.get_coefficient().grid_resolutions.resize(grid_resolutions_size);
+					for (size_type i(0); i != grid_resolutions_size; ++i)
+						convergence_state.get_coefficient().grid_resolutions(i, ram.grid_resolutions[i]);
+					convergence_state.store_coefficient();
+				}
+
+				for (typename complexities_type::const_iterator i(remaining_complexities.begin()); i != remaining_complexities.end(); ++i) {
+					convergence_state.get_complexity().complexity_begin(i->first);
+					convergence_state.get_complexity().complexity_size(i->second);
+					convergence_state.store_complexity();
+				}
+
+				for (typename ::std::unordered_set<netcpu::big_uint<size_type> >::const_iterator i(visited_places.begin()); i != visited_places.end(); ++i) {
+					convergence_state.get_visited_place().bytes.resize(i->size());
+					if (i->size())
+						i->store(convergence_state.get_visited_place().bytes.data());
+					convergence_state.store_visited_place();
+				}
 			}
 
-			for (typename complexities_type::const_iterator i(remaining_complexities.begin()); i != remaining_complexities.end(); ++i) {
-				convergence_state.get_complexity().complexity_begin(i->first);
-				convergence_state.get_complexity().complexity_size(i->second);
-				convergence_state.store_complexity();
-			}
+			::rename((convergence_state_filepath + ".tmp").c_str(), convergence_state_filepath.c_str());
 
-			for (typename ::std::unordered_set<netcpu::big_uint<size_type> >::const_iterator i(visited_places.begin()); i != visited_places.end(); ++i) {
-				convergence_state.get_visited_place().bytes.resize(i->size());
-				if (i->size())
-					i->store(convergence_state.get_visited_place().bytes.data());
-				convergence_state.store_visited_place();
-			}
+			censoc::llog() << "...done writing to disk\n";
 		}
-
-		::rename((convergence_state_filepath + ".tmp").c_str(), convergence_state_filepath.c_str());
-
-		censoc::llog() << "...done writing to disk\n";
 	}
 
 	void
