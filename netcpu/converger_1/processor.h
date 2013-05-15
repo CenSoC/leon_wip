@@ -768,7 +768,7 @@ struct task_processor_detail : netcpu::io_wrapper<netcpu::message::async_driver>
 	respond_to_end_process()
 	{
 		assert(io().is_write_pending() == false);
-		io().write(netcpu::message::good(), &task_processor_detail::on_end_process_reply_written, this);
+		io().write(netcpu::message::end_process(), &task_processor_detail::on_end_process_reply_written, this);
 	}
 
 	void
@@ -1035,7 +1035,7 @@ struct task_processor_detail_meta : netcpu::io_wrapper<netcpu::message::async_dr
 	{
 		typename censoc::param<netcpu::message::id_type>::type msg_id(io().read_raw.id());
 		if (netcpu::message::end_process::myid == msg_id)
-			io().write(netcpu::message::good(), &task_processor_detail_meta::on_end_process_replied_write, this);
+			io().write(netcpu::message::end_process(), &task_processor_detail_meta::on_end_process_replied_write, this);
 		else  
 			throw ::std::runtime_error("expected end_process after sending bad message, but got something else");
 	}
@@ -1136,7 +1136,7 @@ struct task_processor : netcpu::io_wrapper<netcpu::message::async_driver> {
 	{
 		typename censoc::param<netcpu::message::id_type>::type msg_id(io().read_raw.id());
 		if (netcpu::message::end_process::myid == msg_id)
-			io().write(netcpu::message::good(), &task_processor::on_end_process_replied_write, this);
+			io().write(netcpu::message::end_process(), &task_processor::on_end_process_replied_write, this);
 		else  
 			throw ::std::runtime_error("expected end_process after sending bad message, but got something else");
 	}

@@ -257,29 +257,33 @@ struct task {
 
 		on_pending_tasks_update();
 	}
-	void
-	move_in_list_of_pending_tasks(int const steps_to_move_by)
+	bool
+	move_in_list_of_pending_tasks(int steps_to_move_by)
 	{
 		assert(steps_to_move_by);
 		assert(pending_i != pending_tasks_scoped_membership_iterator::iterator_type());
 
 		::std::list<netcpu::task *>::iterator i(pending_i.i);
 		assert(this == *i);
-		int tmp(steps_to_move_by);
 		if (steps_to_move_by > 0)
-			for (::std::list<netcpu::task *>::iterator j(::std::prev(pending_tasks.end())); tmp && i != j; ++i, --tmp);
-		else
-			for (; tmp && i != pending_tasks.begin(); --i, ++tmp);
+			for (++steps_to_move_by; steps_to_move_by && i != pending_tasks.end(); ++i, --steps_to_move_by);
+		else 
+			for (; steps_to_move_by && i != pending_tasks.begin(); --i, ++steps_to_move_by);
 
-		if (tmp != steps_to_move_by) {
+		uint_fast32_t const pending_tasks_size(pending_tasks.size());
+		if (i != pending_i.i && ::std::prev(i) != pending_i.i) {
 			if (active() == true)
 				deactivate();
-			if ((*i)->active() == true)
+			else if (i == pending_tasks.begin() && (*i)->active() == true)
 				(*i)->deactivate();
+			if (pending_tasks_size != pending_tasks.size()) // if any of the above deactivation caused 'on_sync_timeout' to deem the task as complete...
+				return false;
 			pending_i = pending_tasks.insert(i, this);
 		}
 		
 		// not calling activate (if needed) because the caller is expected to eventually call 'on_pending_tasks_update' (which will not only activate front pending task but will also serialize the pending list to file/disk) 
+
+		return true;
 	}
 	void
 	markcompleted()
@@ -531,6 +535,7 @@ public:
 	peer_connection(netcpu::message::async_driver & io) 
 	: netcpu::io_wrapper<netcpu::message::async_driver>(io) {
 		censoc::llog() << "ctor in peer_connection, driver addr: " << &io << ::std::endl;
+		assert(io.is_write_pending() == false);
 		this->io().handshake_callback(&peer_connection::on_handshake, this);
 		io.write_callback(&peer_connection::on_write, this);
 		// todo -- a reasonable cludge this one: end_process_writer et al in converger_1/server.h et al will new-up the peer_connection but without any need to do a handshake -- basically jumping rigth into the 'on_read' state... by that stage the 'on_read' callback had better be set... so just doing it here... later on shall re-factor for more explicit specialisations of the code-use -- as new-in-chain or not...
@@ -613,13 +618,19 @@ public:
 			::std::string task_name(::std::string(msg.task_name.data(), msg.task_name.size()));
 			::std::map< ::std::string, netcpu::task * >::iterator i(named_tasks.find(task_name));
 			if (i != named_tasks.end()) {
-				i->second->move_in_list_of_pending_tasks(steps_to_move_by);
-				on_pending_tasks_update();
-				io().write(netcpu::message::good());
-			} else { 
-				censoc::llog() << "controller is asking to move a task which does not exist [" << task_name << "]\n";
-				io().write(netcpu::message::bad());
+				while (i->second->pending_i != pending_tasks_scoped_membership_iterator::iterator_type()) {
+					assert(pending_tasks.empty() == false);
+					assert(pending_tasks.front()->active() == true);
+					assert(pending_tasks.front() != NULL);
+					if (i->second->move_in_list_of_pending_tasks(steps_to_move_by) == false)
+						continue;
+					on_pending_tasks_update();
+					io().write(netcpu::message::good());
+					return;
+				} 
 			}
+			censoc::llog() << "controller is asking to move a task which does not exist, or is no longer pending [" << task_name << "]\n";
+			io().write(netcpu::message::bad());
 		} else {
 			censoc::llog() << "controller is asking to move a task by zero-steps (not allowed)\n";
 			io().write(netcpu::message::bad());

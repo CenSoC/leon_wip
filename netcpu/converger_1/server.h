@@ -765,18 +765,20 @@ struct convergence_state_ofstreamer : convergence_state_fstreamer_base<N> {
 
 template <typename N, typename F, typename Model, netcpu::models_ids::val ModelId> struct processing_peer;
 
-// current end-process sequence: server->'end_process_message'->client; client->'good'->server; client->ready_to_process->server;
+// current end-process sequence: server->'end_process_message'->client; client->'end_process_message'->server (basically echoes back to server); client->ready_to_process->server;
+// @note the client echoes back 'end_process' as opposed to 'good' because 'good' may be ambiguated w.r.t. existing pending writes from the task_processor, etc. and the idea is to leave the io() state in as much of a clean-state as possible.
 struct end_process_writer : netcpu::io_wrapper<netcpu::message::async_driver> {
 
-	bool stale_message_seen;
+	netcpu::message::async_timer stale_echo_timer;
 
 	end_process_writer(netcpu::message::async_driver & io_driver)
-	: netcpu::io_wrapper<netcpu::message::async_driver>(io_driver), stale_message_seen(false) {
+	: netcpu::io_wrapper<netcpu::message::async_driver>(io_driver) {
 		io().read_callback(&end_process_writer::on_read, this);
 		if (io().is_write_pending() == false) 
 			io().write(netcpu::message::end_process(), &end_process_writer::on_write, this);
 		else
 			io().write_callback(&end_process_writer::late_write_end_process, this);
+		stale_echo_timer.timeout(boost::posix_time::seconds(30), &end_process_writer::on_stale_echo_timeout, this);
 	}
 	void
 	late_write_end_process()
@@ -793,16 +795,17 @@ struct end_process_writer : netcpu::io_wrapper<netcpu::message::async_driver> {
 	on_read()
 	{
 		switch (io().read_raw.id()) {
-		case netcpu::message::good::myid :
+		case netcpu::message::end_process::myid :
 			(new netcpu::peer_connection(io()))->io().read();
 			break;
 		default :
-			if (stale_message_seen == false) { // allow one stale message (e.g. from previous peer or bootstrapping report) to be present in the pipeline...
-				stale_message_seen = true;
-				io().read();
-			} else
-				delete this;
+			io().read();
 		}
+	}
+	void
+	on_stale_echo_timeout()
+	{
+		delete this;
 	}
 };
 
@@ -1079,8 +1082,17 @@ struct task_processor : ::boost::noncopyable {
 
 	~task_processor()
 	{
-		while (scoped_peers.empty() == false) 
+		if (server_state_sync_timer.is_pending() == true)
+			on_sync_timeout();
+		if (save_convergence_state_timer.is_pending() == true)
+			save_convergence_state();
+		while (scoped_peers.empty() == false) { 
+#ifndef NDEBUG
+			size_type const scoped_peers_size(scoped_peers.size());
+#endif
 			new converger_1::end_process_writer(scoped_peers.front()->io());
+			assert(scoped_peers_size - 1 == scoped_peers.size());
+		}
 	}
 
 	/**
@@ -2022,7 +2034,7 @@ struct task : netcpu::task {
 	typedef F float_type;
 	typedef typename netcpu::message::typepair<N>::ram size_type;
 
-	::boost::scoped_ptr<converger_1::task_processor<N, F, Model, ModelId> > active_task_processor;
+	::censoc::unique_ptr<converger_1::task_processor<N, F, Model, ModelId> > active_task_processor;
 
 	task(::std::string const & name, time_t birthday = ::time(NULL))
 	: netcpu::task(name, birthday) {
@@ -2035,50 +2047,52 @@ struct task : netcpu::task {
 	void 
 	deactivate() 
 	{
-		active_task_processor.reset();
+		converger_1::task_processor<N, F, Model, ModelId> * const tmp(active_task_processor.get());
+		active_task_processor.release();
+		delete tmp;
 	}
 
 	void 
 	load_coefficients_info_et_al(netcpu::message::tasks_list & tasks_list, netcpu::message::task_info & task)
 	{
 		if (active_task_processor.get() != NULL) {
-			// todo -- really a quick and nasty hack at the moment. later must refactor interface to the task_processor so as not to do "active_task_processor->" all the time, etc.
+			// todo -- really a quick and nasty hack at the moment. later must refactor interface to the task_processor so as not to do "active_task_processor.get()->" all the time, etc.
 
 			//todo -- the newline escaping for the sake of the JSON formatting should be done elsewhere!!
 			censoc::lexicast< ::std::string> xxx("DEBUG output: there are potentially ");
-			xxx << active_task_processor->processing_peers.size() << " processing workers (productivity of each is not yet accounted for, with " << active_task_processor->scoped_peers.size() << " total registered connections).\\n";
+			xxx << active_task_processor.get()->processing_peers.size() << " processing workers (productivity of each is not yet accounted for, with " << active_task_processor.get()->scoped_peers.size() << " total registered connections).\\n";
 #ifndef NDEBUG
 			typename ::std::map<size_type, ::std::vector<size_type> >::const_iterator tmp; // assert parsing otherwise barfs if putting all into the assert macro...
-			assert(active_task_processor->current_complexity_level != tmp);
+			assert(active_task_processor.get()->current_complexity_level != tmp);
 #endif
-			assert(active_task_processor->combos_modem.metadata().empty() == false);
-			if (active_task_processor->current_complexity_level != active_task_processor->combos_modem.metadata().end()) {
+			assert(active_task_processor.get()->combos_modem.metadata().empty() == false);
+			if (active_task_processor.get()->current_complexity_level != active_task_processor.get()->combos_modem.metadata().end()) {
 
 				// Note -- having a cached, pre-calculated, "total of the remaining complexities size" variable is not so simple. Cannot simply respond to every peer report because multiple peers may report same complexities; having the 'range_utils' calculated the total elements subtracted (if any) in their implementation will cause an overloading of the semantics (i.e. if such feature is not needed by the user code, then it would simply be a waste of cycles); altering 'second' type of the ranges to automaticall reference and decrement the common variable will be suboptimal due to potential number of constructors as well as the additional uintptr_t (at least 8 bytes in all realistic deployment cases) memory consupmtion. Just about the only simple-enough thing left would be to have a rarely occuring statistics/diagnostic timer which would calculate the data and this way the http-invoked requests will not cause frequent re-calculation on 'per request' basis. However, leaving this as a future 'todo' -- given that overly-frequent requests from controllers (http or not) should be solved at a more general level (i.e. dropping/firewall-blacklisting peers which perform very frequent request resending). 
 				size_type total_remaining_complexity_size(0);
-				for (typename ::std::map<size_type, size_type>::const_iterator i(active_task_processor->remaining_complexities.begin()); i != active_task_processor->remaining_complexities.end(); ++i) {
+				for (typename ::std::map<size_type, size_type>::const_iterator i(active_task_processor.get()->remaining_complexities.begin()); i != active_task_processor.get()->remaining_complexities.end(); ++i) {
 					assert(i->second);
 					total_remaining_complexity_size += i->second;
 				}
-				xxx << "Currently calculated complexity has " << active_task_processor->current_complexity_level->first << " evaluations in total (with " << total_remaining_complexity_size  << " evaluations awating computation)\\n";
+				xxx << "Currently calculated complexity has " << active_task_processor.get()->current_complexity_level->first << " evaluations in total (with " << total_remaining_complexity_size  << " evaluations awating computation)\\n";
 
 				unsigned coeffs_at_once(1);
-				for (typename ::std::map<size_type, ::std::vector<size_type> >::const_iterator tmp(active_task_processor->combos_modem.metadata().begin()); tmp != active_task_processor->current_complexity_level; ++tmp, ++coeffs_at_once);
+				for (typename ::std::map<size_type, ::std::vector<size_type> >::const_iterator tmp(active_task_processor.get()->combos_modem.metadata().begin()); tmp != active_task_processor.get()->current_complexity_level; ++tmp, ++coeffs_at_once);
 				xxx << "The aforementioned complexity is robust with respect to " << coeffs_at_once << "-coefficient(s)-@-once terrain diagonality.\\n";
 			}
 
-			xxx << "Final complexity size (at the present zoom-level) is " << active_task_processor->combos_modem.metadata().rbegin()->first << " evaluations in total\\n";
-			xxx << "So far " << active_task_processor->visited_places.size() << " universally-unique terrain locations have been evaluated\\n";
+			xxx << "Final complexity size (at the present zoom-level) is " << active_task_processor.get()->combos_modem.metadata().rbegin()->first << " evaluations in total\\n";
+			xxx << "So far " << active_task_processor.get()->visited_places.size() << " universally-unique terrain locations have been evaluated\\n";
 
 			::std::string meta_text(xxx);
 			tasks_list.meta_text.resize(meta_text.size());
 			::memcpy(tasks_list.meta_text.data(), meta_text.c_str(), meta_text.size());
 
-			if (active_task_processor->am_bootstrapping == false) {
-				netcpu::message::serialise_to_decomposed_floating(active_task_processor->e_min, task.value);
-				task.coefficients.resize(active_task_processor->coefficients_size);
-				for (size_type i(0); i != active_task_processor->coefficients_size; ++i) {
-					converger_1::coefficient_metadata<N, F> & ram(active_task_processor->coefficients_metadata[i]);
+			if (active_task_processor.get()->am_bootstrapping == false) {
+				netcpu::message::serialise_to_decomposed_floating(active_task_processor.get()->e_min, task.value);
+				task.coefficients.resize(active_task_processor.get()->coefficients_size);
+				for (size_type i(0); i != active_task_processor.get()->coefficients_size; ++i) {
+					converger_1::coefficient_metadata<N, F> & ram(active_task_processor.get()->coefficients_metadata[i]);
 					netcpu::message::task_coefficient_info & to(task.coefficients(i));
 					netcpu::message::serialise_to_decomposed_floating(ram.saved_value(), to.value);
 					netcpu::message::serialise_to_decomposed_floating(ram.value_from(), to.from);
@@ -2133,7 +2147,7 @@ struct task : netcpu::task {
 #endif
 
 		while(netcpu::ready_to_process_peers.empty() == false) {
-			active_task_processor->new_processing_peer(netcpu::ready_to_process_peers.front()->io());
+			active_task_processor.get()->new_processing_peer(netcpu::ready_to_process_peers.front()->io());
 
 			assert(--generic_peers_size == netcpu::ready_to_process_peers.size());
 		}
@@ -2144,7 +2158,7 @@ struct task : netcpu::task {
 	{
 		assert(active() == true);
 		assert(io_driver.is_read_pending() == false);
-		active_task_processor->new_processing_peer(io_driver);
+		active_task_processor.get()->new_processing_peer(io_driver);
 	}
 
 		// todo -- write additional method -- assert(active() == true) and which will accept newly-ready-to-process generic peer and call on active task processor to 'new up' the right implementation.
