@@ -441,7 +441,7 @@ private:
 			else if (old_alternative != alternative)
 				stage = 3;
 			else
-				throw netcpu::message::exception("design has duplicate rows w.r.t. tuple of {respondent, choice set, alternative} ");
+				throw netcpu::message::exception(xxx("design has duplicate rows w.r.t. tuple of {respondent, choice set, alternative} e.g. {") << respondent << ',' << choice_set << ',' << alternative << '}');
 			switch (stage) { // falling through on purpose...
 				case 1:
 					old_respondent = respondent;
