@@ -48,6 +48,9 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 <title>WebNetCPU</title>
 
 <!-- style { -->
+
+<link href='http://fonts.googleapis.com/css?family=Abel|Source+Sans+Pro|Arimo&subset=latin-ext' rel='stylesheet' type='text/css'>
+
 <style>
 
 li {
@@ -72,9 +75,8 @@ div.waiting_animation {
 }
 
 .active_task_meta_text {
-	color: purple;
+	color: darkred;
 	font-size:10pt;
-	font-family: serif;
 	font-style: italic;
 	padding : 0em;
 	white-space: pre-wrap;
@@ -83,8 +85,8 @@ div.waiting_animation {
 .debug_log_from_server {
 	background-color: yellow;
 	font-size:12pt;
-	font-family: mono;
 	white-space: pre-wrap;
+	border-width : 0px;
 }
 
 div.beta {
@@ -92,7 +94,6 @@ div.beta {
 	font-size:15pt;
 	text-align:center;
 	font-style:italic;
-	font-family: sans;
 	padding : 0.777em;
 }
 
@@ -174,10 +175,23 @@ td.normalised_value {
 	color: white;
 }
 
+* {
+	font-family: 'Source Sans Pro', Verdana, Ubuntu, 'Liberation Sans', sans;
+	font-size:12pt;
+}
+
+/* to 'preload(ish)' the font exclusive to html canvas... (when main font shall suffice in the html canvas drawing context with support for unicode subscripts, then delete this thing altogether). */
+.hack_1 {
+	color: #eeeeff; 
+  font-family: Arimo;
+}
+
 body {
 	background-color: #eeeeff;
-	font-family: serif;
-	font-size:11pt;
+}
+
+div, p, ul, li {
+	font-size: inherit;
 }
 
 .extra_option_text {
@@ -200,10 +214,6 @@ body {
 	border-bottom-color: black;
 }
 
-.coefficients_not_ready, .help_content_title, .help_content, .help_content_fieldname {
-	font-family: sans;
-}
-
 .active_task_label {
 	background-color: red;
 	color: white;
@@ -219,22 +229,51 @@ body {
 }
 
 .help_content {
-	font-size:11pt;
 	visibility:hidden;
+}
+
+.help_content_visible {
+	visibility:visible;
+}
+
+.help_content, .help_content_visible {
+	font-size: 11pt;
+}
+
+.help_content_title {
+	font-size:13pt;
 }
 
 .help_content_title, .help_content_fieldname {
 	color: purple;
-}
-
-.help_content_title, .help_content_fieldname {
-	font-style:italic;
+	font-style: italic;
 }
 
 button, select {
-width: 100%;
-	font-family: serif;
+	width: 100%;
 	font-size:12pt;
+	border-radius: 0.3em;
+	/* box-shadow: inset 0px 15px 5px -5px rgba(0,0,0,.3); */
+	box-shadow: 1px 2px 3px -1px rgba(0,0,0,0.3);
+	background: #ccbbdd;
+	background: linear-gradient(to bottom,  #ececfd,  #ccbbdd);
+}
+
+button {
+	color: #111111;
+}
+
+button:hover {
+	border-color: #c0c0c0 #b57edc #b57edc #c0c0c0;
+}
+
+button:hover, button:active {
+	text-shadow: 0px 0px 3px #ffffff;
+	box-shadow: none;
+	color: black;
+	background: #b57edc;
+	/* background: linear-gradient(to bottom,  #b57edc,  #9f00c5); */
+	background: linear-gradient(to bottom,  #ffffff,  #b57edc);
 }
 
 td.unspecified_csv {
@@ -243,7 +282,7 @@ td.unspecified_csv {
 
 td.respondent_csv {
 	text-align:right;
-	background-color: #ff3333;
+	background-color: salmon;
 }
 
 td.observation_csv {
@@ -270,12 +309,24 @@ td.centered_td {
 	text-align:center;
 }
 
+.help_content_title, td.page_title_td, div.beta {
+	font-family: 'Abel', 'Source Sans Pro', Verdana, Ubuntu, 'Liberation Sans', serif;
+}
+
+button, div.beta, .debug_log_from_server, .help_content_fieldname, .complete_task_label {
+	text-shadow: 4px 4px 4px #aaa;
+}
+
+td.page_title_td {
+	text-shadow: 5px 5px 5px #000;
+}
+
 td.page_title_td {
 	text-align:center;
 	color: white;
 	background-color: purple;
 	font-weight: bold;
-	font-style:italic;
+	/* font-style:italic; */
 }
 
 td.left_td {
@@ -296,7 +347,7 @@ td.left_td {
 
 .full_width {
 	width : 100%; 
-	padding : 0.7em;
+	padding : 0.57em;
 }
 
 
@@ -335,7 +386,6 @@ input.freeform_cli {
 
 .freeform_cli_example {
 	background-color: yellow;
-	font-family: mono;
 	color: black;
 }
 
@@ -343,14 +393,13 @@ table, th, td {
 	border-collapse: collapse;
 	text-align:left;
 	padding: 3pt;
-	border: 1pt solid black;
+	border: 1pt solid #bbbbcc;
 	font-style:normal;
 }
 
 .terrain_elevation_value {
 	font-style:normal;
-	font-size:9pt;
-	font-family: mono;
+	font-size:11pt;
 	color: black;
 }
 
@@ -736,7 +785,7 @@ function subsequent_complexity_type(pid)
 
 	this.fill_down_column_threshold = function(x)
 	{
-		var value = this.cli_coefficient_range_metadata_x[x].from.value;
+		var value = this.cli_coefficient_range_metadata_x[x].threshold.value;
 		for (var i = x + 1; i != this.cli_coefficient_range_metadata_x.length; ++i)
 			this.cli_coefficient_range_metadata_x[i].threshold.value = value;
 	}
@@ -773,7 +822,7 @@ function select_csv_column_type(pid, index)
 	this.gui = document.createElement("select");
 	this.gui.className = "full_width";
 	this.gui.size = 1;
-	this.gui.style.minWidth = "8.8em";
+	this.gui.style.minWidth = "8em";
 
 	var tmp;
 
@@ -869,7 +918,7 @@ function help_content_type(title, source_id)
 	var help_content_type_this = this;
 	var help_content = document.getElementById(source_id);
 	document.body.removeChild(help_content);
-	help_content.style.visibility = "visible";
+	help_content.className = "help_content_visible";
 
 	this.gui = document.createElement("div");
 	var title_span = document.createElement("span");
@@ -2074,6 +2123,7 @@ function new_task_type()
 
 function batch_fill_context_menu_type()
 {
+	var batch_fill_context_menu_type_this = this;
 	var hidden = true;
 	var highlighted_cell_gui;
 	var x, y;
@@ -2149,7 +2199,7 @@ function batch_fill_context_menu_type()
 	cancel_btn.appendChild(document.createTextNode("Cancel"));
 	cancel_btn.onclick = function() 
 	{
-		this.hide();
+		batch_fill_context_menu_type_this.hide();
 	}
 	gui.appendChild(cancel_btn);
 
@@ -2212,7 +2262,7 @@ function value_interpolator_type(interpolation_speed, initial_shaking_frequency,
 	var target_value;
 	var abs_target_value;
 	var shaker = new shaking_oscillator_type(initial_shaking_frequency, shaking_amplitude_reduction, shaking_frequency_increase);
-	var ping_helper;;
+	var ping_helper;
 	var done;
 	var initial_shaking;
 
@@ -2261,11 +2311,11 @@ function value_interpolator_type(interpolation_speed, initial_shaking_frequency,
 
 }
 
+waiting_animation_type.rotation_speed = 0.001;
 function waiting_animation_type(gui_holder)
 {
 	var gui = document.createElement("div");
 	gui.className = "waiting_animation";
-	var gui_holder = gui_holder;
 	gui_holder.appendChild(gui);
 	var canvas = document.createElement("canvas");
 	var diameter = 100;
@@ -2275,21 +2325,31 @@ function waiting_animation_type(gui_holder)
 	canvas.height = diameter + 20;
 	var canvas_center = canvas.width * 0.5;
 	var animation_timer = null;
-	var stopped = false;
-	var target_radius_orientation = 1;
+	var stopped = true;
 	var ctx = canvas.getContext("2d"); 
 
 	var value_interpolator = new value_interpolator_type(0.005, 0.1, 0.00065, 0.0012);
-	value_interpolator.reset(outer_radius, outer_radius, 5.7);
 
-	var rotation_speed = 0.001;
-	var current_rotation = 0;
-	var current_rotation_end = 0.1;
-	var current_rotation_end_speed = 0.001;
-	var rotation_pause_countdown = 0;
-	var rotation_gradient_choice = 1;
+	var target_radius_orientation;
+	var current_rotation;
+	var current_rotation_end;
+	var rotation_pause_countdown;
+	var rotation_gradient_choice;
+	var prev_tick_timestamp;
 
-	var prev_tick_timestamp = 0;
+	function reset()
+	{
+		value_interpolator.reset(inner_radius, inner_radius, 5.7);
+		target_radius_orientation = 0;
+		current_rotation = 0;
+		current_rotation_end = 0.1;
+		rotation_pause_countdown = 0;
+		rotation_gradient_choice = 1;
+		prev_tick_timestamp = 0;
+	}
+
+	reset();
+
 	var tick_duration;
 
 	function tick(now)
@@ -2313,11 +2373,11 @@ function waiting_animation_type(gui_holder)
 			target_radius_orientation = !target_radius_orientation;
 		} 
 
-		current_rotation += rotation_speed * tick_duration;
+		current_rotation += waiting_animation_type.rotation_speed * tick_duration;
 		if (current_rotation > two_pi)
 			current_rotation %= two_pi;
 
-		current_rotation_end += current_rotation_end_speed * tick_duration;
+		current_rotation_end += waiting_animation_type.rotation_speed * tick_duration;
 		if (current_rotation_end > two_pi) {
 			current_rotation_end %= two_pi;
 			rotation_gradient_choice = !rotation_gradient_choice;
@@ -2340,7 +2400,6 @@ function waiting_animation_type(gui_holder)
 		ctx.beginPath();
 		ctx.fillStyle = "rgba(0, 0, 128, 0.3)";
 		ctx.moveTo(canvas_center, canvas_center);
-		var rotation_start;
 		var arc_end = current_rotation + current_rotation_end;
 		if (rotation_gradient_choice) {
 			arc_start = current_rotation;
@@ -2356,15 +2415,23 @@ function waiting_animation_type(gui_holder)
 
 		animation_timer = request_animation_frame(tick);
 	}
+
 	this.start = function()
 	{
 		gui.appendChild(canvas);
 		stopped = false;
 		tick(prev_tick_timestamp);
 	}
+
+	this.restart = function()
+	{
+		reset();
+		this.start();
+	}
+
 	this.stop = function()
 	{
-		if (animation_timer != null) {
+		if (stopped == false) {
 			stopped = true;
 			cancel_animation_frame(animation_timer);
 			gui.removeChild(canvas);
@@ -2468,7 +2535,8 @@ function canvas_painter_type(canvas, terrain_elevation_value_, coefficients, tas
 
 		var font_size = canvas_painter_type.comparative_chart_coeff_center_diameter * .8;
 		var font_offset = canvas_painter_type.comparative_chart_coeff_center_diameter - font_size;
-		context.font = font_size + "px sans";
+		// unicode codes for subscript betas are not, yet, supported in Source Sans Pro"
+		context.font = font_size + "px Arimo";
 		context.lineWidth = canvas_painter_type.comparative_chart_coeff_center_line_width;
 
 		function number_to_subscript_string(x)
@@ -2686,7 +2754,8 @@ function tasks_list_type()
 			var task_name_left = terrain_elevation_value_right + 30;
 
 			var context = comparison_canvas.getContext("2d"); 
-			context.font = font_size + "px sans";
+			// unicode codes for subscript betas are not, yet, supported in Source Sans Pro"
+			context.font = font_size + "px Arimo";
 
 			// find relevant dimension details for all of the labels
 			var canvas_inner_height = 200;
@@ -2724,7 +2793,8 @@ function tasks_list_type()
 
 			if (max_normalised_value > 0) {
 
-				context.font = "italic " + font_size + "px sans"; 
+				// unicode codes for subscript betas are not, yet, supported in Source Sans Pro"
+				context.font = "italic " + font_size + "px Arimo"; 
 				var tmp_label = "tasks";
 				var tmp_width = context.measureText(tmp_label).width;
 				if (max_label_width < tmp_width)
@@ -2740,7 +2810,9 @@ function tasks_list_type()
 				comparison_canvas.width = canvas_width;
 				comparison_canvas.height = canvas_height;
 				context.clearRect(0, 0, canvas_width, canvas_height);
-				context.font = "italic " + font_size + "px sans"; 
+
+				// unicode codes for subscript betas are not, yet, supported in Source Sans Pro"
+				context.font = "italic " + font_size + "px Arimo"; 
 
 				context.fillText(tmp_label, task_name_left + tmp_offset, canvas_height);
 
@@ -2802,7 +2874,8 @@ function tasks_list_type()
 						break;
 					}
 
-					context.font = font_size + "px sans";
+					// unicode codes for subscript betas are not, yet, supported in Source Sans Pro"
+					context.font = font_size + "px Arimo";
 					context.strokeStyle = rgb_color;
 					context.fillStyle = rgb_color;
 
@@ -2827,6 +2900,7 @@ function tasks_list_type()
 	refresh_button.appendChild(document.createTextNode("Refresh/reload contents"));
 	refresh_button.onclick = function () 
 	{
+		populate_pre();
 		populate();
 	}
 	td.appendChild(refresh_button);
@@ -2851,22 +2925,34 @@ function tasks_list_type()
 		if (this.gui != last_div) {
 			document.body.replaceChild(this.gui, last_div);
 			last_div = this.gui;
+			populate_pre();
 			populate();
 		}
+	}
+
+	var waiting_animation_td = document.createElement("td");
+	waiting_animation_td.style.borderWidth = "0px";
+	var waiting_animation = new waiting_animation_type(waiting_animation_td);
+
+	function replace_table(x)
+	{
+		waiting_animation.stop();
+		tableHolder.replaceChild(x, table);
+		table = x;
 	}
 
 	function display_status(error)
 	{
 		var tbl = document.createElement("table");
 		tbl.className = "full_width";
+		tbl.style.borderWidth = "0px";
 		var tr = document.createElement("tr");
 		var td = document.createElement("td");
 		td.innerHTML = error;
 		td.className = "debug_log_from_server";
 		tr.appendChild(td);
 		tbl.appendChild(tr);
-		tableHolder.replaceChild(tbl, table);
-		table = tbl;
+		replace_table(tbl);
 	}
 
 	function blahblah(obj)
@@ -2938,13 +3024,14 @@ function tasks_list_type()
 						return;
 					}
 					this.disabled = true;
-					var steps_to_move_by = this_value - old_value;
 					var form = new FormData();
 					form.append("--task_name", task_name);
 					form.append("--steps_to_move_by", this_value - old_value);
 					var spurious_try_again_flag = true;
 					http_request = new XMLHttpRequest();
 					http_request.withCredentials = true;
+
+					populate_pre();
 					http_request.onreadystatechange = function()
 					{
 						if (this.readyState == 4) {
@@ -3000,9 +3087,9 @@ function tasks_list_type()
 
 						if (meta_text) {
 							var div = document.createElement("div");
-							//div.className = "active_task_meta_text";
-							//div.appendChild(document.createTextNode(meta_text));
-							div.innerHTML = "<pre class='active_task_meta_text'>" + meta_text + "\n(do not try to click/reload all the bloody time as numbers may update rarely -- like in a few minutes or so)</pre>";
+							div.className = "active_task_meta_text";
+							div.appendChild(document.createTextNode(meta_text));
+							//div.innerHTML = "<pre class='active_task_meta_text'>" + meta_text + "\n(do not try to click/reload all the bloody time as numbers may update rarely -- like in a few minutes or so)</pre>";
 							td.appendChild(div);
 						}
 
@@ -3265,6 +3352,8 @@ function tasks_list_type()
 						form.append("--task_name", task_name);
 						http_request = new XMLHttpRequest();
 						http_request.withCredentials = true;
+
+						populate_pre();
 						http_request.onreadystatechange = function()
 						{
 							if (this.readyState == 4) {
@@ -3303,8 +3392,7 @@ function tasks_list_type()
 			}
 			new individual_task_stub();
 		}
-		tableHolder.replaceChild(tbl, table);
-		table = tbl;
+		replace_table(tbl);
 
 		// clean the existing set of 'detail-showing tasks'
 		var existing_detail_showing_tasks = Object.keys(tasks_list_type_this.existing_detail_showing_tasks);
@@ -3319,12 +3407,19 @@ function tasks_list_type()
 	this.existing_detail_showing_tasks = {};
 	this.existing_detail_showing_animated_tasks = {};
 
-
-	function populate()
+	function populate_pre()
 	{
 		tasks_list_type_this.comparison_canvas_holder.style.display = "none";
 		display_status("Please wait, processing...");
+		var tr = document.createElement("tr");
+		tr.appendChild(waiting_animation_td);
+		waiting_animation.restart();
+		table.appendChild(tr);
+	}
 
+
+	function populate()
+	{
 		/*
 		//{ offline testing
 		var obj = {};
@@ -3431,11 +3526,7 @@ function main_menu_type()
 		new_task.show();
 	}
 	td.appendChild(elem);
-	tr.appendChild(td);
-	tbl.appendChild(tr);
-
-	tr = document.createElement("tr");
-	td = document.createElement("td");
+	td.appendChild(document.createElement("br"));
 	elem = document.createElement("button");
 	elem.className = "full_width";
 	elem.appendChild(document.createTextNode("Show Existing Tasks"));
@@ -3448,6 +3539,12 @@ function main_menu_type()
 	tbl.appendChild(tr);
 
 	this.gui.appendChild(tbl);
+
+	// autoload font exclusive to canvas (when main font supports unicode subscript betas, then refactor html canvas code to use the main font anyways)
+	var hack_1 = document.createElement("div");
+	hack_1.className = "hack_1";
+	hack_1.appendChild(document.createTextNode("..."));
+	this.gui.appendChild(hack_1);
 
 	this.show = function()
 	{
