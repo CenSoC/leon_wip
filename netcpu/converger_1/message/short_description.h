@@ -40,26 +40,15 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <netcpu/message.h>
 
-#ifndef CENSOC_NETCPU_CONVERGER_1_ID_H
-#define CENSOC_NETCPU_CONVERGER_1_ID_H
+#include "id.h"
+
+#ifndef CENSOC_NETCPU_CONVERGER_1_MESSAGE_SHORT_DESCRIPTION_H
+#define CENSOC_NETCPU_CONVERGER_1_MESSAGE_SHORT_DESCRIPTION_H
 
 namespace censoc { namespace netcpu { namespace converger_1 { namespace message {
 
-struct messages_ids {
-	enum val {
-		res = netcpu::message::messages_ids::end_id,
-		meta,
-		bulk,
-		short_description,
-		server_state_sync,
-		bootstrapping_peer_report,
-		peer_report,
-		server_recentre_only_sync,
-		server_complexity_only_sync,
-		convergence_state,
-		haltons,
-		skip_bulk
-	};
+struct short_description : netcpu::message::message_base<converger_1::message::messages_ids::short_description> {
+	netcpu::message::array<char> text;
 };
 
 }}}}

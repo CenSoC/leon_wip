@@ -65,6 +65,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "message/res.h"
 #include "message/meta.h"
 #include "message/bulk.h"
+#include "message/short_description.h"
 #include "message/peer_report.h"
 #include "message/server_state_sync.h"
 
@@ -1674,7 +1675,8 @@ struct task_processor : ::boost::noncopyable {
 				}
 			}
 
-			::rename((convergence_state_filepath + ".tmp").c_str(), convergence_state_filepath.c_str());
+			if (::rename((convergence_state_filepath + ".tmp").c_str(), convergence_state_filepath.c_str()))
+				throw ::std::runtime_error("could not rename/mv convergence_state temporary file");
 
 			censoc::llog() << "...done writing to disk\n";
 		}
@@ -2026,6 +2028,33 @@ task_processor<N, F, Model, ModelId>::new_processing_peer(netcpu::message::async
 	new processing_peer<N, F, Model, ModelId>(*this, io_driver);
 }
 
+::std::string static
+escape_json(::std::string const & str)
+{
+	::std::string rv;
+	for (::std::string::const_iterator i(str.begin()); i != str.end(); ++i) {
+		if (*i < 32) {
+			switch (*i) {
+			case '\n' : 
+			rv += "\\n"; 
+			break;
+			case '\t' : 
+			rv += "\\t"; 
+			}
+		} else if (*i < 127) {
+			switch (*i) {
+			case '\\' : 
+			case '"' : 
+			case '/' : 
+			rv += '\\'; 
+			default:
+			rv += *i; 
+			}
+		}
+	}
+	return rv;
+}
+
 /** @note -- the task may not be a processor because a given processor may occupy a bit of memory/resources (e.g. cached matricies, messages, etc.) -- and there may be many tasks in RAM... but there is/should only be 1 active (i.e. singleton-like) processor (i.e. only 1 active task ought to be present at any time).
 	*/
 template <typename N, typename F, typename Model, netcpu::models_ids::val ModelId>
@@ -2036,12 +2065,30 @@ struct task : netcpu::task {
 
 	::censoc::unique_ptr<converger_1::task_processor<N, F, Model, ModelId> > active_task_processor;
 
+	::std::string short_description;
+
 	task(::std::string const & name, time_t birthday = ::time(NULL))
 	: netcpu::task(name, birthday) {
 	}
+
 	~task()
 	{
 		deactivate();
+	}
+
+	void
+	load_short_description()
+	{
+		::std::ifstream short_description_file((netcpu::root_path + name() + "/short_description.txt").c_str(), ::std::ios::binary);
+		if (!short_description_file) // compulsory
+			throw ::std::runtime_error("missing short_description during load");
+		::std::getline(short_description_file, short_description);
+	}
+
+	void
+	set_short_description(::std::string const & x)
+	{
+		short_description = x;
 	}
 
 	void 
@@ -2058,9 +2105,8 @@ struct task : netcpu::task {
 		if (active_task_processor.get() != NULL) {
 			// todo -- really a quick and nasty hack at the moment. later must refactor interface to the task_processor so as not to do "active_task_processor.get()->" all the time, etc.
 
-			//todo -- the newline escaping for the sake of the JSON formatting should be done elsewhere!!
 			censoc::lexicast< ::std::string> xxx("DEBUG output: there are potentially ");
-			xxx << active_task_processor.get()->processing_peers.size() << " processing workers (productivity of each is not yet accounted for, with " << active_task_processor.get()->scoped_peers.size() << " total registered connections).\\n";
+			xxx << active_task_processor.get()->processing_peers.size() << " processing workers (productivity of each is not yet accounted for, with " << active_task_processor.get()->scoped_peers.size() << " total registered connections).\n";
 #ifndef NDEBUG
 			typename ::std::map<size_type, ::std::vector<size_type> >::const_iterator tmp; // assert parsing otherwise barfs if putting all into the assert macro...
 			assert(active_task_processor.get()->current_complexity_level != tmp);
@@ -2074,17 +2120,17 @@ struct task : netcpu::task {
 					assert(i->second);
 					total_remaining_complexity_size += i->second;
 				}
-				xxx << "Currently calculated complexity has " << active_task_processor.get()->current_complexity_level->first << " evaluations in total (with " << total_remaining_complexity_size  << " evaluations awating computation)\\n";
+				xxx << "Currently calculated complexity has " << active_task_processor.get()->current_complexity_level->first << " evaluations in total (with " << total_remaining_complexity_size  << " evaluations awating computation)\n";
 
 				unsigned coeffs_at_once(1);
 				for (typename ::std::map<size_type, ::std::vector<size_type> >::const_iterator tmp(active_task_processor.get()->combos_modem.metadata().begin()); tmp != active_task_processor.get()->current_complexity_level; ++tmp, ++coeffs_at_once);
-				xxx << "The aforementioned complexity is robust with respect to " << coeffs_at_once << "-coefficient(s)-@-once terrain diagonality.\\n";
+				xxx << "The aforementioned complexity is robust with respect to " << coeffs_at_once << "-coefficient(s)-@-once terrain diagonality.\n";
 			}
 
-			xxx << "Final complexity size (at the present zoom-level) is " << active_task_processor.get()->combos_modem.metadata().rbegin()->first << " evaluations in total\\n";
-			xxx << "So far " << active_task_processor.get()->visited_places.size() << " universally-unique terrain locations have been evaluated\\n";
+			xxx << "Final complexity size (at the present zoom-level) is " << active_task_processor.get()->combos_modem.metadata().rbegin()->first << " evaluations in total\n";
+			xxx << "So far " << active_task_processor.get()->visited_places.size() << " universally-unique terrain locations have been evaluated\n";
 
-			::std::string meta_text(xxx);
+			::std::string meta_text(converger_1::escape_json(xxx));
 			tasks_list.meta_text.resize(meta_text.size());
 			::memcpy(tasks_list.meta_text.data(), meta_text.c_str(), meta_text.size());
 
@@ -2118,9 +2164,10 @@ struct task : netcpu::task {
 					netcpu::message::serialise_to_decomposed_floating(netcpu::message::deserialise_from_decomposed_floating<float_type>(convergence_state.get_coefficient().value_from), to.from);
 					netcpu::message::serialise_to_decomposed_floating(netcpu::message::deserialise_from_decomposed_floating<float_type>(convergence_state.get_coefficient().rand_range), to.range);
 				}
-
 			}
 		}
+		task.short_description.resize(short_description.size());
+		::memcpy(task.short_description.data(), short_description.data(), short_description.size());
 	}
 
 	void activate() 
@@ -2197,7 +2244,8 @@ struct task_loader_detail : netcpu::io_wrapper<netcpu::message::async_driver> {
 			if (!res_file)
 				throw ::std::runtime_error("could not write " + res_filepath + ".tmp");
 		}
-		::rename((res_filepath + ".tmp").c_str(), res_filepath.c_str());
+		if (::rename((res_filepath + ".tmp").c_str(), res_filepath.c_str()))
+			throw ::std::runtime_error("could not rename/mv res.msg temporary file");
 
 		converger_1::message::res msg(io().read_raw);
 		if (
@@ -2225,7 +2273,6 @@ struct task_loader_detail : netcpu::io_wrapper<netcpu::message::async_driver> {
 	void
 	on_read()
 	{
-
 		if (meta_msg_type::myid != io().read_raw.id()) 
 			throw netcpu::message::exception(xxx("wrong message: [") << io().read_raw.id() << "] want meta id: [" << static_cast<netcpu::message::id_type>(meta_msg_type::myid) << ']');
 
@@ -2240,7 +2287,8 @@ struct task_loader_detail : netcpu::io_wrapper<netcpu::message::async_driver> {
 			if (!meta_file)
 				throw ::std::runtime_error("could not write " + meta_filepath + ".tmp");
 		}
-		::rename((meta_filepath + ".tmp").c_str(), meta_filepath .c_str());
+		if (::rename((meta_filepath + ".tmp").c_str(), meta_filepath .c_str()))
+			throw ::std::runtime_error("could not rename/mv meta.msg temporary file");
 
 		meta_msg.from_wire(io().read_raw);
 
@@ -2284,7 +2332,8 @@ struct task_loader_detail : netcpu::io_wrapper<netcpu::message::async_driver> {
 			if (!bulk_file)
 				throw ::std::runtime_error("could not write " + bulk_filepath + ".tmp");
 		}
-		::rename((bulk_filepath + ".tmp").c_str(), bulk_filepath.c_str());
+		if (::rename((bulk_filepath + ".tmp").c_str(), bulk_filepath.c_str()))
+			throw ::std::runtime_error("could not rename/mv bulk.msg temporary file");
 
 		bulk_msg.from_wire(io().read_raw);
 
@@ -2345,12 +2394,45 @@ struct task_loader_detail : netcpu::io_wrapper<netcpu::message::async_driver> {
 		if (total_alternatives_count * x_size + choice_sets_alternatives_size != matrix_composite_size || matrix_composite_i != matrix_composite_end)
 			throw netcpu::message::exception("new task has invalid dataset -- overall composite matrix size does not agree with other thingies");
 
-		netcpu::message::new_taskname msg(t->name());
-		io().write(msg, &task_loader_detail::on_bulk_response_write, this);
+		assert(io().is_read_pending() == false);
+		io().read(&task_loader_detail::on_short_description_read, this);
 	}
 
 	void
-	on_bulk_response_write()
+	on_short_description_read()
+	{
+		censoc::llog() << "on_short_description_read\n";
+		assert(t != NULL);
+
+		if (converger_1::message::short_description::myid != io().read_raw.id()) 
+			throw netcpu::message::exception(xxx("wrong message: [") << io().read_raw.id() << "] want short_description id: [" << static_cast<netcpu::message::id_type>(converger_1::message::short_description::myid) << ']');
+
+		converger_1::message::short_description short_description_msg;
+		short_description_msg.from_wire(io().read_raw);
+
+		if (short_description_msg.text.size() > 100)
+			throw netcpu::message::exception("new task has invalid short description of the project -- must be under 100 chars in length");
+
+		::std::string const jsoned_short_description(converger_1::escape_json(::std::string(short_description_msg.text.data(), short_description_msg.text.size())));
+
+		::std::string const short_description_filepath(netcpu::root_path + t->name() + "/short_description.txt");
+		{
+			::std::ofstream short_description_file((short_description_filepath + ".tmp").c_str(), ::std::ios::binary | ::std::ios::trunc);
+			short_description_file.write(jsoned_short_description.data(), jsoned_short_description.size());
+			if (!short_description_file)
+				throw ::std::runtime_error("could not write " + short_description_filepath + ".tmp");
+		}
+		if (::rename((short_description_filepath + ".tmp").c_str(), short_description_filepath.c_str()))
+			throw ::std::runtime_error("could not rename/mv short_description_filepath.txt temporary file");
+
+		t->set_short_description(jsoned_short_description);
+
+		netcpu::message::new_taskname msg(t->name());
+		io().write(msg, &task_loader_detail::on_new_taskname_write, this);
+	}
+
+	void
+	on_new_taskname_write()
 	{
 		assert(io().is_read_pending() == false);
 		t->markpending();
@@ -2482,15 +2564,21 @@ private:
 	void 
 	new_task_detail(int float_res, ::std::string const & name, bool pending, time_t birthday)
 	{
-		netcpu::task * t;
-		if (float_res == converger_1::message::float_res<float>::value) {
-			t = new converger_1::task<IntRes, float, Model<IntRes, float>, ModelId>(name, birthday);
-		} else if (float_res == converger_1::message::float_res<double>::value) {
-			t = new converger_1::task<IntRes, double, Model<IntRes, double>, ModelId>(name, birthday);
-		} else // TODO -- may be as per 'on_read' -- write a bad message to client (more verbose)
+		if (float_res == converger_1::message::float_res<float>::value)
+			new_task_detail<IntRes, float>(name, pending, birthday);
+		else if (float_res == converger_1::message::float_res<double>::value)
+			new_task_detail<IntRes, double>(name, pending, birthday);
+		else // TODO -- may be as per 'on_read' -- write a bad message to client (more verbose)
 			throw ::std::runtime_error(xxx("unsupported floating resolution: [") << float_res << ']');
 		// no need for scope or shared ptr -- queued_taks is self-managed (and externally managed by the pending_tasks list), moreover if any of the insertions throw in ctor of task -- then such will not be ctored/newed-up anyway
+	}
 
+	template <typename IntRes, typename FloatRes>
+	void
+	new_task_detail(::std::string const & name, bool pending, time_t birthday)
+	{
+		converger_1::task<IntRes, FloatRes, Model<IntRes, FloatRes>, ModelId> * t(new converger_1::task<IntRes, FloatRes, Model<IntRes, FloatRes>, ModelId>(name, birthday));
+		t->load_short_description();
 		if (pending == true)
 			t->markpending();
 		else 

@@ -375,6 +375,12 @@ input {
 	background-color: white;
 	text-align:right;
 }
+
+input.short_description {
+	text-align:left;
+	width: 90%;
+}
+
 input:disabled {
 	background-color: #dfdfdf;
 }
@@ -1402,7 +1408,7 @@ function new_task_type()
 	label.className = "extra_option_text"
 	var csv_preprocess = document.createElement("input");
 	csv_preprocess.type = "checkbox";
-	csv_preprocess.checked = false;
+	csv_preprocess.checked = true;
 	label.appendChild(csv_preprocess);
 	label.appendChild(document.createTextNode("Strip'n'zip dataset before sending to server."));
 	tmp_td.appendChild(label);
@@ -1687,6 +1693,15 @@ function new_task_type()
 		return this_row;
 	}
 
+	td.appendChild(document.createElement("hr"));
+
+	var help_short_description_content = new help_content_type("Step 5: Provide a short one-phrase project description", "help_short_description_content");
+	td.appendChild(help_short_description_content.gui);
+	
+	var short_description_input = document.createElement("input");
+	short_description_input.className = "short_description";
+	short_description_input.maxlength = 100;
+	td.appendChild(short_description_input);
 
 	td.appendChild(document.createElement("hr"));
 
@@ -1725,6 +1740,11 @@ function new_task_type()
 		var repeats_value = parseInt(repeats.value);
 
 		var cli_string = "some debug/CLI info:\n";
+
+		if (!short_description_input.value.length || short_description_input.value.length > 100)
+			return bail_on_wrong_user_values("Must supply a short (under 100 chars) one-phrase -line project description");
+		cli_string += "--short_description " + short_description_input.value + '\n';
+		form.append("--short_description", short_description_input.value);
 
 		cli_string += "--model " + model_value + ":offer\n";
 		cli_string += "--fromrow " + fromrow  + '\n';
@@ -2979,6 +2999,7 @@ function tasks_list_type()
 			function individual_task_stub() 
 			{
 				var task_name = obj.tasks[i].name;
+				var short_description = obj.tasks[i].short_description;
 				var task_state = obj.tasks[i].state;
 				var task_complete = (task_state == "complete" ? true : false);
 
@@ -3091,6 +3112,13 @@ function tasks_list_type()
 							div.appendChild(document.createTextNode(meta_text));
 							//div.innerHTML = "<pre class='active_task_meta_text'>" + meta_text + "\n(do not try to click/reload all the bloody time as numbers may update rarely -- like in a few minutes or so)</pre>";
 							td.appendChild(div);
+						}
+
+						{
+						var div = document.createElement("div");
+						div.className = "task_order_column";
+						div.appendChild(document.createTextNode(short_description));
+						td.appendChild(div);
 						}
 
 						if (coefficients) {
@@ -3266,12 +3294,12 @@ function tasks_list_type()
 							var canvas = document.createElement("canvas");
 							canvas.painter = new canvas_painter_type(canvas, terrain_elevation_value, coefficients, task_name, model_id, betas_size);
 
-							td.appendChild(document.createElement("br"));
 
 							var overflow_holder_2 = document.createElement("div");
 							overflow_holder_2.style.display = "none";
 							overflow_holder_2.id = "overflowish";
 							overflow_holder_2.style.maxWidth = (0.95 * document.documentElement.clientWidth) + "px";
+							overflow_holder_2.appendChild(document.createElement("br"));
 							overflow_holder_2.appendChild(canvas);
 							td.appendChild(overflow_holder_2);
 
@@ -3429,6 +3457,7 @@ function tasks_list_type()
 			obj.tasks[i] = new function() {
 				this.value = 11.2 + i;
 				this.name = i + "_3-1x2";
+				this.short_description = "this is something blah blah blah";
 				this.state = "pending";
 				this.coefficients = [
 					{ value : 0.3 + i * .5 , from : 0.1 , range : 0.5 }, 
@@ -3442,6 +3471,7 @@ function tasks_list_type()
 		for (var i = 5; i != 8; ++i) {
 			obj.tasks[i] = new function() {
 				this.value = 11.2;
+				this.short_description = "this is something blah blah blah";
 				this.name = i + "_1-1x2";
 				this.state = "complete";
 				this.coefficients = [];
@@ -3852,6 +3882,9 @@ The <span class="help_content_fieldname">Extended floating-point res</span> is f
 <span class="help_content_fieldname">Approximate exponents</span> allows one to use an oversamlped, linearly-interpolated approximation of the exponents. In other words, instead of evaluating '::std::exp(x)' or other similar math library routines everytime an exponent value is needed, a pre-sampled table of exponents is made (with input values separated by small steps-size) and then such a table is linearly interpolated depending on where the given 'x' value is positioned with respect to the pre-sampled steps. A number of empirical tests had shown no tangible/differentiating-practical-outcome changes as compared to the non-approximating option. The approximation option, however, may show improvements in computational speed. Given that any successful convergence process will invariably involve multiple <em>complete</em> convergence runs it is envisaged that the option may indeed be delpoyed in a time-saving fashion. 
 </li>
 </ul>
+</div>
+<div class="help_content" id="help_short_description_content">
+This field requires one, in the spirit of being a good citizen, to provide a short description/tag of the project (e.g. "carbon pro. for Jordan"). This allows others to better determine whether they want to "jump the queue" potentially pausing/delaying computation of other active/pending tasks. This field is <em>not</em> a replacement for proactive note-taking -keeping by the user. The user is expected to keep a <em>concurrent</em> set of notes relating to the processed task (why the task is created, what dataset is being used and why, what project the whole thing belongs to, etc). The process, therefore, is as follows: after adding a new task, <em>DO</em> take note of (i.e. write down) the returned task-id and any of the submission-parameters of interest (e.g. example CLI/debug values); upon task's completion add to the notes the resulting coefficients values. Use the notes in your research.
 </div>
 <div id="visible_dims" style="width:100%;height:100%;position:fixed;left:0;top:0;visibility:hidden;z-index:-1"></div>
 </body>

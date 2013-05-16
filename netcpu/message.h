@@ -1006,6 +1006,7 @@ struct task_coefficient_info {
 
 struct task_info {
 	message::array<char> name;
+	message::array<char> short_description;
 	enum state_type { pending, completed };
 	message::scalar<uint8_t> state; 
 	message::decomposed_floating<> value;

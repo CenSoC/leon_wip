@@ -53,6 +53,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "message/res.h"
 #include "message/meta.h"
 #include "message/bulk.h"
+#include "message/short_description.h"
 
 #ifndef CENSOC_NETCPU_CONVERGER_1_CONTROLLER_H
 #define CENSOC_NETCPU_CONVERGER_1_CONTROLLER_H
@@ -92,6 +93,7 @@ struct task_loader_detail : netcpu::io_wrapper<AsyncDriver> {
 
 	typename Model::meta_msg_type meta_msg;
 	typename Model::bulk_msg_type bulk_msg;
+	converger_1::message::short_description short_description_msg;
 
 	struct cli_coefficient_range_metadata {
 		cli_coefficient_range_metadata(size_paramtype i, 
@@ -285,11 +287,16 @@ struct task_loader_detail : netcpu::io_wrapper<AsyncDriver> {
 			} else if (i->first == "--shrink_slowdown") {
 				netcpu::message::serialise_to_decomposed_floating<float_type>(censoc::lexicast<float_type>(i->second), meta_msg.shrink_slowdown);
 				censoc::llog() << "shrink_slowdown: [" << netcpu::message::deserialise_from_decomposed_floating<float_type>(meta_msg.shrink_slowdown) << "]\n";
-			} else {
+			} else if( i->first == "--short_description") {
+				short_description_msg.text.resize(i->second.size());
+				::memcpy(short_description_msg.text.data(), i->second.data(), i->second.size());
+			} else 
 				if (model.parse_arg(i->first, i->second, meta_msg, bulk_msg) == false) 
 					throw netcpu::message::exception(xxx() << "unknown argument: [" << i->first << ']');
-			}
 		}
+
+		if (!short_description_msg.text.size())
+			throw netcpu::message::exception("Must supply --short_description option");
 
 		if (coefficients_ranges.second.empty() == true)
 			throw netcpu::message::exception("Must supply at least one --cm option");
@@ -467,17 +474,26 @@ struct task_loader_detail : netcpu::io_wrapper<AsyncDriver> {
 			bulk_msg.print();
 			base_type::io().AsyncDriver::native_protocol::write(bulk_msg, &task_loader_detail::on_write_bulk, this);
 		} else 
-			delete this;
+			delete this; // todo -- may be throw instead so that other than native_protocol can pick it up and respond in a custom fashion?
 	}
 
 	void
 	on_write_bulk()
 	{
-		censoc::llog() << "bulk written..." << ::std::endl;
-		base_type::io().AsyncDriver::native_protocol::read(&task_loader_detail::on_read_bulk_response, this);
+		censoc::llog() << "bulk written... will now send short_description message" << ::std::endl;
+
+		base_type::io().AsyncDriver::native_protocol::write(short_description_msg, &task_loader_detail::on_write_short_description, this);
 	}
+
 	void
-	on_read_bulk_response()
+	on_write_short_description()
+	{
+		censoc::llog() << "short_description message written\n";
+		base_type::io().AsyncDriver::native_protocol::read(&task_loader_detail::on_read_short_description_response, this);
+	}
+
+	void
+	on_read_short_description_response()
 	{
 		if (netcpu::message::new_taskname::myid == base_type::io().AsyncDriver::native_protocol::read_raw.id()) {
 			netcpu::message::new_taskname msg(base_type::io().AsyncDriver::native_protocol::read_raw);
