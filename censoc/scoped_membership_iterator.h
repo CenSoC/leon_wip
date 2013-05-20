@@ -73,6 +73,7 @@ struct scoped_membership_iterator : T {
 	void
 	operator = (iterator_paramtype i) throw()
 	{
+		assert(this->i != i);
 		if (this->i != iterator_type())
 			// TODO - if 'erase' is likely to throw, then save tmp copy of this->i first, then assign this->i, then erase the tmp copy of old this->i
 			T::container().erase(this->i);

@@ -62,6 +62,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <boost/asio.hpp>
 #include <boost/asio/ssl.hpp>
 #include <boost/enable_shared_from_this.hpp>
+#include <boost/lexical_cast.hpp>
 
 #include <censoc/empty.h>
 #include <censoc/type_traits.h>
@@ -105,7 +106,8 @@ time_t static wakeonlan_check(30); // in minutes, todo, a quick hack, perhaps a 
 ::boost::asio::io_service static io;
 ::boost::asio::ssl::context static ssl(io, ::boost::asio::ssl::context::sslv23);
 ::std::string static root_path;
-tasks_size_type static max_taskid;
+tasks_size_type static taskid_begin;
+tasks_size_type static taskid_end;
 
 void static
 do_wakeonlan()
@@ -134,7 +136,7 @@ verify_callback(bool preverified, ::boost::asio::ssl::verify_context& ctx)
 struct task;
 ::std::multimap<time_t, netcpu::task *> static aged_tasks;
 ::censoc::stl::fastsize< ::std::list<netcpu::task *>, uint_fast32_t> static pending_tasks;
-::censoc::stl::fastsize< ::std::list<netcpu::task *>, uint_fast32_t> static completed_tasks;
+::std::multimap< ::time_t, netcpu::task *> static completed_tasks;
 
 // containing explicitly via a ::boost::shared_ptr does not give any nicer syntax to the user-code, and it wastes more memory/cpu-cycles (as 'shared' context is replicated 1:element of the list. Instead will have a ~dtor thingy
 struct named_tasks_type : ::std::map< ::std::string, netcpu::task *> {
@@ -175,7 +177,7 @@ struct pending_tasks_iterator_traits {
 
 struct completed_tasks_iterator_traits {
 	typedef censoc::empty ctor_type;
-	typedef ::censoc::stl::fastsize< ::std::list<netcpu::task *>, uint_fast32_t> container_type;
+	typedef ::std::multimap< ::time_t, netcpu::task *> container_type;
 	container_type static &
 	container()
 	{
@@ -196,6 +198,52 @@ struct ready_to_process_peers_iterator_traits {
 	}
 };
 
+
+::std::set<netcpu::tasks_size_type> static tasks_ids;
+struct tasks_ids_iterator_traits {
+	typedef censoc::empty ctor_type;
+	typedef ::std::set<netcpu::tasks_size_type> container_type;
+	container_type static &
+	container()
+	{
+		return tasks_ids;
+	}
+};
+
+struct tasks_ids_scoped_membership_iterator : censoc::scoped_membership_iterator<tasks_ids_iterator_traits> {
+
+	tasks_ids_scoped_membership_iterator(iterator_paramtype i)
+	: censoc::scoped_membership_iterator<tasks_ids_iterator_traits>(i) {
+	}
+
+	~tasks_ids_scoped_membership_iterator()
+	{
+		assert(nulled() == false);
+		if (*i == taskid_begin) {
+			iterator_type j(i);
+			++j;
+			if (j == container().end())
+				taskid_begin = taskid_end;
+			else
+				taskid_begin = *j;
+
+			// store taskid_begin (even though throwing in dtor is not cool -- termination of the whole process is ok and expected here)
+			::std::ofstream f((netcpu::root_path + "taskid_begin.tmp").c_str(), ::std::ios::trunc);
+			if (f.is_open() == false) 
+				throw ::std::runtime_error("could not create taskid_begin.tmp temporary file");
+
+			netcpu::message::typepair<uint64_t>::wire w(taskid_begin);
+			uint8_t raw[sizeof(w)];
+			netcpu::message::to_wire<netcpu::message::typepair<uint64_t>::wire>::eval(raw, w);
+			if (!f.write(reinterpret_cast<char const *>(raw), sizeof(w)))
+				throw ::std::runtime_error("could not write taskid_begin");
+
+			if (::rename((netcpu::root_path + "taskid_begin.tmp").c_str(), (netcpu::root_path + "taskid_begin").c_str()))
+				throw ::std::runtime_error("could not rename/mv taskid_begin temporary file");
+		}
+	}
+};
+
 typedef censoc::scoped_membership_iterator<named_tasks_iterator_traits> named_tasks_scoped_membership_iterator;
 typedef censoc::scoped_membership_iterator<aged_tasks_iterator_traits> aged_tasks_scoped_membership_iterator;
 typedef censoc::scoped_membership_iterator<pending_tasks_iterator_traits> pending_tasks_scoped_membership_iterator;
@@ -209,6 +257,7 @@ void static
 on_completed_tasks_update();
 
 struct task {
+	tasks_ids_scoped_membership_iterator id_i;
 	named_tasks_scoped_membership_iterator name_i;
 	aged_tasks_scoped_membership_iterator age_i;
 	pending_tasks_scoped_membership_iterator pending_i;
@@ -231,8 +280,8 @@ struct task {
 	// TODO -- it may even be plausible that different models will not have a common representational structure (coefficient values, etc.) in the first place, and so the message-building -cooking process will need to be re-factored to perhaps generate either a dynamically-structured messages or a multi-message sequences during io-communication with the peer... this, however, is rather in a very distant future to consider...
 	virtual void load_coefficients_info_et_al(netcpu::message::tasks_list & tasks_list, netcpu::message::task_info &) = 0;
 
-	task(::std::string const & name, time_t birthday = ::time(NULL))
-	: name_i(named_tasks.insert(::std::make_pair(name, this)).first), age_i(aged_tasks.insert(::std::make_pair(birthday, this))) {
+	task(netcpu::tasks_size_type const & id, ::std::string const & name, time_t birthday = ::time(NULL))
+	: id_i(tasks_ids.insert(id).first), name_i(named_tasks.insert(::std::make_pair(name, this)).first), age_i(aged_tasks.insert(::std::make_pair(birthday, this))) {
 		::std::clog << "ctor for task: time: " << birthday << ::std::endl;
 	}
 
@@ -266,12 +315,12 @@ struct task {
 		::std::list<netcpu::task *>::iterator i(pending_i.i);
 		assert(this == *i);
 		if (steps_to_move_by > 0)
-			for (++steps_to_move_by; steps_to_move_by && i != pending_tasks.end(); ++i, --steps_to_move_by);
+			for (; steps_to_move_by > -1 && i != pending_tasks.end(); ++i, --steps_to_move_by);
 		else 
 			for (; steps_to_move_by && i != pending_tasks.begin(); --i, ++steps_to_move_by);
 
 		uint_fast32_t const pending_tasks_size(pending_tasks.size());
-		if (i != pending_i.i && ::std::prev(i) != pending_i.i) {
+		if (i != pending_i.i && i != ::std::next(pending_i.i)) {
 			if (active() == true)
 				deactivate();
 			else if (i == pending_tasks.begin() && (*i)->active() == true)
@@ -289,11 +338,12 @@ struct task {
 	markcompleted()
 	{
 		assert(completed_i == completed_tasks_scoped_membership_iterator::iterator_type());
+		assert(age_i != aged_tasks_scoped_membership_iterator::iterator_type());
 
 		deactivate();
 		pending_i.reset();
 
-		completed_i = completed_tasks.insert(completed_tasks.end(), this);
+		completed_i = completed_tasks.insert(*age_i.i);
 
 		on_pending_tasks_update();
 		on_completed_tasks_update();
@@ -316,16 +366,23 @@ activate_front_pending_task()
 void static
 on_completed_tasks_update()
 { 
+	if (completed_existing_tasks_parsing_during_load == false)
+		return;
 	// write the latest index file
 	::std::string const index_stream_filepath(netcpu::root_path + netcpu::completed_index_filename);
 	{
 		::std::ofstream index_stream((index_stream_filepath + ".tmp").c_str(), ::std::ios::trunc);
-		if (index_stream.is_open()) {
-			for (::std::list<netcpu::task *>::iterator i(completed_tasks.begin()); i != completed_tasks.end(); ++i) 
-				index_stream << (*i)->name() << ::std::endl;
-		}
+		if (index_stream.is_open() == false)
+			throw ::std::runtime_error("could not create completed tasks temporary file");
+
+		for (::std::multimap< ::time_t, netcpu::task *>::iterator i(completed_tasks.begin()); i != completed_tasks.end(); ++i) 
+			index_stream << i->second->name() << ::std::endl;
+
+		if (!index_stream)
+			throw ::std::runtime_error("could not write completed tasks temporary file");
 	}
-	::rename((index_stream_filepath + ".tmp").c_str(), index_stream_filepath.c_str());
+	if (::rename((index_stream_filepath + ".tmp").c_str(), index_stream_filepath.c_str()))
+		throw ::std::runtime_error("could not rename/mv completed tasks temporary file");
 }
 
 #ifndef NDEBUG
@@ -338,30 +395,35 @@ named_tasks_type::~named_tasks_type()
 }
 #endif
 
-::std::string
-generate_taskdir(::std::string const & postfix)
+void
+generate_taskdir(::std::string const & postfix, netcpu::tasks_size_type & id, ::std::string & name)
 {
-	while (!0) {
-		::std::string const name(::std::string(netcpu::xxx(++netcpu::max_taskid)) + "_" + postfix);
+		id = netcpu::taskid_end;
+		name = ::std::string(netcpu::xxx(netcpu::taskid_end)) + "_" + postfix;
 		::std::string const path(netcpu::root_path + name);
-		int const ec(::mkdir(path.c_str(), 0700));
-		if (ec) {
-			if (errno != EEXIST)
-				throw ::std::runtime_error(xxx("could not mkdir: [") << path << "] with error: [" << ::strerror(errno) << ']' );
-		} else {
-			// store max_taskid
-			::std::ofstream f((netcpu::root_path + "last_taskid.tmp").c_str(), ::std::ios::trunc);
-			if (f.is_open()) {
-				netcpu::message::typepair<uint64_t>::wire w = max_taskid;
-				uint8_t raw[sizeof(w)];
-				netcpu::message::to_wire<netcpu::message::typepair<uint64_t>::wire>::eval(raw, w);
-				if (f.write(reinterpret_cast<char const *>(raw), sizeof(w)))
-					::rename((netcpu::root_path + "last_taskid.tmp").c_str(), (netcpu::root_path + "last_taskid").c_str());
-			}
-			return name;
-		}
-	}
+		if (::mkdir(path.c_str(), 0700))
+			throw ::std::runtime_error(xxx("could not mkdir: [") << path << "] with error: [" << ::strerror(errno) << ']' );
+
+		netcpu::taskid_end = (netcpu::taskid_end + 1) % 100000;
+		if (netcpu::taskid_begin - netcpu::taskid_end < 300)
+			throw ::std::runtime_error("too many existing tasks to allow generation of a new one");
+
+		// store taskid_end 
+		::std::ofstream f((netcpu::root_path + "taskid_end.tmp").c_str(), ::std::ios::trunc);
+		if (f.is_open() == false)
+			throw ::std::runtime_error("could not create taskid_end.tmp temporary file");
+
+		netcpu::message::typepair<uint64_t>::wire w(taskid_end);
+		uint8_t raw[sizeof(w)];
+
+		netcpu::message::to_wire<netcpu::message::typepair<uint64_t>::wire>::eval(raw, w);
+		if (!f.write(reinterpret_cast<char const *>(raw), sizeof(w)))
+			throw ::std::runtime_error("could not write taskid_end");
+
+		if (::rename((netcpu::root_path + "taskid_end.tmp").c_str(), (netcpu::root_path + "taskid_end").c_str()))
+			throw ::std::runtime_error("could not rename/mv taskid_end temporary file");
 }
+
 }}
 
 #include "io_driver.h"
@@ -371,7 +433,7 @@ namespace censoc { namespace netcpu {
 // this must be a very very small class (it will exist through the whole of the lifespan of the server)
 struct model_factory_interface {
 	void virtual new_task(netcpu::message::async_driver &, netcpu::message::task_offer & x) = 0;
-	void virtual new_task(::std::string const & name, bool pending, time_t birthday) = 0;
+	void virtual new_task(netcpu::tasks_size_type const & id, ::std::string const & name, bool pending, time_t birthday) = 0;
 	// not really needed if all of the factories are static-time duration/lifespan
 	// but could be of use when debugging for malloc issues/leaks and thereby freeing all factories at exit.
 #ifndef NDEBUG
@@ -598,12 +660,12 @@ public:
 			tsk.state(netcpu::message::task_info::state_type::pending);
 			(*i)->load_coefficients_info_et_al(msg, tsk);
 		}
-		for (censoc::stl::fastsize< ::std::list<netcpu::task *>, uint_fast32_t>::const_iterator i(completed_tasks.begin()); i != completed_tasks.end(); ++i, ++task_i) {
+		for (::std::multimap< ::time_t, netcpu::task *>::const_iterator i(completed_tasks.begin()); i != completed_tasks.end(); ++i, ++task_i) {
 			netcpu::message::task_info & tsk(msg.tasks[task_i]);
-			tsk.name.resize((*i)->name().size());
-			::memcpy(tsk.name.data(), (*i)->name().c_str(), (*i)->name().size());
+			tsk.name.resize(i->second->name().size());
+			::memcpy(tsk.name.data(), i->second->name().c_str(), i->second->name().size());
 			tsk.state(netcpu::message::task_info::state_type::completed);
-			(*i)->load_coefficients_info_et_al(msg, tsk);
+			i->second->load_coefficients_info_et_al(msg, tsk);
 		}
 		io().write(msg);
 	}
@@ -653,7 +715,7 @@ public:
 				on_pending_tasks_update();
 			if (completed_tasks.size() != completed_task_size)
 				on_completed_tasks_update();
-				io().write(netcpu::message::good());
+			io().write(netcpu::message::good());
 		} else {
 			censoc::llog() << "controller is asking to delete a task which does not exist [" << task_name << "]\n";
 			io().write(netcpu::message::bad());
@@ -761,17 +823,26 @@ run(int argc, char * * argv)
 	::boost::scoped_ptr<interface> ui(new interface(argc, argv));
 
 	{
-		// load max_taskid
+		netcpu::message::typepair<uint64_t>::wire w;
+		uint8_t raw[sizeof(w)];
+
+		// load taskid_begin
 		{
-			::std::ifstream f((netcpu::root_path + "last_taskid").c_str());
-			if (f.is_open()) {
-				netcpu::message::typepair<uint64_t>::wire w;
-				uint8_t raw[sizeof(w)];
-				if (f.read(reinterpret_cast<char *>(raw), sizeof(w))) {
-					netcpu::message::from_wire<netcpu::message::typepair<uint64_t>::wire>::eval(raw, w);
-					max_taskid = w;
-					::std::cerr << "max_taskid cached: " << max_taskid << ::std::endl;
-				}
+			::std::ifstream f((netcpu::root_path + "taskid_begin").c_str());
+			if (f.read(reinterpret_cast<char *>(raw), sizeof(w))) {
+				netcpu::message::from_wire<netcpu::message::typepair<uint64_t>::wire>::eval(raw, w);
+				taskid_begin = w;
+				::std::cerr << "taskid_begin cached: " << taskid_begin << ::std::endl;
+			}
+		}
+
+		// load taskid_end
+		{
+			::std::ifstream f((netcpu::root_path + "taskid_end").c_str());
+			if (f.read(reinterpret_cast<char *>(raw), sizeof(w))) {
+				netcpu::message::from_wire<netcpu::message::typepair<uint64_t>::wire>::eval(raw, w);
+				taskid_end = w;
+				::std::cerr << "taskid_end cached: " << taskid_end << ::std::endl;
 			}
 		}
 
@@ -819,6 +890,9 @@ run(int argc, char * * argv)
 			else if (S_ISDIR(s.st_mode) && name != "." && name != "..") {
 
 				::std::string::size_type begin_pos(name.find_first_of('_'));
+
+				netcpu::tasks_size_type const taskid(::boost::lexical_cast<netcpu::tasks_size_type>(name.substr(0, begin_pos)));
+
 				if (begin_pos == ::std::string::npos || name.size() <= ++begin_pos)
 					throw ::std::runtime_error(xxx("incorrect path found: [") << ent_path << ']' );
 
@@ -831,10 +905,10 @@ run(int argc, char * * argv)
 					throw ::std::runtime_error("corrupt directory -- unsupported model found");
 				if (completed_index.find(name) != completed_index.end()) {
 					assert(pending_index.find(name) == pending_index.end());
-					implementation->second->new_task(name, false, s.st_birthtime);
+					implementation->second->new_task(taskid, name, false, s.st_birthtime);
 				} else if (pending_index.find(name) != pending_index.end()) {
 					assert(completed_index.find(name) == completed_index.end());
-					implementation->second->new_task(name, true, s.st_birthtime);
+					implementation->second->new_task(taskid, name, true, s.st_birthtime);
 				}
 			}
 		}
@@ -859,6 +933,7 @@ run(int argc, char * * argv)
 #endif
 
 		completed_existing_tasks_parsing_during_load = true;
+		on_completed_tasks_update();
 		on_pending_tasks_update();
 
 		//{ no need in newer (i.e. self-registering task class) design...
@@ -890,12 +965,17 @@ on_pending_tasks_update()
 	::std::string const index_stream_filepath(netcpu::root_path + netcpu::pending_index_filename);
 	{
 		::std::ofstream index_stream((index_stream_filepath + ".tmp").c_str(), ::std::ios::trunc);
-		if (index_stream.is_open()) {
-			for (::std::list<netcpu::task *>::iterator i(pending_tasks.begin()); i != pending_tasks.end(); ++i) 
-				index_stream << (*i)->name() << ::std::endl;
-		}
+		if (index_stream.is_open() == false)
+			throw ::std::runtime_error("could not create pending tasks temporary file");
+
+		for (::std::list<netcpu::task *>::iterator i(pending_tasks.begin()); i != pending_tasks.end(); ++i) 
+			index_stream << (*i)->name() << ::std::endl;
+
+		if (!index_stream)
+			throw ::std::runtime_error("could not write pending tasks temporary file");
 	}
-	::rename((index_stream_filepath + ".tmp").c_str(), index_stream_filepath.c_str());
+	if (::rename((index_stream_filepath + ".tmp").c_str(), index_stream_filepath.c_str()))
+		throw ::std::runtime_error("could not rename/mv pending tasks temporary file");
 
 	assert(pending_tasks.empty() == true || pending_tasks.front() != NULL);
 	activate_front_pending_task();

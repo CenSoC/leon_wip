@@ -1086,7 +1086,8 @@ struct task_processor : ::boost::noncopyable {
 		if (server_state_sync_timer.is_pending() == true)
 			on_sync_timeout();
 		if (save_convergence_state_timer.is_pending() == true)
-			save_convergence_state();
+			do_save_convergence_state();
+
 		while (scoped_peers.empty() == false) { 
 #ifndef NDEBUG
 			size_type const scoped_peers_size(scoped_peers.size());
@@ -1523,7 +1524,7 @@ struct task_processor : ::boost::noncopyable {
 			assert(offset.size());
 
 			if (!coefficients_rand_range_ended_wait) {
-				save_convergence_state();
+				do_save_convergence_state();
 				float_type tmp_max(::boost::numeric::bounds<float_type>::lowest());
 				for (size_type i(0); i != coefficients_size - 1; ++i)
 					//for (size_type i(0); i != coefficients_size; ++i)
@@ -1603,7 +1604,7 @@ struct task_processor : ::boost::noncopyable {
 
 		if (dont_delay_saving_convergence_state == true) {
 			dont_delay_saving_convergence_state = false;
-			save_convergence_state();
+			do_save_convergence_state();
 		} else if (save_convergence_state_timer.is_pending() == false)
 			save_convergence_state_timer.timeout(boost::posix_time::minutes(55));
 
@@ -1615,6 +1616,71 @@ struct task_processor : ::boost::noncopyable {
 #endif
 	}
 
+private:
+	void
+	do_save_convergence_state()
+	{
+		assert(better_find_since_last_recentered_sync == false); 
+		censoc::llog() << "Writing convergence state to disk...\n";
+
+		::std::string const convergence_state_filepath(netcpu::root_path + netcpu::pending_tasks.front()->name() + "/convergence_state.bin");
+		{
+			converger_1::fstreamer::convergence_state_ofstreamer<N> convergence_state;
+
+			netcpu::message::serialise_to_decomposed_floating(e_min, convergence_state.get_header().value);
+			convergence_state.get_header().am_bootstrapping(am_bootstrapping == true ? 1 : 0);
+			convergence_state.get_header().intended_coeffs_at_once(intended_coeffs_at_once);
+			convergence_state.get_header().coefficients_rand_range_ended_wait(coefficients_rand_range_ended_wait);
+			convergence_state.get_header().coefficients_size(coefficients_size);
+			if (current_complexity_level != combos_modem.metadata().end())
+				convergence_state.get_header().current_complexity_level_first(current_complexity_level->first);
+#ifndef NDEBUG
+			else
+				convergence_state.get_header().current_complexity_level_first(0); // noop really...
+#endif
+			convergence_state.get_header().complexities_size(remaining_complexities.size());
+			convergence_state.get_header().visited_places_size(visited_places.size());
+
+			convergence_state.store_header(convergence_state_filepath + ".tmp");
+
+			for (size_type i(0); i != coefficients_size; ++i) {
+				coefficient_metadata<N, F> const & ram(coefficients_metadata[i]);
+				convergence_state.get_coefficient().value(ram.saved_index());
+				convergence_state.get_coefficient().range_ended(ram.range_ended() == true ? 1 : 0);
+				netcpu::message::serialise_to_decomposed_floating(ram.saved_value(), convergence_state.get_coefficient().value_f);
+				netcpu::message::serialise_to_decomposed_floating(ram.value_from(), convergence_state.get_coefficient().value_from);
+				netcpu::message::serialise_to_decomposed_floating(ram.rand_range(), convergence_state.get_coefficient().rand_range);
+				size_type const grid_resolutions_size(ram.grid_resolutions.size());
+				convergence_state.get_coefficient().grid_resolutions.resize(grid_resolutions_size);
+				for (size_type i(0); i != grid_resolutions_size; ++i)
+					convergence_state.get_coefficient().grid_resolutions(i, ram.grid_resolutions[i]);
+				convergence_state.store_coefficient();
+			}
+
+			for (typename complexities_type::const_iterator i(remaining_complexities.begin()); i != remaining_complexities.end(); ++i) {
+				convergence_state.get_complexity().complexity_begin(i->first);
+				convergence_state.get_complexity().complexity_size(i->second);
+				convergence_state.store_complexity();
+			}
+
+			for (typename ::std::unordered_set<netcpu::big_uint<size_type> >::const_iterator i(visited_places.begin()); i != visited_places.end(); ++i) {
+				convergence_state.get_visited_place().bytes.resize(i->size());
+				if (i->size())
+					i->store(convergence_state.get_visited_place().bytes.data());
+				convergence_state.store_visited_place();
+			}
+		}
+		// note -- considered to be safe w.r.t. crashing out of the application in question (given the appropriate OS and local filesystem deployment), whilst leaving the system-wide crash (e.g. power loss) detection/recovery to the file-system intergrity checks (hardware ECC, software ZFS et. al.)
+		if (::rename((convergence_state_filepath + ".tmp").c_str(), convergence_state_filepath.c_str()))
+			throw ::std::runtime_error("could not rename/mv convergence_state temporary file");
+
+		// note -- if, in future, shall be deploying sha-checksum file (a pairing file for the convergence state file as, perhaps, an overzealous robustness w.r.t. power-loss), then will need to write a specialisation of the ofstream object and template-policify the relevant ofstreaming field types. This is because the saving of the convergence state is *not* done in a DOM fashion, rather it is achieved via a streaming/chunked/incremental methodology (to save on RAM, IO, etc. when there is an enormous number of visited_places to be saved, etc). 
+		// The hashing will therefore also have to be done *incrementally*... and the easiest place to do so would be in the ofstream-derived overriding 'write' method. However, prior to doing so must carefully consider if there is sufficient probability for concern (i.e. of actually losing/corrupting data due to a loss of power, in the presence of hardware's disk error-detection as well as the file-system integrity mechanisms of ZFS et.al). Moreover, must also consider whether the whole 'hashing' will cause a bottleneck of considerable proportions. Such considerations will only become comprehensibly feasible when there shall be enough budget to get a more powerful server with greater amount of RAM and more computational nodes overall -- then one can simply launch a much more elobarote x-coefficients-at-once computational task and observe the resulting behaviour). Will delay this design step till then.
+
+		censoc::llog() << "...done writing to disk\n";
+	}
+public:
+
 	/**
 		@note ideally should only happen when 'on_sync_timeout' has synchronised all of the state-related data...
 		*/
@@ -1623,63 +1689,8 @@ struct task_processor : ::boost::noncopyable {
 	{
 		if (server_state_sync_timer.is_pending() == true) // otherwise will come around shortly anyway...
 			dont_delay_saving_convergence_state = true;
-		else {
-			assert(better_find_since_last_recentered_sync == false); 
-			censoc::llog() << "Writing convergence state to disk...\n";
-
-			::std::string const convergence_state_filepath(netcpu::root_path + netcpu::pending_tasks.front()->name() + "/convergence_state.bin");
-			{
-				converger_1::fstreamer::convergence_state_ofstreamer<N> convergence_state;
-
-				netcpu::message::serialise_to_decomposed_floating(e_min, convergence_state.get_header().value);
-				convergence_state.get_header().am_bootstrapping(am_bootstrapping == true ? 1 : 0);
-				convergence_state.get_header().intended_coeffs_at_once(intended_coeffs_at_once);
-				convergence_state.get_header().coefficients_rand_range_ended_wait(coefficients_rand_range_ended_wait);
-				convergence_state.get_header().coefficients_size(coefficients_size);
-				if (current_complexity_level != combos_modem.metadata().end())
-					convergence_state.get_header().current_complexity_level_first(current_complexity_level->first);
-#ifndef NDEBUG
-				else
-					convergence_state.get_header().current_complexity_level_first(0); // noop really...
-#endif
-				convergence_state.get_header().complexities_size(remaining_complexities.size());
-				convergence_state.get_header().visited_places_size(visited_places.size());
-
-				convergence_state.store_header(convergence_state_filepath + ".tmp");
-
-				for (size_type i(0); i != coefficients_size; ++i) {
-					coefficient_metadata<N, F> const & ram(coefficients_metadata[i]);
-					convergence_state.get_coefficient().value(ram.saved_index());
-					convergence_state.get_coefficient().range_ended(ram.range_ended() == true ? 1 : 0);
-					netcpu::message::serialise_to_decomposed_floating(ram.saved_value(), convergence_state.get_coefficient().value_f);
-					netcpu::message::serialise_to_decomposed_floating(ram.value_from(), convergence_state.get_coefficient().value_from);
-					netcpu::message::serialise_to_decomposed_floating(ram.rand_range(), convergence_state.get_coefficient().rand_range);
-					size_type const grid_resolutions_size(ram.grid_resolutions.size());
-					convergence_state.get_coefficient().grid_resolutions.resize(grid_resolutions_size);
-					for (size_type i(0); i != grid_resolutions_size; ++i)
-						convergence_state.get_coefficient().grid_resolutions(i, ram.grid_resolutions[i]);
-					convergence_state.store_coefficient();
-				}
-
-				for (typename complexities_type::const_iterator i(remaining_complexities.begin()); i != remaining_complexities.end(); ++i) {
-					convergence_state.get_complexity().complexity_begin(i->first);
-					convergence_state.get_complexity().complexity_size(i->second);
-					convergence_state.store_complexity();
-				}
-
-				for (typename ::std::unordered_set<netcpu::big_uint<size_type> >::const_iterator i(visited_places.begin()); i != visited_places.end(); ++i) {
-					convergence_state.get_visited_place().bytes.resize(i->size());
-					if (i->size())
-						i->store(convergence_state.get_visited_place().bytes.data());
-					convergence_state.store_visited_place();
-				}
-			}
-
-			if (::rename((convergence_state_filepath + ".tmp").c_str(), convergence_state_filepath.c_str()))
-				throw ::std::runtime_error("could not rename/mv convergence_state temporary file");
-
-			censoc::llog() << "...done writing to disk\n";
-		}
+		else
+			do_save_convergence_state();
 	}
 
 	void
@@ -2067,8 +2078,8 @@ struct task : netcpu::task {
 
 	::std::string short_description;
 
-	task(::std::string const & name, time_t birthday = ::time(NULL))
-	: netcpu::task(name, birthday) {
+	task(netcpu::tasks_size_type const & id, ::std::string const & name, time_t birthday = ::time(NULL))
+	: netcpu::task(id, name, birthday) {
 	}
 
 	~task()
@@ -2079,7 +2090,21 @@ struct task : netcpu::task {
 	void
 	load_short_description()
 	{
-		::std::ifstream short_description_file((netcpu::root_path + name() + "/short_description.txt").c_str(), ::std::ios::binary);
+		::std::string const my_path(netcpu::root_path + name() + '/');
+
+		// note -- triggering the immediate (upon startup/loading of the server, as opposed to "during given tasks's activation" or, in some cases, "task_list query") true-negative if any of the previous running instances of the server have left an incomplete task directory...
+		// todo -- later on, do refactor away from throwing a runtime_error in this ('load_short_description') method towards a virtual method/interface of a base class (task)... something like 'verify_dir'. This will allow to have more choices of either gracefully degrading/deprecating the directory in question (vs bailing out on the whole server app, which in itself is not too bad as it is only expected to occur when server box crashes). 
+		if (::boost::filesystem::exists(my_path + "res.msg") == false)
+			throw ::std::runtime_error("corrupt task directory(=" + my_path + ") missing res.msg");
+		else if (::boost::filesystem::exists(my_path + "meta.msg") == false)
+			throw ::std::runtime_error("corrupt task directory(=" + my_path + ") missing meta.msg");
+		else if (::boost::filesystem::exists(my_path + "bulk.msg") == false)
+			throw ::std::runtime_error("corrupt task directory(=" + my_path + ") missing bulk.msg");
+		else if (::boost::filesystem::exists(my_path + "short_description.txt") == false)
+			throw ::std::runtime_error("corrupt task directory(=" + my_path + ") missing short_description.txt");
+		// todo -- consider a possibilty of a more zealous approach of also having an sha checksum file for each of the above files for the sake of being robust w.r.t. complete power-loss of the box (although this must be considered in a context of the already-present hardware error correction (disk drives) and the file-system integrity mechanims such as ZFS) 
+
+		::std::ifstream short_description_file((my_path + "short_description.txt").c_str(), ::std::ios::binary);
 		if (!short_description_file) // compulsory
 			throw ::std::runtime_error("missing short_description during load");
 		::std::getline(short_description_file, short_description);
@@ -2225,25 +2250,30 @@ struct task_loader_detail : netcpu::io_wrapper<netcpu::message::async_driver> {
 	::std::unique_ptr<converger_1::task<N, F, Model, ModelId> > t;
 
 	task_loader_detail(netcpu::message::async_driver & io_driver)
-	: netcpu::io_wrapper<netcpu::message::async_driver>(io_driver), 
-	// generating name in a form "COUNTER_MODELID-INTRESxFLOATRES" e.g. "1_1-0x1" (TODO -- make it more elegant)
-	t(
-		(io().error_callback(&task_loader_detail::on_error, this), // installing it here, before newing up of others so that if others throw netcpu exception, the error callback will be evoked... an alternative design would be to revert to older code where 'on_error' et al were virtual (and implicitly assigned in the base class)... but that normally causes more implicit confusion w.r.t. behaviour in the majority of cases.
-		new converger_1::task<N, F, Model, ModelId>(netcpu::generate_taskdir(::std::string(xxx(int(ModelId))) + '-' + ::std::string(xxx(int(converger_1::message::int_res<N>::value))) + 'x' + ::std::string(xxx(int(converger_1::message::float_res<F>::value)))))
-		)
-	) {
+	: netcpu::io_wrapper<netcpu::message::async_driver>(io_driver) {
+
+		// installing it here, before newing up of others so that if others throw netcpu exception, the error callback will be evoked... an alternative design would be to revert to older code where 'on_error' et al were virtual (and implicitly assigned in the base class)... but that normally causes more implicit confusion w.r.t. behaviour in the majority of cases.
+		io().error_callback(&task_loader_detail::on_error, this); 
+
+		netcpu::tasks_size_type id; ::std::string name;
+
+		// generating name in a form "COUNTER_MODELID-INTRESxFLOATRES" e.g. "1_1-0x1" (TODO -- make it more elegant)
+		netcpu::generate_taskdir(::std::string(xxx(int(ModelId))) + '-' + ::std::string(xxx(int(converger_1::message::int_res<N>::value))) + 'x' + ::std::string(xxx(int(converger_1::message::float_res<F>::value))), id, name);
+
+		t.reset(new converger_1::task<N, F, Model, ModelId>(id, name));
 
 		assert(t != NULL);
 
 		assert(converger_1::message::res::myid == io().read_raw.id());
 
-		::std::string const res_filepath(netcpu::root_path + t->name() + "/res.msg");
+		::std::string const res_filepath(netcpu::root_path + name + "/res.msg");
 		{
 			::std::ofstream res_file((res_filepath + ".tmp").c_str(), ::std::ios::binary | ::std::ios::trunc);
 			res_file.write(reinterpret_cast<char const *>(io().read_raw.head()), io().read_raw.size());
 			if (!res_file)
 				throw ::std::runtime_error("could not write " + res_filepath + ".tmp");
 		}
+		// note -- considered to be safe w.r.t. crashing out of the application in question (given the appropriate OS and local filesystem deployment), whilst leaving the system-wide crash (e.g. power loss) detection/recovery to the file-system intergrity checks (hardware ECC, software ZFS et. al.)
 		if (::rename((res_filepath + ".tmp").c_str(), res_filepath.c_str()))
 			throw ::std::runtime_error("could not rename/mv res.msg temporary file");
 
@@ -2287,6 +2317,7 @@ struct task_loader_detail : netcpu::io_wrapper<netcpu::message::async_driver> {
 			if (!meta_file)
 				throw ::std::runtime_error("could not write " + meta_filepath + ".tmp");
 		}
+		// note -- considered to be safe w.r.t. crashing out of the application in question (given the appropriate OS and local filesystem deployment), whilst leaving the system-wide crash (e.g. power loss) detection/recovery to the file-system intergrity checks (hardware ECC, software ZFS et. al.)
 		if (::rename((meta_filepath + ".tmp").c_str(), meta_filepath .c_str()))
 			throw ::std::runtime_error("could not rename/mv meta.msg temporary file");
 
@@ -2332,6 +2363,7 @@ struct task_loader_detail : netcpu::io_wrapper<netcpu::message::async_driver> {
 			if (!bulk_file)
 				throw ::std::runtime_error("could not write " + bulk_filepath + ".tmp");
 		}
+		// note -- considered to be safe w.r.t. crashing out of the application in question (given the appropriate OS and local filesystem deployment), whilst leaving the system-wide crash (e.g. power loss) detection/recovery to the file-system intergrity checks (hardware ECC, software ZFS et. al.)
 		if (::rename((bulk_filepath + ".tmp").c_str(), bulk_filepath.c_str()))
 			throw ::std::runtime_error("could not rename/mv bulk.msg temporary file");
 
@@ -2422,6 +2454,7 @@ struct task_loader_detail : netcpu::io_wrapper<netcpu::message::async_driver> {
 			if (!short_description_file)
 				throw ::std::runtime_error("could not write " + short_description_filepath + ".tmp");
 		}
+		// note -- considered to be safe w.r.t. crashing out of the application in question (given the appropriate OS and local filesystem deployment), whilst leaving the system-wide crash (e.g. power loss) detection/recovery to the file-system intergrity checks (hardware ECC, software ZFS et. al.)
 		if (::rename((short_description_filepath + ".tmp").c_str(), short_description_filepath.c_str()))
 			throw ::std::runtime_error("could not rename/mv short_description_filepath.txt temporary file");
 
@@ -2534,7 +2567,7 @@ struct model_factory : netcpu::model_factory_base<ModelId> {
 	}
 
 	void
-	new_task(::std::string const & name, bool pending, time_t birthday)
+	new_task(netcpu::tasks_size_type const & id, ::std::string const & name, bool pending, time_t birthday)
 	{
 		// expecting name in a form "COUNTER_MODELID-INTRESxFLOATRES" e.g. "1_1-0x1"
 		::std::string::size_type int_res_pos(name.find_first_of('-'));
@@ -2552,9 +2585,9 @@ struct model_factory : netcpu::model_factory_base<ModelId> {
 		::std::clog << "float res from name: " << float_res << ::std::endl;
 
 		if (int_res == converger_1::message::int_res<uint32_t>::value)
-			new_task_detail<uint32_t>(float_res, name, pending, birthday);
+			new_task_detail<uint32_t>(float_res, id, name, pending, birthday);
 		else if (int_res == converger_1::message::int_res<uint64_t>::value)
-			new_task_detail<uint64_t>(float_res, name, pending, birthday);
+			new_task_detail<uint64_t>(float_res, id, name, pending, birthday);
 		else
 			throw ::std::runtime_error(xxx("unsupported int resolution: [") << int_res << ']');
 	}
@@ -2562,12 +2595,12 @@ struct model_factory : netcpu::model_factory_base<ModelId> {
 private:
 	template <typename IntRes>
 	void 
-	new_task_detail(int float_res, ::std::string const & name, bool pending, time_t birthday)
+	new_task_detail(int float_res, netcpu::tasks_size_type const & id, ::std::string const & name, bool pending, time_t birthday)
 	{
 		if (float_res == converger_1::message::float_res<float>::value)
-			new_task_detail<IntRes, float>(name, pending, birthday);
+			new_task_detail<IntRes, float>(id, name, pending, birthday);
 		else if (float_res == converger_1::message::float_res<double>::value)
-			new_task_detail<IntRes, double>(name, pending, birthday);
+			new_task_detail<IntRes, double>(id, name, pending, birthday);
 		else // TODO -- may be as per 'on_read' -- write a bad message to client (more verbose)
 			throw ::std::runtime_error(xxx("unsupported floating resolution: [") << float_res << ']');
 		// no need for scope or shared ptr -- queued_taks is self-managed (and externally managed by the pending_tasks list), moreover if any of the insertions throw in ctor of task -- then such will not be ctored/newed-up anyway
@@ -2575,9 +2608,9 @@ private:
 
 	template <typename IntRes, typename FloatRes>
 	void
-	new_task_detail(::std::string const & name, bool pending, time_t birthday)
+	new_task_detail(netcpu::tasks_size_type const & id, ::std::string const & name, bool pending, time_t birthday)
 	{
-		converger_1::task<IntRes, FloatRes, Model<IntRes, FloatRes>, ModelId> * t(new converger_1::task<IntRes, FloatRes, Model<IntRes, FloatRes>, ModelId>(name, birthday));
+		converger_1::task<IntRes, FloatRes, Model<IntRes, FloatRes>, ModelId> * t(new converger_1::task<IntRes, FloatRes, Model<IntRes, FloatRes>, ModelId>(id, name, birthday));
 		t->load_short_description();
 		if (pending == true)
 			t->markpending();
