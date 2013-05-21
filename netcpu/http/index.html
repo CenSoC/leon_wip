@@ -194,6 +194,10 @@ div, p, ul, li {
 	font-size: inherit;
 }
 
+label, input[type='checkbox'], button {
+	cursor: pointer;
+}
+
 .extra_option_text {
 	font-size:11pt;
 }
@@ -1739,12 +1743,10 @@ function new_task_type()
 		var shrink_slowdown_value = parseFloat(shrink_slowdown.value);
 		var repeats_value = parseInt(repeats.value);
 
-		var cli_string = "some debug/CLI info:\n";
+		var cli_string = short_description_input.value + '\n';
 
 		if (!short_description_input.value.length || short_description_input.value.length > 100)
 			return bail_on_wrong_user_values("Must supply a short (under 100 chars) one-phrase -line project description");
-		cli_string += "--short_description " + short_description_input.value + '\n';
-		form.append("--short_description", short_description_input.value);
 
 		cli_string += "--model " + model_value + ":offer\n";
 		cli_string += "--fromrow " + fromrow  + '\n';
@@ -1946,7 +1948,9 @@ function new_task_type()
 		else
 			cli_string += "--csv_strip_n_zip false\n";
 
-		to_server.innerHTML = cli_string;
+		to_server.innerHTML = "some debug/CLI info:\n" + cli_string;
+
+		form.append("--short_description", cli_string);
 
 		function stop_waiting()
 		{
@@ -1967,7 +1971,7 @@ function new_task_type()
 					//alert(this.responseText);
 					var obj = JSON.parse(this.responseText);
 					if (obj.echo) {
-						from_server.innerHTML = "Server says OK: " + obj.echo;
+						from_server.innerHTML = "Server says OK: " + obj.echo + "<em>New Task ID is</em> <b>ID=" + obj.task.split(/[_\-x]/g)[0] + "</b>";
 					} else if (obj.error) {
 						from_server.innerHTML = "Server says BAD: " + obj.error;
 					}
@@ -2477,9 +2481,11 @@ canvas_painter_type.comparative_chart_coeff_center_y_padding = canvas_painter_ty
 canvas_painter_type.comparative_chart_y_padding = canvas_painter_type.comparative_chart_coeff_center_y_padding * 2;
 //}
 
-function canvas_painter_type(canvas, terrain_elevation_value_, coefficients, task_name, model_id, betas_size) 
+function canvas_painter_type(canvas, terrain_elevation_value_, coefficients, model_id, model_name, betas_size) 
 {
 	var canvas_painter_type_this = this;
+
+	var painted_task_name = "ID=" + model_id + " (" + model_name + ')';
 
 	var terrain_elevation_value = model_id < 5 ? -terrain_elevation_value_ : terrain_elevation_value_;
 	var drawn_coefficients_size = model_id == 1 ? betas_size : betas_size * 2;
@@ -2497,7 +2503,7 @@ function canvas_painter_type(canvas, terrain_elevation_value_, coefficients, tas
 	
 	this.get_task_name_metrics = function(context)
 	{
-		return context.measureText(task_name);
+		return context.measureText(painted_task_name);
 	}
 
 	this.get_terrain_elevation_value = function()
@@ -2521,11 +2527,11 @@ function canvas_painter_type(canvas, terrain_elevation_value_, coefficients, tas
 		return normalised_value;
 	}
 
-	this.paint_comparison = function(context, label_y, label_font_size, terrain_elevation_value_left, terrain_elevation_value_middle, terrain_elevation_value_right, task_name_left, coefficients_left, min_terrain_elevation_value, terrain_elevation_value_scaler, coefficients_value_scaler, canvas_height)
+	this.paint_comparison = function(context, label_y, label_font_size, terrain_elevation_value_left, terrain_elevation_value_middle, terrain_elevation_value_right, task_name_left, task_name_right, coefficients_left, min_terrain_elevation_value, terrain_elevation_value_scaler, coefficients_value_scaler, canvas_height)
 	{
 		context.lineWidth = 1.5;
 
-		context.fillText(task_name, task_name_left, canvas_height - label_y);
+		context.fillText(painted_task_name, task_name_left, canvas_height - label_y);
 		context.beginPath();
 		var terrain_elevation_value_y = canvas_height - (terrain_elevation_value - min_terrain_elevation_value) * terrain_elevation_value_scaler - canvas_painter_type.comparative_chart_coeff_center_y_padding;
 		context.moveTo(terrain_elevation_value_left, terrain_elevation_value_y);
@@ -2535,14 +2541,20 @@ function canvas_painter_type(canvas, terrain_elevation_value_, coefficients, tas
 		context.lineWidth = 0.47;
 		context.beginPath();
 		context.moveTo(terrain_elevation_value_middle, terrain_elevation_value_y);
-		context.lineTo(task_name_left, canvas_height - label_y - label_font_size * .3);
+
+		var text_midpoint_y = canvas_height - label_y - label_font_size * .3;
+		context.lineTo(task_name_left, text_midpoint_y);
+
+		context.moveTo(task_name_left + this.get_task_name_metrics(context).width, text_midpoint_y);
+		context.lineTo(task_name_right, text_midpoint_y);
+
 		context.stroke();
 		context.closePath();
 
 		var first_coefficient_centre = coefficients_left + canvas_painter_type.coefficient_circle_radius;
 
 		context.beginPath();
-		context.moveTo(task_name_left + this.get_task_name_metrics(context).width, canvas_height - label_y - label_font_size * .3);
+		context.moveTo(task_name_right, text_midpoint_y);
 		var coefficient_centre = first_coefficient_centre;
 		for (var i = 0; i < betas_size; ++i, coefficient_centre += coefficient_centre_stepsize)
 			context.lineTo(coefficient_centre, canvas_height - coefficients[i].normalised_value * coefficients_value_scaler - canvas_painter_type.comparative_chart_coeff_center_y_padding);
@@ -2821,7 +2833,8 @@ function tasks_list_type()
 					max_label_width = tmp_width;
 				var tmp_offset = (max_label_width - tmp_width) * .5;
 
-				var coefficients_left = task_name_left + max_label_width + 30;
+				var task_name_right = task_name_left + max_label_width;
+				var coefficients_left = task_name_right + 30;
 				var norm_coeffs_label_left = canvas_width + coefficients_left + 5;
 
 				canvas_width = norm_coeffs_label_left + font_size;
@@ -2899,7 +2912,7 @@ function tasks_list_type()
 					context.strokeStyle = rgb_color;
 					context.fillStyle = rgb_color;
 
-					painters[i].paint_comparison(context, tmp_offset, font_size, terrain_elevation_value_left, terrain_elevation_value_middle, terrain_elevation_value_right, task_name_left, coefficients_left, min_terrain_elevation_value, terrain_elevation_value_scaler, coefficients_value_scaler, canvas_height);
+					painters[i].paint_comparison(context, tmp_offset, font_size, terrain_elevation_value_left, terrain_elevation_value_middle, terrain_elevation_value_right, task_name_left, task_name_right, coefficients_left, min_terrain_elevation_value, terrain_elevation_value_scaler, coefficients_value_scaler, canvas_height);
 
 					tmp_offset += 17;
 				}
@@ -3003,7 +3016,24 @@ function tasks_list_type()
 				var task_state = obj.tasks[i].state;
 				var task_complete = (task_state == "complete" ? true : false);
 
-				var model_id = parseInt(obj.tasks[i].name.split(/[_\-x]/g)[1]);
+				var decomposed_name = obj.tasks[i].name.split(/[_\-x]/g);
+				var task_id = parseInt(decomposed_name[0]);
+				var model_id = parseInt(decomposed_name[1]);
+				var model_name = "";
+				switch (model_id) {
+				case 1:
+				model_name = "Logit";
+				break;
+				case 2:
+				model_name = "MixL";
+				break;
+				case 3:
+				model_name = "GMNL-II";
+				break;
+				case 4:
+				model_name = "Gmnl2a";
+				break;
+				}
 
 				var meta_text;
 				if (obj.meta_text && !i)
@@ -3084,7 +3114,7 @@ function tasks_list_type()
 				//}
 
 				td = document.createElement("td");
-				td.appendChild(document.createTextNode(task_name));
+				td.appendChild(document.createTextNode("ID=" + task_id + " (" + model_name + ')'));
 				header_row.appendChild(td);
 
 				//{ show details control
@@ -3114,12 +3144,46 @@ function tasks_list_type()
 							td.appendChild(div);
 						}
 
+						// { short description
+						var short_description_div = document.createElement("div");
+
+						var short_description_pre = document.createElement("pre");
+						short_description_pre.className = "help_content_fieldname";
+						short_description_pre.style.display="inline";
+
+						var first_line_short_description_index = short_description.indexOf('\n');
+						var first_line_short_description = short_description.substring(0, first_line_short_description_index != -1 ? Math.min(first_line_short_description_index, 50) : 50);
+
+						short_description_pre.appendChild(document.createTextNode(first_line_short_description));
+						short_description_div.appendChild(short_description_pre);
+						short_description_div.appendChild(document.createTextNode(" ("));
+
+						var short_description_label = document.createElement("label");
+						short_description_label.appendChild(document.createTextNode("more..."));
+						short_description_label.className = "extra_option_text";
+						short_description_label.style.textDecoration = "underline";
+
+						short_description_div.appendChild(short_description_label);
+						short_description_div.appendChild(document.createTextNode(')'));
+
+						short_description_label.is_expanded = false;
+						short_description_label.onclick = function ()
 						{
-						var div = document.createElement("div");
-						div.className = "task_order_column";
-						div.appendChild(document.createTextNode(short_description));
-						td.appendChild(div);
+							if (this.is_expanded == false) {
+								this.is_expanded = true;
+								short_description_label.replaceChild(document.createTextNode("less..."), short_description_label.firstChild);
+								short_description_pre.className = "extra_option_text";
+								short_description_pre.replaceChild(document.createTextNode(short_description), short_description_pre.firstChild);
+							} else {
+								this.is_expanded = false;
+								short_description_label.replaceChild(document.createTextNode("more..."), short_description_label.firstChild);
+								short_description_pre.className = "help_content_fieldname";
+								short_description_pre.replaceChild(document.createTextNode(first_line_short_description), short_description_pre.firstChild);
+							}
 						}
+
+						td.appendChild(short_description_div);
+						//}
 
 						if (coefficients) {
 
@@ -3292,7 +3356,7 @@ function tasks_list_type()
 							td.appendChild(overflow_holder_1);
 
 							var canvas = document.createElement("canvas");
-							canvas.painter = new canvas_painter_type(canvas, terrain_elevation_value, coefficients, task_name, model_id, betas_size);
+							canvas.painter = new canvas_painter_type(canvas, terrain_elevation_value, coefficients, model_id, model_name, betas_size);
 
 
 							var overflow_holder_2 = document.createElement("div");
@@ -3457,7 +3521,7 @@ function tasks_list_type()
 			obj.tasks[i] = new function() {
 				this.value = 11.2 + i;
 				this.name = i + "_3-1x2";
-				this.short_description = "this is something blah blah blah";
+				this.short_description = 'this is something blah blah blah\naostu asoetusaoteh asth\nanoetuhnaeothu an\nanotehu\naoneu';
 				this.state = "pending";
 				this.coefficients = [
 					{ value : 0.3 + i * .5 , from : 0.1 , range : 0.5 }, 
@@ -3884,7 +3948,7 @@ The <span class="help_content_fieldname">Extended floating-point res</span> is f
 </ul>
 </div>
 <div class="help_content" id="help_short_description_content">
-This field requires one, in the spirit of being a good citizen, to provide a short description/tag of the project (e.g. "carbon pro. for Jordan"). This allows others to better determine whether they want to "jump the queue" potentially pausing/delaying computation of other active/pending tasks. This field is <em>not</em> a replacement for proactive note-taking -keeping by the user. The user is expected to keep a <em>concurrent</em> set of notes relating to the processed task (why the task is created, what dataset is being used and why, what project the whole thing belongs to, etc). The process, therefore, is as follows: after adding a new task, <em>DO</em> take note of (i.e. write down) the returned task-id and any of the submission-parameters of interest (e.g. example CLI/debug values); upon task's completion add to the notes the resulting coefficients values. Use the notes in your research.
+This field requires one, in the spirit of being a good citizen, to provide a short description/tag of the project (e.g. "carbon pro. for Jordan"). This allows others to better determine whether they want to "jump the queue" potentially pausing/delaying computation of other active/pending tasks. This field is <em>not</em> a replacement for proactive note-taking -keeping by the user. The user is expected to keep a <em>concurrent</em> set of notes relating to the processed task (why the task is created, what dataset is being used and why, what project the whole thing belongs to, etc). The process, therefore, is as follows: after adding a new task, <em>DO</em> take note of (i.e. write down) the returned task-id and use it in your records/notes; upon task's completion add to the relevant notes the resulting coefficients values et. al.; use the notes in your research.
 </div>
 <div id="visible_dims" style="width:100%;height:100%;position:fixed;left:0;top:0;visibility:hidden;z-index:-1"></div>
 </body>

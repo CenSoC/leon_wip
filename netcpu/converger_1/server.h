@@ -2076,6 +2076,7 @@ struct task : netcpu::task {
 
 	::censoc::unique_ptr<converger_1::task_processor<N, F, Model, ModelId> > active_task_processor;
 
+	// TODO !!! -- consider reworking the naming/use, as per current design it is not really that short :-)
 	::std::string short_description;
 
 	task(netcpu::tasks_size_type const & id, ::std::string const & name, time_t birthday = ::time(NULL))
@@ -2107,7 +2108,7 @@ struct task : netcpu::task {
 		::std::ifstream short_description_file((my_path + "short_description.txt").c_str(), ::std::ios::binary);
 		if (!short_description_file) // compulsory
 			throw ::std::runtime_error("missing short_description during load");
-		::std::getline(short_description_file, short_description);
+		short_description.assign(::std::istreambuf_iterator<char>(short_description_file), ::std::istreambuf_iterator<char>());
 	}
 
 	void
@@ -2442,8 +2443,8 @@ struct task_loader_detail : netcpu::io_wrapper<netcpu::message::async_driver> {
 		converger_1::message::short_description short_description_msg;
 		short_description_msg.from_wire(io().read_raw);
 
-		if (short_description_msg.text.size() > 100)
-			throw netcpu::message::exception("new task has invalid short description of the project -- must be under 100 chars in length");
+		if (short_description_msg.text.size() > 2048) // todo -- will, probably, need to be more flexible
+			throw netcpu::message::exception("new task has short description which is too long");
 
 		::std::string const jsoned_short_description(converger_1::escape_json(::std::string(short_description_msg.text.data(), short_description_msg.text.size())));
 

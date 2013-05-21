@@ -502,7 +502,7 @@ struct task_loader_detail : netcpu::io_wrapper<AsyncDriver> {
 			// TODO -- the code of calling "on_new_in_chain" is currently untested... (i.e. loading multiple jobs in one invocation)... 
 
 			// TODO -- move this whole 'json' thingy to http codebase!!! remains here as a quick hack to be refactored later when theres some time to do so...
-			(new netcpu::peer_connection(base_type::io()))->on_new_in_chain("{\"echo\":\"" + feedback_string + "New job accepted(=" + ::std::string(msg.name.data(), msg.name.size()) + ")\"}");
+			(new netcpu::peer_connection(base_type::io()))->on_new_in_chain("{\"echo\":\"" + feedback_string + "\", \"task\":\"" + ::std::string(msg.name.data(), msg.name.size()) + "\"}");
 		} else
 			censoc::llog() << "wanted new_taskname message, but did not get one.\n";
 	}
