@@ -606,7 +606,7 @@ public:
 				{
 					// calculate covariate distribution draws
 					CENSOC_ALIGNED_RESTRICTED_CONST_PTR_FROM_LOCAL_SCALAR(float_type const, sigma_portion_value, phi_covariance.value());
-					CENSOC_ALIGNED_RESTRICTED_CONST_PTR_FROM_LOCAL_SCALAR(float_type const, phi_portion_value, 1 - phi_covariance.value());
+					CENSOC_ALIGNED_RESTRICTED_CONST_PTR_FROM_LOCAL_SCALAR(float_type const, phi_portion_value, 1 - ::std::abs(phi_covariance.value()));
 					CENSOC_ALIGNED_RESTRICTED_CONST_PTR(float_type const, sigma_draws_, matrix_haltons_sigma + i_modulo * float_repetitions_column_stride_size);
 					CENSOC_ALIGNED_RESTRICTED_CONST_PTR(float_type const, phi_draws_, phi_draws + i_modulo * float_repetitions_column_stride_size);
 					CENSOC_ALIGNED_RESTRICTED_CONST_PTR(float_type, phi_covariance_draws_cache_, phi_covariance_draws_cache + i_modulo * float_repetitions_column_stride_size);
