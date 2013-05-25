@@ -2481,11 +2481,11 @@ canvas_painter_type.comparative_chart_coeff_center_y_padding = canvas_painter_ty
 canvas_painter_type.comparative_chart_y_padding = canvas_painter_type.comparative_chart_coeff_center_y_padding * 2;
 //}
 
-function canvas_painter_type(canvas, terrain_elevation_value_, coefficients, model_id, model_name, betas_size) 
+function canvas_painter_type(canvas, terrain_elevation_value_, coefficients, task_id, model_id, model_name, betas_size) 
 {
 	var canvas_painter_type_this = this;
 
-	var painted_task_name = "ID=" + model_id + " (" + model_name + ')';
+	var painted_task_name = "ID=" + task_id + " (" + model_name + ')';
 
 	var terrain_elevation_value = model_id < 5 ? -terrain_elevation_value_ : terrain_elevation_value_;
 	var drawn_coefficients_size = model_id == 1 ? betas_size : betas_size * 2;
@@ -3054,10 +3054,62 @@ function tasks_list_type()
 
 				var header_row = document.createElement("tr");
 
+				// quick-hack (temporary testing of GUI listing textual discription all the time, even when in the collapsed/tabled mode)
+				// { short description
+
+				var short_description_container = document.createElement("td");
+				short_description_container.colSpan = 5;
+				short_description_container.className = "task_order_column";
+				short_description_container.style.borderTopWidth = "3px";
+				short_description_container.style.borderTopColor = "purple";
+				short_description_container.style.borderTopStyle = "inset";
+				short_description_container.style.borderBottomWidth = "0px";
+
+				var short_description_pre = document.createElement("pre");
+				short_description_pre.className = "help_content_fieldname";
+				short_description_pre.style.display="inline";
+
+				var first_line_short_description_index = short_description.indexOf('\n');
+				var first_line_short_description = short_description.substring(0, first_line_short_description_index != -1 ? Math.min(first_line_short_description_index, 30) : 30) + ' ';
+
+				short_description_pre.appendChild(document.createTextNode(first_line_short_description));
+				short_description_container.appendChild(short_description_pre);
+				short_description_container.appendChild(document.createTextNode(" ("));
+
+				var short_description_label = document.createElement("label");
+				short_description_label.appendChild(document.createTextNode("more..."));
+				short_description_label.className = "extra_option_text";
+				short_description_label.style.textDecoration = "underline";
+
+				short_description_container.appendChild(short_description_label);
+				short_description_container.appendChild(document.createTextNode(')'));
+
+				short_description_label.is_expanded = false;
+				short_description_label.onclick = function ()
+				{
+					if (this.is_expanded == false) {
+						this.is_expanded = true;
+						short_description_label.replaceChild(document.createTextNode("less..."), short_description_label.firstChild);
+						short_description_pre.className = "extra_option_text";
+						short_description_pre.replaceChild(document.createTextNode(short_description), short_description_pre.firstChild);
+					} else {
+						this.is_expanded = false;
+						short_description_label.replaceChild(document.createTextNode("more..."), short_description_label.firstChild);
+						short_description_pre.className = "help_content_fieldname";
+						short_description_pre.replaceChild(document.createTextNode(first_line_short_description), short_description_pre.firstChild);
+					}
+				}
+
+				header_row.appendChild(short_description_container);
+				tbl.appendChild(header_row);
+				//}
+
+				header_row = document.createElement("tr");
+
 				//{ task position/order control
 				td = document.createElement("td");
 				td.className = "task_order_column";
-				td.style.borderBottom = "0";
+				td.style.borderTopWidth = "0px";
 				var inpt = document.createElement("input");
 				//inpt.type = "number";
 				inpt.size = inpt_size;
@@ -3144,46 +3196,6 @@ function tasks_list_type()
 							td.appendChild(div);
 						}
 
-						// { short description
-						var short_description_div = document.createElement("div");
-
-						var short_description_pre = document.createElement("pre");
-						short_description_pre.className = "help_content_fieldname";
-						short_description_pre.style.display="inline";
-
-						var first_line_short_description_index = short_description.indexOf('\n');
-						var first_line_short_description = short_description.substring(0, first_line_short_description_index != -1 ? Math.min(first_line_short_description_index, 50) : 50);
-
-						short_description_pre.appendChild(document.createTextNode(first_line_short_description));
-						short_description_div.appendChild(short_description_pre);
-						short_description_div.appendChild(document.createTextNode(" ("));
-
-						var short_description_label = document.createElement("label");
-						short_description_label.appendChild(document.createTextNode("more..."));
-						short_description_label.className = "extra_option_text";
-						short_description_label.style.textDecoration = "underline";
-
-						short_description_div.appendChild(short_description_label);
-						short_description_div.appendChild(document.createTextNode(')'));
-
-						short_description_label.is_expanded = false;
-						short_description_label.onclick = function ()
-						{
-							if (this.is_expanded == false) {
-								this.is_expanded = true;
-								short_description_label.replaceChild(document.createTextNode("less..."), short_description_label.firstChild);
-								short_description_pre.className = "extra_option_text";
-								short_description_pre.replaceChild(document.createTextNode(short_description), short_description_pre.firstChild);
-							} else {
-								this.is_expanded = false;
-								short_description_label.replaceChild(document.createTextNode("more..."), short_description_label.firstChild);
-								short_description_pre.className = "help_content_fieldname";
-								short_description_pre.replaceChild(document.createTextNode(first_line_short_description), short_description_pre.firstChild);
-							}
-						}
-
-						td.appendChild(short_description_div);
-						//}
 
 						if (coefficients) {
 
@@ -3356,7 +3368,7 @@ function tasks_list_type()
 							td.appendChild(overflow_holder_1);
 
 							var canvas = document.createElement("canvas");
-							canvas.painter = new canvas_painter_type(canvas, terrain_elevation_value, coefficients, model_id, model_name, betas_size);
+							canvas.painter = new canvas_painter_type(canvas, terrain_elevation_value, coefficients, task_id, model_id, model_name, betas_size);
 
 
 							var overflow_holder_2 = document.createElement("div");
@@ -3900,9 +3912,15 @@ As a matter of further computational efficiency the algorithm has an option to u
 <p>
 Moreover, as the convergence process zooms in -- one may consider the possibility of terrain becoming <em>smoother</em> (e.g. with lesser traits of multidimensional diagonality). To this extent, the algorithm allows additional (alternative) complexities settings when the zoom-in process crosses certain thresholds. There could be any <span class="help_content_fieldname">Number of additional complexity settings</span>. 
 <br>A given additional complexity comes "into effect" when all of the coefficients' exploration ranges are below specified threshold (such threshold is individually-configurable for each of the coefficients via <span class="help_content_fieldname">Activate @range less than</span>).
-<p class="freeform_cli_example">
-NOTE: given the current lack of proper hardware used to deploy various servers, it is NOT recommended to have any
-"complexity size" of <span class="help_content_fieldname">max-coefficients-@once</span> fields to be over 4-coefficients-@once limit!
+<div class="freeform_cli_example">
+NOTE: given the current lack of proper hardware used to deploy various servers (i.e. my current computer), it is NOT recommended to have any of the
+<ul>
+<li>complexity-size of <span class="help_content_fieldname">max-coefficients-@once</span> fields to be over 4-coefficients-@once limit </li>
+<li>given zoom final complexity size (i.e. total number of "log-likelihood or similar" evaluations in max-coeffs-at-once context) to be over 2000000 or so!  </li>
+</ul>
+The final complexity sizes are usually printed out when the job is accepted by the server (or you may choose to control/limit it with the <span class="help_content_fieldname">Max. evaluations in any complexity</span> control). More on this will be documented later (if need be)...
+</div>
+<br>
 </div>
 
 <div class="help_content" id="help_vcgw_misc_content">
