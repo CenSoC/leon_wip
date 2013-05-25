@@ -67,6 +67,9 @@ public:
 		BOOST_STATIC_ASSERT(Align >= sizeof(T));
 		BOOST_STATIC_ASSERT(!(Align % sizeof(T)));
 
+		delete [] raw;
+		raw = NULL;
+
 		raw = new T[size + Align / sizeof(T) - 1];
 		uintptr_t const raw_int(reinterpret_cast<uintptr_t>(raw));
 		assert(!(raw_int % sizeof(T)));
