@@ -146,7 +146,22 @@ public:
 		assert(rand_range_ != 0);
 		assert(grid_resolutions[0] >= grid_res);
 
-		tmp_value_.index((500 + uint_fast64_t(1000) * grid_i * grid_resolutions[0] / grid_res) / 1000, grid_resolutions[0], value_from_, rand_range_);
+		size_type const hires_x2(grid_resolutions[0] + grid_resolutions[0]);
+		size_type const lores_x2(grid_res + grid_res);
+
+		size_type const target_grid_i((grid_i * hires_x2 + grid_resolutions[0]) / lores_x2);
+		assert(target_grid_i < grid_resolutions[0]);
+#ifndef NDEBUG
+		{ // sanity checking -- enumerate all source grid-points and make sure they dont result in the same/dupliace target grid-points
+			::std::set<size_type> uniques;
+			for (size_type i(0); i != grid_res; ++i) {
+				size_type const target_grid_i((i * hires_x2 + grid_resolutions[0]) / lores_x2);
+				assert(target_grid_i < grid_resolutions[0]);
+				assert(uniques.insert(target_grid_i).second == true);
+			}
+		}
+#endif
+		tmp_value_.index(target_grid_i, grid_resolutions[0], value_from_, rand_range_);
 	}
 
 	template <typename Vector>
