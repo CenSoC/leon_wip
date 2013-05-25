@@ -494,7 +494,7 @@ struct field_interface_base : ::boost::noncopyable {
 #ifndef NDEBUG
 #ifndef NDEBUG_XSLOW
 		bool found(false);
-		for (message::fields_master_type::fields_type::iterator i(fields->begin()); i != fields->end(); ++i) {
+		for (typename FieldsMasterTraits::fields_type::iterator i(fields->begin()); i != fields->end(); ++i) {
 			if (*i == deriving_this) {
 				if (found == false)
 					found = true;
