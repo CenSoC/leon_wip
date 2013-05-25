@@ -39,8 +39,10 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 #include <string>
+#include <set>
 
 #include <boost/tokenizer.hpp>
+#include <boost/filesystem.hpp>
 
 // does not currently (boost v.1_52) work with -fno-rtti switch (calls typeid), but I really dont wanna enable the damn thing, so will currently write an alternative code
 // #include <boost/iostreams/device/array.hpp>
