@@ -44,9 +44,9 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <openssl/bn.h>
 
-#include <vector>
-
 #include <boost/shared_ptr.hpp>
+
+#include <censoc/aligned_alloc.h>
 
 // @TODO -- as with other bits of code (e.g. range_utils) later will move to 'outside-of-netcpu-centric' scope...
 #ifndef CENSOC_NETCPU_BIG_INT_CONTEXT_H
@@ -54,20 +54,34 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 namespace censoc { namespace netcpu { 
 
+template <typename T> struct fnv_1a_hash_traits { };
+template <>
+struct fnv_1a_hash_traits<uint32_t> {
+	uint32_t const static base = 2166136261;
+	uint32_t const static prime = 16777619;
+};
+template <>
+struct fnv_1a_hash_traits<uint64_t> {
+	uint64_t const static base = 14695981039346656037ull;
+	uint64_t const static prime = 1099511628211ull;
+};
+
 // hacky singleton -- don't want to have a separate translation unit for classic version just yet... (later if this wrapper of bignum happens to be of use -- move to outer scope and perhaps make the context to be a classic singleton)
 struct big_int_context_type {
 	BN_CTX * context; // BN_CTX is not externally declared in current installation of openssl -- meaning that initialization of statically declared BN_CTX is not possible
 	::std::vector< ::boost::shared_ptr< ::BIGNUM> > cached_bns;
-	::std::vector<unsigned char> hash_data;
+	uint_fast32_t hash_data_size;
+	censoc::aligned_alloc<uint8_t> hash_data;
+	uint8_t * hash_data_ptr;
 
 	big_int_context_type()
-	: context(::BN_CTX_new()), hash_data(16) {
+	: context(::BN_CTX_new()), hash_data_size(16), hash_data_ptr(hash_data.alloc(hash_data_size)) {
 		//::BN_CTX_init(context);
 		unsigned const static cache_size(5000000);
 		cached_bns.reserve(cache_size);
 		for (unsigned i(0); i != cache_size; ++i) {
 			::BIGNUM * tmp(::BN_new());
-			::BN_set_bit(tmp, hash_data.size() * 8);
+			::BN_set_bit(tmp, hash_data_size * 8);
 			cached_bns.push_back(::boost::shared_ptr< ::BIGNUM>(tmp, ::BN_free));
 		}
 	}
@@ -138,19 +152,24 @@ struct big_int_context_type {
 		::BN_CTX_free(context);
 	}
 
-	// todo -- a more appropriate hash algo...
+
 	template <typename SizeType>
 	SizeType
 	hash_bn(::BIGNUM * x)
 	{
+		// todo -- consider whether hash-caching of the 'unchanged' number is a possibility (depends on whether there are frequent 'hash' calls on the same number, or if there are 'rehash' use-cases on things like unoredered containers)
 		unsigned const x_size(BN_num_bytes(x));
-		if (hash_data.size() < x_size)
-			hash_data.resize(x_size * 2);
-		::BN_bn2bin(x, hash_data.data());
-		SizeType hash(-23);
-		for (unsigned i(0); i != x_size; ++i)
-			hash = hash * 101 +  hash_data[i];
-		return hash;
+		if (hash_data_size < x_size)
+			hash_data_ptr = hash_data.alloc(hash_data_size = x_size * 2);
+		::BN_bn2bin(x, hash_data_ptr);
+
+		CENSOC_ALIGNED_RESTRICTED_CONST_PTR_FROM_LOCAL_SCALAR(SizeType, hash_rv_ptr, fnv_1a_hash_traits<SizeType>::base);
+		CENSOC_ALIGNED_RESTRICTED_CONST_PTR(uint8_t const, hash_data_ptr_, hash_data_ptr);
+		for (unsigned i(0); i != x_size; ++i) {
+			*hash_rv_ptr ^= hash_data_ptr_[i];
+			*hash_rv_ptr *= fnv_1a_hash_traits<SizeType>::prime;
+		}
+		return *hash_rv_ptr;
 	}
 
 };
