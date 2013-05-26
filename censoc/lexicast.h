@@ -152,6 +152,11 @@ public:
 	lexicast()
 	{
 	}
+	void
+	set_locale(::std::locale const & x)
+	{
+		engine.imbue(x);
+	}
 	template <typename From>
 	lexicast(From const & x)
 	{
@@ -232,6 +237,20 @@ private:
 	}
 };
 
+// todo -- continuing in a spirit of quick-hack thingies, later on provide a more appropriate placing of the formatting code (and it's reuse of the relevant locale objects)
+struct coma_separated_thousands : ::std::numpunct<char> {
+	char 
+		do_thousands_sep() const
+		{
+			return ',';
+		}
+	std::string 
+		do_grouping() const
+		{
+			return "\03";
+		}
+};
+::std::locale const static coma_separated_thousands_locale(::std::locale(""), new coma_separated_thousands);
 
 }
 #endif

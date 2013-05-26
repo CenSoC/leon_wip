@@ -3514,7 +3514,7 @@ function tasks_list_type()
 	function populate_pre()
 	{
 		tasks_list_type_this.comparison_canvas_holder.style.display = "none";
-		display_status("Please wait, processing...");
+		display_status("Please wait, processing<br>(this could take a minute or so...)");
 		var tr = document.createElement("tr");
 		tr.appendChild(waiting_animation_td);
 		waiting_animation.restart();

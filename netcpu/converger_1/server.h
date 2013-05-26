@@ -1211,9 +1211,6 @@ struct task_processor : ::boost::noncopyable {
 
 		// this is a 'to be deprecated' diagnostic (as currently this line is the longest visible on screen -- yeah I know, not a good reason, it's just a quick hack, TODO -- delete it altogether)!!!
 		censoc::llog() << "players: " << processing_peers.size() << '\n';
-#ifndef NDEBUG
-		censoc::llog() << "visited_places.load_factor(=" << visited_places.load_factor() << "), visited_places.bucket_count(=" << visited_places.bucket_count() << ")\n";
-#endif
 
 		post_server_state_sync_timeout();
 	}
@@ -1460,6 +1457,22 @@ struct task_processor : ::boost::noncopyable {
 					visited_places.insert(offset);
 				}
 			}
+#ifndef NDEBUG
+			{
+				size_type total_collisions(0);
+				size_type max_collisions(0);
+				for (size_type i(0); i != visited_places.bucket_count(); ++i) {
+					size_type const bucket_size(visited_places.bucket_size(i));
+					if (bucket_size) {
+						size_type const collisions(bucket_size - 1);
+						if (collisions > max_collisions)
+							max_collisions = collisions;
+						total_collisions += collisions;
+					}
+				}
+				censoc::llog() << "visited_places.load_factor(=" << visited_places.load_factor() << "), visited_places.bucket_count(=" << visited_places.bucket_count() << ") visited_places.size(=" << visited_places.size() << "), visited_places.collisions(=" << total_collisions << ") max collisions in a sinlge bucket(=" << max_collisions << ")\n";
+			}
+#endif
 
 			censoc::netcpu::range_utils::subtract(remaining_complexities, accumulated_remaining_complexities_since_last_sync);
 #ifndef NDEBUG
@@ -2194,6 +2207,7 @@ struct task : netcpu::task {
 			// todo -- really a quick and nasty hack at the moment. later must refactor interface to the task_processor so as not to do "active_task_processor.get()->" all the time, etc.
 
 			censoc::lexicast< ::std::string> xxx("DEBUG output: there are potentially ");
+			xxx.set_locale(censoc::coma_separated_thousands_locale);
 			xxx << active_task_processor.get()->processing_peers.size() << " processing workers (productivity of each is not yet accounted for, with " << active_task_processor.get()->scoped_peers.size() << " total registered connections).\n";
 #ifndef NDEBUG
 			typename ::std::map<size_type, ::std::vector<size_type> >::const_iterator tmp; // assert parsing otherwise barfs if putting all into the assert macro...
