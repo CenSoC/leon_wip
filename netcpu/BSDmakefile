@@ -59,7 +59,7 @@ POSTFASTFLAGS_YUCK = -fno-lto -fno-whole-program -fno-use-linker-plugin
 
 .ifndef LIBS_DEFINED
 
-.MAIN : tests server processor controller update_server update_client lognormal_test flexi_dist_test exp_lookup_test survey_generator gmnl_2a/simulator gmnl_2/2csv http/server
+.MAIN : tests server processor controller update_server update_client lognormal_test flexi_dist_test exp_lookup_test survey_generator gmnl_2a/response_generator gmnl_2a/simulator gmnl_2/2csv http/server
 
 server :
 	make LIBS_DEFINED="-lboost_filesystem -lboost_system -lssl -lcrypto -lz" ${.TARGET}.exe
@@ -84,6 +84,9 @@ nosleep :
 
 gmnl_2a/simulator : finite_math
 	make LIBS_DEFINED="finite_math.o  -lboost_filesystem -lboost_system -lz" ${.TARGET}.exe
+
+gmnl_2a/response_generator : finite_math
+	make LIBS_DEFINED="finite_math.o -lboost_filesystem -lboost_system -lz" ${.TARGET}.exe
 
 gmnl_2/2csv : 
 	make LIBS_DEFINED="-lz" ${.TARGET}.exe
