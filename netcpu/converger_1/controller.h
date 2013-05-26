@@ -374,7 +374,7 @@ struct task_loader_detail : netcpu::io_wrapper<AsyncDriver> {
 			throw netcpu::message::exception(xxx() << "insufficient --complexity size: [" << meta_msg.complexity_size() << "], at the initial zoom level... try doubling it perhaps?");
 		else if (coeffs_at_once != coefficients_ranges.first)
 			throw netcpu::message::exception(xxx() << "coeffs_atonce vs. complexity_size conflict... coeffs at once would have been reduced from: [" << coefficients_ranges.first << "] to: [" << coeffs_at_once << ']');
-		censoc::llog() << (feedback_string += xxx() << "Resulting/final complexity at initial zoom level is: [" << complexity_size << "] and coeffs_atonce: [" << coeffs_at_once << ']') << '\n';
+		censoc::llog() << (feedback_string = xxx() << "Resulting/final complexity at initial zoom level is: [" << complexity_size << "] and coeffs_atonce: [" << coeffs_at_once << ']') << '\n';
 		feedback_string += "\\n";
 
 		bulk_msg.coeffs_x.resize(coefficients_ranges_x.size());
@@ -418,7 +418,9 @@ struct task_loader_detail : netcpu::io_wrapper<AsyncDriver> {
 				throw netcpu::message::exception(xxx() << "insufficient --complexity size: [" << meta_msg.complexity_size() << "], at the next zoom level... try doubling it perhaps?");
 			else if (coeffs_at_once != coefficients_ranges_x_i->first)
 				throw netcpu::message::exception(xxx() << "coeffs_atonce vs. complexity_size conflict... coeffs at once would have been reduced from: [" << coefficients_ranges_x_i->first << "], to: [" << coeffs_at_once << ']');
-			censoc::llog() << (feedback_string += xxx() << "Resulting/final complexity at next zoom level is: [" << complexity_size << "] and coeffs_atonce: [" << coeffs_at_once << ']') << '\n';
+			::std::string const extra_feedback(xxx() << "Resulting/final complexity at next zoom level is: [" << complexity_size << "] and coeffs_atonce: [" << coeffs_at_once << ']');
+			feedback_string += extra_feedback;
+			censoc::llog() << extra_feedback << '\n';
 			feedback_string += "\\n";
 		}
 		assert(coeffs_x_i == coefficients_ranges_x.size());

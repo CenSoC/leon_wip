@@ -41,8 +41,9 @@
 #SERVER_AT="netcpu.zapto.org:8070"
 SERVER_AT="localhost:8081"
 
-CMDLINE=" --server_cert certificate.pem --client_cert client_certificate.pem --client_key client_key.pem --server_at ${SERVER_AT} \
---model 2:offer \
+CERTLINE=" --server_cert certificate.pem --client_cert client_certificate.pem --client_key client_key.pem --server_at ${SERVER_AT} "
+
+CMDLINE=" --model 2:offer \
 	--filepath ../simul_data_mixed_logit.csv --x 5:6 --respondent 1 --choice_set 2 --alternative 3 --fromrow 2 --sort 1,2,3 --best 4 \
 	--repeats 1000 \
 	--int_resolution 32 --float_resolution single --extended_float_resolution double --approximate_exponents true --complexity_size 88800000 --minimpr 1.0000001 --draws_sets_size 200 --shrink_slowdown 0.3 --dissect off --reduce_exp_complexity off \
@@ -56,9 +57,22 @@ CMDLINE=" --server_cert certificate.pem --client_cert client_certificate.pem --c
 		--cm 1:.05:2 \
 " 
 
+SHORTDESC="--short_description \" `cat <<EOF
+test mixed logit blah blah
+${CMDLINE}
+EOF
+`\""
+
+WHOLELINE="${CERTLINE} ${CMDLINE} ${SHORTDESC}"
+
 # GDB this is for normal sh (not bash) 
 echo "catch throw" > controller.gdb
-echo "run  ${CMDLINE}" >> controller.gdb 
+echo run ${WHOLELINE} >> controller.gdb 
 gdb controller.exe -x controller.gdb
 rm controller.gdb
+exit
+
+# no gdb(ing)
+eval ./controller.exe ${WHOLELINE}
+exit
 
