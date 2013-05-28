@@ -3453,7 +3453,7 @@ function tasks_list_type()
 				delete_button.appendChild(document.createTextNode("delete"));
 				delete_button.onclick = function ()
 				{
-					if (confirm("About to delete task \"" + task_name + "\"...\nDO YOU WANT TO PROCEED?") == true) {
+					if (confirm("About to delete the task (ID=" + task_id + ")\nDO YOU WANT TO PROCEED?") == true) {
 						var spurious_try_again_flag = true;
 						this.disabled = true;
 						var form = new FormData();
