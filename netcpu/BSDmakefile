@@ -61,8 +61,8 @@ POSTFASTFLAGS_YUCK = -fno-lto -fno-whole-program -fno-use-linker-plugin
 
 .MAIN : tests server processor controller update_server update_client lognormal_test flexi_dist_test exp_lookup_test survey_generator gmnl_2a/response_generator gmnl_2a/simulator gmnl_2/2csv http/server
 
-server :
-	make LIBS_DEFINED="-lboost_filesystem -lboost_system -lssl -lcrypto -lz" ${.TARGET}.exe
+server : numpunct
+	make LIBS_DEFINED="numpunct.o -lboost_filesystem -lboost_system -lssl -lcrypto -lz" ${.TARGET}.exe
 
 # -liconv
 http/server :
@@ -71,6 +71,9 @@ http/server :
 finite_math : 
 	make LIBS_DEFINED=" " POSTFLAGS="-fno-lto -fno-whole-program -fno-finite-math-only" ${.TARGET}.o
 #	make LIBS_DEFINED=" " POSTFLAGS="-fno-lto -fno-whole-program -fno-fast-math" ${.TARGET}.o
+
+numpunct : 
+	make LIBS_DEFINED=" " POSTFLAGS="-frtti" ${.TARGET}.o
 
 processor : finite_math
 	make LIBS_DEFINED="finite_math.o -lboost_filesystem -lboost_system -lssl -lcrypto -lz ${LIB_YUCK_I} ${LIB_YUCK_III}" ${.TARGET}.exe

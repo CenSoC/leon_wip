@@ -77,7 +77,11 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 //{ for the time-being model_factory_interface will be automatically declared, no need to include explicitly...}
 
-namespace censoc { namespace netcpu { namespace converger_1 { 
+namespace censoc { 
+
+coma_separated_thousands_numpunct_type const * get_static_coma_separated_thousands_numpunct();
+	
+namespace netcpu { namespace converger_1 { 
 
 template <typename N, typename F>
 struct coefficient_metadata : converger_1::coefficient_metadata_base<N, F> {
@@ -2207,7 +2211,7 @@ struct task : netcpu::task {
 			// todo -- really a quick and nasty hack at the moment. later must refactor interface to the task_processor so as not to do "active_task_processor.get()->" all the time, etc.
 
 			censoc::lexicast< ::std::string> xxx("DEBUG output: there are potentially ");
-			xxx.set_locale(censoc::coma_separated_thousands_locale);
+			xxx.imbue(::std::locale(xxx.getloc(), censoc::get_static_coma_separated_thousands_numpunct()));
 			xxx << active_task_processor.get()->processing_peers.size() << " processing workers (productivity of each is not yet accounted for, with " << active_task_processor.get()->scoped_peers.size() << " total registered connections).\n";
 #ifndef NDEBUG
 			typename ::std::map<size_type, ::std::vector<size_type> >::const_iterator tmp; // assert parsing otherwise barfs if putting all into the assert macro...

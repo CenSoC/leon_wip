@@ -70,12 +70,12 @@ eightbit_helper(Rv const & x)
 {
 	return x;
 }
-int16_t  
+int16_t static 
 eightbit_helper(int8_t const & x)
 {
 	return x;
 }
-uint16_t  
+uint16_t static 
 eightbit_helper(uint8_t const & x)
 {
 	return x;
@@ -152,10 +152,15 @@ public:
 	lexicast()
 	{
 	}
-	void
-	set_locale(::std::locale const & x)
+	::std::locale
+	getloc() const
 	{
-		engine.imbue(x);
+		return engine.getloc();
+	}
+	void
+	imbue(::std::locale const & loc)
+	{
+		engine.imbue(loc);
 	}
 	template <typename From>
 	lexicast(From const & x)
@@ -175,14 +180,14 @@ public:
 };
 
 template <typename Rv>
-void 
+void static
 eightbit_helper(::std::stringstream & ss, Rv & rv)
 {
 	ss >> rv;
 	if (!ss)
 		throw ::std::runtime_error(lexicast< ::std::string>("failed in lexical numeric conversion from: [") << ss.str() << "] to: [" << rv << "]");
 }
-void 
+void static
 eightbit_helper(::std::stringstream & ss, int8_t & rv)
 {
 	int16_t tmp;
@@ -191,7 +196,7 @@ eightbit_helper(::std::stringstream & ss, int8_t & rv)
 		throw ::std::runtime_error(lexicast< ::std::string>("failed in lexical numeric conversion from: [") << ss.str() << "] to: [" << rv << "]");
 	rv = static_cast<int8_t>(tmp);
 }
-void 
+void static
 eightbit_helper(::std::stringstream & ss, uint8_t & rv)
 {
 	uint16_t tmp;
@@ -237,20 +242,21 @@ private:
 	}
 };
 
-// todo -- continuing in a spirit of quick-hack thingies, later on provide a more appropriate placing of the formatting code (and it's reuse of the relevant locale objects)
-struct coma_separated_thousands : ::std::numpunct<char> {
+struct coma_separated_thousands_numpunct_type : ::std::numpunct<char> {
+	coma_separated_thousands_numpunct_type()
+	: ::std::numpunct<char>(1) {
+	}
 	char 
-		do_thousands_sep() const
-		{
-			return ',';
-		}
-	std::string 
-		do_grouping() const
-		{
-			return "\03";
-		}
+	do_thousands_sep() const
+	{
+		return ',';
+	}
+	::std::string 
+	do_grouping() const
+	{
+		return ::std::string("\003");
+	}
 };
-::std::locale const static coma_separated_thousands_locale(::std::locale(""), new coma_separated_thousands);
 
 }
 #endif
