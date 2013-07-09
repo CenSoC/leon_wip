@@ -212,8 +212,11 @@ label, input[type='checkbox'], button {
 }
 
 .task_order_column {
-	background-color: #ddddee;
-	border-top-color: #aaaabb;
+	background-color: #efefff;
+}
+
+.task_order_column_alt {
+	background-color: #e1e1f2;
 }
 
 .coefficients_not_ready {
@@ -2668,8 +2671,8 @@ function canvas_painter_type(canvas, terrain_elevation_value_, coefficients, tas
 		ctx.stroke();
 		ctx.beginPath();
 
-		ctx.strokeStyle = "#a0a0b0";
-		ctx.lineWidth = 0.8;
+		ctx.strokeStyle = "blue";
+		ctx.lineWidth = 1.7;
 		ctx.beginPath();
 		ctx.moveTo(canvas_painter_type.coefficient_circle_radius, coefficients[0].value_interpolator.get_current_value());
 		var coefficient_centre = canvas_painter_type.coefficient_circle_radius * 3 + canvas_painter_type.coefficient_circle_padding;
@@ -2759,6 +2762,7 @@ function tasks_list_type()
 
 	var tr = document.createElement("tr");
 	var tableHolder = document.createElement("td");
+	tableHolder.style.padding = "0px";
 	var table = document.createElement("table");
 	tableHolder.appendChild(table);
 	tr.appendChild(tableHolder);
@@ -2999,15 +3003,6 @@ function tasks_list_type()
 		var tr; 
 		var td;
 
-		tr = document.createElement("tr");
-		td = document.createElement("td");
-		td.colSpan = 5;
-		td.className = "task_order_column";
-		td.style.borderBottom = "0";
-		td.appendChild(document.createTextNode("(to change the list-position of a task: edit values in the 1st column, then press enter)"));
-		tr.appendChild(td);
-		tbl.appendChild(tr);
-
 		var inpt_size = obj.tasks.length / 10 + 2;
 
 		var new_task_names_set = {};
@@ -3015,6 +3010,7 @@ function tasks_list_type()
 		for (var i = 0; i != obj.tasks.length; ++i) {
 			function individual_task_stub() 
 			{
+				var odd_even = i % 2;
 				var task_name = obj.tasks[i].name;
 				var short_description = obj.tasks[i].short_description;
 				var task_state = obj.tasks[i].state;
@@ -3057,17 +3053,17 @@ function tasks_list_type()
 				new_task_names_set[task_name] = true;
 
 				var header_row = document.createElement("tr");
+				if (odd_even)
+					header_row.className = "task_order_column_alt";
+				else
+					header_row.className = "task_order_column";
+				
 
 				// quick-hack (temporary testing of GUI listing textual discription all the time, even when in the collapsed/tabled mode)
 				// { short description
 
 				var short_description_container = document.createElement("td");
 				short_description_container.colSpan = 5;
-				short_description_container.className = "task_order_column";
-				short_description_container.style.borderTopWidth = "3px";
-				short_description_container.style.borderTopColor = "purple";
-				short_description_container.style.borderTopStyle = "inset";
-				short_description_container.style.borderBottomWidth = "0px";
 
 				var short_description_pre = document.createElement("pre");
 				short_description_pre.className = "help_content_fieldname";
@@ -3109,68 +3105,74 @@ function tasks_list_type()
 				//}
 
 				header_row = document.createElement("tr");
+				if (odd_even)
+					header_row.className = "task_order_column_alt";
+				else
+					header_row.className = "task_order_column";
 
 				//{ task position/order control
-				td = document.createElement("td");
-				td.className = "task_order_column";
-				td.style.borderTopWidth = "0px";
-				var inpt = document.createElement("input");
-				//inpt.type = "number";
-				inpt.size = inpt_size;
-				inpt.size = 3;
-				var old_value = i + 1;
-				inpt.title = "To change task's position in the list -- enter new position number and press enter";
-				inpt.value = i + 1;
-				if (task_state == "complete")
-					inpt.disabled = true;
-				inpt.onchange = function ()
-				{
-					var this_value = parseInt(this.value);
-					if (isNaN(this_value) == true) {
-						alert("Oooohh, the value " + this.value + " is really not right, now is it?");
-						return;
-					}
-					this.disabled = true;
-					var form = new FormData();
-					form.append("--task_name", task_name);
-					form.append("--steps_to_move_by", this_value - old_value);
-					var spurious_try_again_flag = true;
-					http_request = new XMLHttpRequest();
-					http_request.withCredentials = true;
-
-					populate_pre();
-					http_request.onreadystatechange = function()
+				if (task_complete == false) {
+					td = document.createElement("td");
+					td.style.borderTopWidth = "0px";
+					var inpt = document.createElement("input");
+					//inpt.type = "number";
+					inpt.size = inpt_size;
+					inpt.className = "debug_log_to_server";
+					inpt.size = 3;
+					var old_value = i + 1;
+					inpt.title = "To change task's position in the list -- enter new position number and press enter";
+					inpt.value = i + 1;
+					inpt.onchange = function ()
 					{
-						if (this.readyState == 4) {
-							inpt.disabled = false;
-							if (this.status == 200) {
-								//alert(this.responseText);
-								var obj = JSON.parse(this.responseText);
-								if (obj.echo) {
-									populate();
-								} else if (obj.error) {
-									display_status("Server says hmmm: " + obj.error);
-								}
-							} else if (this.status != 0 || spurious_try_again_flag == false) {
-								display_status("Epic fail... [specifics are not yet diagnosed properly, the browser-communicated status code is " + this.status + ']');
-							} else {
-								spurious_try_again_flag = false;
-								http_request.open("POST", server_at + "move_task_in_list");
-								this.send(form);
-							}
-						} else if (this.readyState == 0) {
-							inpt.disabled = false;
+						var this_value = parseInt(this.value);
+						if (isNaN(this_value) == true) {
+							alert("Oooohh, the value " + this.value + " is really not right, now is it?");
+							return;
 						}
+						this.disabled = true;
+						var form = new FormData();
+						form.append("--task_name", task_name);
+						form.append("--steps_to_move_by", this_value - old_value);
+						var spurious_try_again_flag = true;
+						http_request = new XMLHttpRequest();
+						http_request.withCredentials = true;
+
+						populate_pre();
+						http_request.onreadystatechange = function()
+						{
+							if (this.readyState == 4) {
+								inpt.disabled = false;
+								if (this.status == 200) {
+									//alert(this.responseText);
+									var obj = JSON.parse(this.responseText);
+									if (obj.echo) {
+										populate();
+									} else if (obj.error) {
+										display_status("Server says hmmm: " + obj.error);
+									}
+								} else if (this.status != 0 || spurious_try_again_flag == false) {
+									display_status("Epic fail... [specifics are not yet diagnosed properly, the browser-communicated status code is " + this.status + ']');
+								} else {
+									spurious_try_again_flag = false;
+									http_request.open("POST", server_at + "move_task_in_list");
+									this.send(form);
+								}
+							} else if (this.readyState == 0) {
+								inpt.disabled = false;
+							}
+						}
+						http_request.open("POST", server_at + "move_task_in_list");
+						http_request.send(form);
 					}
-					http_request.open("POST", server_at + "move_task_in_list");
-					http_request.send(form);
+					td.appendChild(inpt);
+					header_row.appendChild(td);
 				}
-				td.appendChild(inpt);
-				header_row.appendChild(td);
 				//}
 
 				td = document.createElement("td");
 				td.appendChild(document.createTextNode("ID=" + task_id + " (" + model_name + ')'));
+				if (task_complete == true)
+					td.colSpan = 2;
 				header_row.appendChild(td);
 
 				//{ show details control
@@ -3188,6 +3190,10 @@ function tasks_list_type()
 				{
 					if (this.checked == true) {
 						var tr = document.createElement("tr");
+						if (odd_even)
+							tr.className = "task_order_column_alt";
+						else
+							tr.className = "task_order_column";
 						var td = document.createElement("td");
 						//td.className = "centered_td";
 						td.colSpan = 5;
