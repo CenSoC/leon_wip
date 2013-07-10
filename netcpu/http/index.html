@@ -2948,6 +2948,23 @@ function tasks_list_type()
 
 	td.appendChild(document.createElement("br"));
 
+	var hide_all_details_button = document.createElement("button");
+	hide_all_details_button.className = "full_width";
+	hide_all_details_button.appendChild(document.createTextNode("Hide all details"));
+	hide_all_details_button.onclick = function () 
+	{
+		for (var keys = Object.keys(tasks_list_type_this.existing_detail_showing_tasks); keys.length; keys = Object.keys(tasks_list_type_this.existing_detail_showing_tasks)) {
+			var checkbox = tasks_list_type_this.existing_detail_showing_tasks[keys[0]].checkbox;
+			checkbox.checked = false;
+			checkbox.onchange();
+		}
+		tasks_list_type_this.filtered_existing_detail_showing_tasks = {};
+		tasks_list_type_this.filtered_existing_detail_showing_animated_tasks = {};
+	}
+	td.appendChild(hide_all_details_button);
+
+	td.appendChild(document.createElement("br"));
+
 	var main_menu_button = document.createElement("button");
 	main_menu_button.className = "full_width";
 	main_menu_button.appendChild(document.createTextNode("Main Menu"));
@@ -3238,13 +3255,13 @@ function tasks_list_type()
 				var label = document.createElement("label");
 				label.className = "help_content_fieldname";
 				label.appendChild(document.createTextNode("show details"));
-				var checkbox = document.createElement("input");
-				checkbox.type = "checkbox";
+				var show_details_checkbox = document.createElement("input");
+				show_details_checkbox.type = "checkbox";
 				if (tasks_list_type_this.existing_detail_showing_tasks[task_name])
-					checkbox.checked = true;
+					show_details_checkbox.checked = true;
 				else
-					checkbox.checked = false;
-				checkbox.onchange = function()
+					show_details_checkbox.checked = false;
+				show_details_checkbox.onchange = function()
 				{
 					if (this.checked == true) {
 						var tr = document.createElement("tr");
@@ -3471,7 +3488,7 @@ function tasks_list_type()
 							} else
 								checkbox.checked = false;
 
-							tasks_list_type_this.existing_detail_showing_tasks[task_name] = { "canvas" : canvas , "divs" : [ overflow_holder_1, overflow_holder_2 ] }
+							tasks_list_type_this.existing_detail_showing_tasks[task_name] = { "canvas" : canvas , "divs" : [ overflow_holder_1, overflow_holder_2 ], "checkbox" : show_details_checkbox }
 						} else {
 							td.className = "coefficients_not_ready";
 							td.appendChild(document.createTextNode("Nothing is ready as of yet (convergence has not proceeded enough)..."));
@@ -3491,7 +3508,7 @@ function tasks_list_type()
 					}
 					paint_comparison();
 				}
-				label.appendChild(checkbox);
+				label.appendChild(show_details_checkbox);
 				td.appendChild(label);
 				header_row.appendChild(td);
 				//}
@@ -3559,8 +3576,8 @@ function tasks_list_type()
 
 				tbl.appendChild(header_row);
 
-				if (checkbox.checked == true)
-					checkbox.onchange();
+				if (show_details_checkbox.checked == true)
+					show_details_checkbox.onchange();
 			}
 			new individual_task_stub();
 		}
