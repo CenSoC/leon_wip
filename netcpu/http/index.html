@@ -2996,6 +2996,8 @@ function tasks_list_type()
 		replace_table(tbl);
 	}
 
+	var filter_by = "";
+
 	function blahblah(obj)
 	{
 		var tbl = document.createElement("table");
@@ -3007,16 +3009,72 @@ function tasks_list_type()
 
 		var new_task_names_set = {};
 
+		var filtered_existing_detail_showing_tasks = tasks_list_type_this.filtered_existing_detail_showing_tasks;
+		var filtered_existing_detail_showing_animated_tasks = tasks_list_type_this.filtered_existing_detail_showing_animated_tasks;
+		tasks_list_type_this.filtered_existing_detail_showing_tasks = {};
+		tasks_list_type_this.filtered_existing_detail_showing_animated_tasks = {};
+
+		var prev_task_complete = false;
+		var alternating_display = 0;
 		for (var i = 0; i != obj.tasks.length; ++i) {
+
+			var tmp_task_complete = (obj.tasks[i].state == "complete" ? true : false);
+
+			if (tmp_task_complete == true && prev_task_complete == false) {
+				prev_task_complete = true;
+
+				var filter_row = document.createElement("tr");
+				var filter_td = document.createElement("td");
+				filter_td.colSpan = 5;
+				filter_td.className = "debug_log_to_server";
+				filter_td.appendChild(document.createTextNode("filter completed tasks: "));
+				var filter_text = document.createElement("input");
+				filter_text.size = inpt_size;
+				filter_text.size = 30;
+				filter_text.value = filter_by;
+				filter_text.onchange = function()
+				{
+					filter_by = this.value.trim();
+					blahblah(obj);
+				}
+				filter_td.appendChild(filter_text);
+				filter_row.appendChild(filter_td);
+				tbl.appendChild(filter_row);
+			}
+
+			var tmp_task_name = obj.tasks[i].name;
+
+			if (tmp_task_complete == true && filter_by.length && obj.tasks[i].short_description.search(new RegExp("\\b" + filter_by + "\\b", "i")) == -1) {
+				var existing_detail_showing_task = tasks_list_type_this.existing_detail_showing_tasks[tmp_task_name];
+				if (existing_detail_showing_task) {
+					tasks_list_type_this.filtered_existing_detail_showing_tasks[tmp_task_name] = existing_detail_showing_task;
+					delete tasks_list_type_this.existing_detail_showing_tasks[tmp_task_name];
+				}
+				var existing_detail_showing_animated_task = tasks_list_type_this.existing_detail_showing_animated_tasks[tmp_task_name];
+				if (existing_detail_showing_animated_task) {
+					tasks_list_type_this.filtered_existing_detail_showing_animated_tasks[tmp_task_name] = existing_detail_showing_animated_task;
+					delete tasks_list_type_this.existing_detail_showing_animated_tasks[tmp_task_name];
+				}
+				continue;
+			} else {
+				var filtered_existing_detail_showing_task = filtered_existing_detail_showing_tasks[tmp_task_name];
+				if (filtered_existing_detail_showing_task)
+					tasks_list_type_this.existing_detail_showing_tasks[tmp_task_name] = filtered_existing_detail_showing_task;
+				var filtered_existing_detail_showing_animated_task = filtered_existing_detail_showing_animated_tasks[tmp_task_name];
+				if (filtered_existing_detail_showing_animated_task)
+					tasks_list_type_this.existing_detail_showing_animated_tasks[tmp_task_name] = filtered_existing_detail_showing_animated_task;
+				++alternating_display;
+			}
+
 			function individual_task_stub() 
 			{
-				var odd_even = i % 2;
-				var task_name = obj.tasks[i].name;
+				var odd_even = alternating_display % 2;
+				var task_name = tmp_task_name;
 				var short_description = obj.tasks[i].short_description;
 				var task_state = obj.tasks[i].state;
-				var task_complete = (task_state == "complete" ? true : false);
+				var task_complete = tmp_task_complete;
 
-				var decomposed_name = obj.tasks[i].name.split(/[_\-x]/g);
+				var decomposed_name = tmp_task_name.split(/[_\-x]/g);
 				var task_id = parseInt(decomposed_name[0]);
 				var model_id = parseInt(decomposed_name[1]);
 				var model_name = "";
@@ -3520,6 +3578,8 @@ function tasks_list_type()
 
 	this.existing_detail_showing_tasks = {};
 	this.existing_detail_showing_animated_tasks = {};
+	this.filtered_existing_detail_showing_tasks = {};
+	this.filtered_existing_detail_showing_animated_tasks = {};
 
 	function populate_pre()
 	{
@@ -3530,7 +3590,6 @@ function tasks_list_type()
 		waiting_animation.restart();
 		table.appendChild(tr);
 	}
-
 
 	function populate()
 	{
