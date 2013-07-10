@@ -3472,10 +3472,8 @@ function tasks_list_type()
 										tasks_list_type_this.existing_detail_showing_animated_tasks[task_name] = canvas;
 										if (repainting_timer == null)
 											repainting_timer = request_animation_frame(timer_callback);
-										else {
-											canvas.painter.reset_repainting();
-											reset_repainting_timer_repaints();
-										}
+										canvas.painter.reset_repainting();
+										reset_repainting_timer_repaints();
 									}
 								} else {
 									overflow_holder_2.style.display = "none";
