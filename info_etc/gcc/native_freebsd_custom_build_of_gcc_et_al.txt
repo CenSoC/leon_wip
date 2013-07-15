@@ -248,7 +248,7 @@ find . -iname "*-gcc47*" -exec sh -c 'mv {} `echo {} | sed  s/-gcc47-.*/.a/g`' \
 
 
 10) build gdb
-./configure --prefix=/usr/home/${USER}/gdb/installed/
+./configure --prefix=/usr/home/${USER}/gdb/installed/ --without-python
 gmake -j 2
 gmake install
 
@@ -263,6 +263,6 @@ gmake -j 2
 gmake install
 
 12) Optional -- could already be present on the FreeBSD box --  build libarchive (for http server/adapter -- no need to xcross-compile). start the development environment and then:
-./configure --prefix=/usr/home/${USER}/libarchive/installed/ --disable-shared --enable-static --disable-bsdtar --disable-bsdcpio 
+./configure --prefix=/usr/home/${USER}/libarchive/installed/ --disable-shared --enable-static --disable-bsdtar --disable-bsdcpio --without-iconv
 make
 make install
