@@ -894,8 +894,8 @@ struct task_processor : ::boost::noncopyable {
 #endif
 	e_min_complexity(-1), better_find_since_last_recentered_sync(false), server_state_sync_timeout_checkpoint(0), dont_delay_saving_convergence_state(false), redistribute_remaining_complexities(false), peer2peer_assisted_complexity_present(false), io_key(0) { 
 
-		visited_places.reserve(50000000);
-		duplicates_elimination_uniques.reserve(3000000);
+		visited_places.reserve(57000000);
+		duplicates_elimination_uniques.reserve(4000000);
 
 		netcpu::message::read_wrapper wrapper;
 
