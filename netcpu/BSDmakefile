@@ -62,7 +62,7 @@ POSTFASTFLAGS_YUCK = -fno-lto -fno-whole-program -fno-use-linker-plugin
 .MAIN : tests server processor controller update_server update_client lognormal_test flexi_dist_test exp_lookup_test survey_generator gmnl_2a/response_generator gmnl_2a/simulator gmnl_2/2csv http/server
 
 server : numpunct
-	make LIBS_DEFINED="numpunct.o -lboost_filesystem -lboost_system -lssl -lcrypto -lz" ${.TARGET}.exe
+	make LIBS_DEFINED="numpunct.o -lboost_coroutine -lboost_context -lboost_filesystem -lboost_system -lgmp -lssl -lcrypto -lz" ${.TARGET}.exe
 
 # -liconv
 http/server :
@@ -121,7 +121,7 @@ combos_builder_utest :
 	make LIBS_DEFINED="" ${.TARGET}.okrun
 
 range_utils_utest :
-	make LIBS_DEFINED="-lcrypto" ${.TARGET}.okrun
+	make LIBS_DEFINED="-lgmp" ${.TARGET}.okrun
 
 sha_file_utest :
 	make LIBS_DEFINED="-lboost_filesystem -lboost_system -lcrypto" ${.TARGET}.okrun

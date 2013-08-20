@@ -46,6 +46,9 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 // #include <unordered_set>
 #include <boost/unordered_set.hpp>
 
+#include <boost/bind.hpp>
+#include <boost/coroutine/coroutine.hpp>
+
 #include <boost/numeric/conversion/bounds.hpp>
 #include <boost/scoped_ptr.hpp>
 #include <boost/scoped_array.hpp>
@@ -864,6 +867,16 @@ struct task_processor : ::boost::noncopyable {
 	censoc::stl::fastsize< ::std::list<converger_1::processing_peer<N, F, Model, ModelId> *>, size_type> processing_peers; // manages processing (io) w.r.t. peers (because peer may be ctored, but it's readiness to do io only comes after reading/processing few meta/res/etc. messages)
 
 	netcpu::message::async_timer server_state_sync_timer;
+private:
+	typedef boost::coroutines::coroutine<void()> coroutine_type;
+	::std::unique_ptr<coroutine_type> coroutine;
+	unsigned const static coroutine_atomic_processing_size = 50000;
+public:
+	bool
+	is_on_sync_in_progress() const
+	{
+		return coroutine.get() == NULL ? false : true;
+	}
 	::time_t server_state_sync_timeout_checkpoint;
 	netcpu::message::async_timer save_convergence_state_timer;
 	bool dont_delay_saving_convergence_state;
@@ -895,7 +908,7 @@ struct task_processor : ::boost::noncopyable {
 	e_min_complexity(-1), better_find_since_last_recentered_sync(false), server_state_sync_timeout_checkpoint(0), dont_delay_saving_convergence_state(false), redistribute_remaining_complexities(false), peer2peer_assisted_complexity_present(false), io_key(0) { 
 
 		visited_places.reserve(57000000);
-		duplicates_elimination_uniques.reserve(4000000);
+		duplicates_elimination_uniques.reserve(15000000);
 
 		netcpu::message::read_wrapper wrapper;
 
@@ -931,7 +944,7 @@ struct task_processor : ::boost::noncopyable {
 		netcpu::message::fstream_to_wrapper(bulk_file, wrapper);
 
 		// parse the wrapper into RAM-endianness correct message object
-		typename Model::bulk_msg_type bulk_msg;
+		converger_1::message::bulk<N, F, typename Model::bulk_msg_type> bulk_msg;
 		bulk_msg.from_wire(wrapper);
 		censoc::llog() << "read bulk message:\n";
 		bulk_msg.print();
@@ -976,7 +989,7 @@ struct task_processor : ::boost::noncopyable {
 			intended_coeffs_at_once = bulk_msg.coeffs(0).grid_resolutions.size();
 		}
 
-		offset.one();
+		offset = 1;
 		for (size_type i(0); i != coefficients_size; ++i) {
 
 			converger_1::coefficient_metadata<N, F> & ram(coefficients_metadata[i]);
@@ -1067,7 +1080,7 @@ struct task_processor : ::boost::noncopyable {
 					if (convergence_state.get_visited_place().bytes.size())
 						bn.load(convergence_state.get_visited_place().bytes.data(), convergence_state.get_visited_place().bytes.size());
 					else
-						bn.zero();
+						bn = 0;
 					// todo replace with emplace when later version of c++11 compliant compiler gets delployed
 					visited_places.insert(bn); 
 				}
@@ -1077,7 +1090,7 @@ struct task_processor : ::boost::noncopyable {
 			// make sure that all relevant visited places have already been subtracted from currently deployed remaining complexity
 			for (typename complexities_type::const_iterator i(remaining_complexities.begin()); i != remaining_complexities.end(); ++i) {
 				for (size_type j(0); j != i->second; ++j) {
-					offset.zero();
+					offset = 0;
 					combos_modem.demodulate(j + i->first, coefficients_metadata, coefficients_size);
 					assert(!visited_places.count(offset));
 				}
@@ -1093,9 +1106,10 @@ struct task_processor : ::boost::noncopyable {
 
 	~task_processor()
 	{
-		if (server_state_sync_timer.is_pending() == true)
+
+		if (is_on_sync_in_progress() == false && server_state_sync_timer.is_pending() == true)
 			on_sync_timeout();
-		if (save_convergence_state_timer.is_pending() == true)
+		if (is_on_sync_in_progress() == false && save_convergence_state_timer.is_pending() == true)
 			do_save_convergence_state();
 
 		while (scoped_peers.empty() == false) { 
@@ -1127,7 +1141,7 @@ struct task_processor : ::boost::noncopyable {
 		bootstrapping_peer_report_msg.print();
 
 		assert(bootstrapping_peer_report_msg.coeffs.size() == coefficients_size);
-		offset.zero();
+		offset = 0;
 		for (size_type i(0); i != coefficients_size; ++i) {
 			coefficients_metadata[i].reset_after_bootstrapping(bootstrapping_peer_report_msg.coeffs(i));
 			coefficient_to_server_state_sync_msg(i);
@@ -1180,7 +1194,7 @@ struct task_processor : ::boost::noncopyable {
 				e_min_complexity = peer_report_msg.value_complexity();
 				assert(e_min_complexity != static_cast<typename netcpu::message::typepair<N>::wire>(-1));
 #ifndef NDEBUG
-				offset.zero();
+				offset = 0;
 				combos_modem.demodulate(e_min_complexity, coefficients_metadata, coefficients_size);
 				censoc::llog() << '{';
 				for (size_type i(0); i != coefficients_size; ++i) 
@@ -1345,10 +1359,10 @@ struct task_processor : ::boost::noncopyable {
 	}
 
 	void
-	reduce_remaining_complexities(size_paramtype begin, size_paramtype end)
+	reduce_remaining_complexities(size_paramtype begin, size_paramtype end, coroutine_type::caller_type * coroutine_caller = NULL)
 	{
 		for (size_type i(begin); i != end; ++i) {
-			offset.zero();
+			offset = 0;
 			combos_modem.demodulate(i, coefficients_metadata, coefficients_size);
 			if (visited_places.count(offset)) {
 				censoc::netcpu::range_utils::subtract(remaining_complexities, ::std::pair<size_type, size_type>(i, 1));
@@ -1358,13 +1372,15 @@ struct task_processor : ::boost::noncopyable {
 #endif
 #endif
 			}
+			if (coroutine_caller != NULL && !((i + 1) % coroutine_atomic_processing_size)) 
+				(*coroutine_caller)();
 		}
 #ifndef NDEBUG
 #ifndef NDEBUG_XSLOW
 		{
 			for (typename complexities_type::const_iterator i(remaining_complexities.begin()); i != remaining_complexities.end(); ++i) {
 				for (size_type j(0); j != i->second; ++j) {
-					offset.zero();
+					offset = 0;
 					combos_modem.demodulate(j + i->first, coefficients_metadata, coefficients_size);
 					assert(!visited_places.count(offset));
 				}
@@ -1378,7 +1394,7 @@ struct task_processor : ::boost::noncopyable {
 		@post 'true' if ok, 'false' if nothing is left to be redistributed (e.g. visited places alaready have all)
 		*/
 	bool
-	do_redistribute_remaining_complexities() 
+	do_redistribute_remaining_complexities(coroutine_type::caller_type & coroutine_caller) 
 	{
 		while (remaining_complexities.empty() == true) { // current complexity level is done 
 			size_type const pair_first(current_complexity_level->first);
@@ -1391,7 +1407,7 @@ struct task_processor : ::boost::noncopyable {
 
 				censoc::netcpu::range_utils::add(remaining_complexities, ::std::make_pair(pair_first, current_complexity_level->first - pair_first));
 				// scan visited places and subtract from remaining complexities (no need for the round-trip, as well as saving on 'visited_places' ram usage on both server and processors ends)
-				reduce_remaining_complexities(pair_first, current_complexity_level->first);
+				reduce_remaining_complexities(pair_first, current_complexity_level->first, &coroutine_caller);
 
 				//{ re-check for dupliacates (in addition to the already achieved visited_places-based culling
 				//@note  ideally, the previous complexities would all have been 'visited' and, consequently, they would clear the 'about to be made current' complexities-range from its-own, implicit, duplicates (generated by the building process and causing duplicates whenever combined with any ginven 'central' point at a time)... 
@@ -1408,17 +1424,22 @@ struct task_processor : ::boost::noncopyable {
 #endif
 					for (size_type i(0); i != coefficients_size; ++i)
 						if (current_complexity_level->second[i] != prev_level->second[i] && combos_modem.metadata().begin()->second[i] != prev_level->second[i]) {
+							size_type total_count(0);
 							for (typename complexities_type::const_iterator i(remaining_complexities.begin()); i != remaining_complexities.end(); ++i) {
 								for (size_type j(0); j != i->second; ++j) {
 									size_type const complexity_i(j + i->first);
-									offset.zero();
+									offset = 0;
 									combos_modem.demodulate(complexity_i, coefficients_metadata, coefficients_size);
 									if (duplicates_elimination_uniques.insert(offset).second == false)
 										censoc::netcpu::range_utils::add(accumulated_duplicates, ::std::pair<size_type, size_type>(complexity_i, 1));
+									if (!(++total_count % coroutine_atomic_processing_size))
+										coroutine_caller();
 								}
 							}
-							censoc::netcpu::range_utils::subtract(remaining_complexities, accumulated_duplicates);
-							accumulated_duplicates.clear();
+							if (accumulated_duplicates.empty() == false) {
+								censoc::netcpu::range_utils::subtract(remaining_complexities, accumulated_duplicates);
+								accumulated_duplicates.clear();
+							}
 							duplicates_elimination_uniques.clear();
 							break;
 						}
@@ -1428,7 +1449,7 @@ struct task_processor : ::boost::noncopyable {
 				{ // sanity checking
 					for (typename complexities_type::const_iterator i(remaining_complexities.begin()); i != remaining_complexities.end(); ++i) {
 						for (size_type j(0); j != i->second; ++j) {
-							offset.zero();
+							offset = 0;
 							combos_modem.demodulate(j + i->first, coefficients_metadata, coefficients_size);
 							assert(duplicates_elimination_uniques.insert(offset).second == true);
 						}
@@ -1446,6 +1467,27 @@ struct task_processor : ::boost::noncopyable {
 	void
 	on_sync_timeout()
 	{
+		if (coroutine.get() == NULL) {
+			coroutine.reset(new coroutine_type(::boost::bind(&task_processor::on_coroutine, this, _1))); 
+			if (*coroutine) 
+				server_state_sync_timer.timeout();
+			else
+				coroutine.reset();
+		} else {
+			if (*coroutine) {
+				(*coroutine)();
+				if (*coroutine) 
+					server_state_sync_timer.timeout();
+				else
+					coroutine.reset();
+			} else
+				coroutine.reset();
+		}
+	}
+
+	void
+	on_coroutine(coroutine_type::caller_type & coroutine_caller)
+	{
 		/* ::std::clog.precision(5); */ censoc::llog() << "on_sync_timeout. e_min so far: [" << e_min << "], coeffs to wait on: [" << coefficients_rand_range_ended_wait << "], players: [" << processing_peers.size() << "]\n";
 
 		if (accumulated_remaining_complexities_since_last_sync.empty() == false) {
@@ -1455,7 +1497,7 @@ struct task_processor : ::boost::noncopyable {
 				size_type const complexity_begin(i->first);
 				size_type const complexity_size(i->second);
 				for (size_type j(0); j != complexity_size; ++j) {
-					offset.zero();
+					offset = 0;
 					combos_modem.demodulate(complexity_begin + j, coefficients_metadata, coefficients_size);
 					// todo replace with emplace when later version of c++11 compliant compiler gets delployed
 					visited_places.insert(offset);
@@ -1506,7 +1548,7 @@ struct task_processor : ::boost::noncopyable {
 		{
 			for (typename complexities_type::const_iterator i(remaining_complexities.begin()); i != remaining_complexities.end(); ++i) {
 				for (size_type j(0); j != i->second; ++j) {
-					offset.zero();
+					offset = 0;
 					combos_modem.demodulate(j + i->first, coefficients_metadata, coefficients_size);
 					assert(!visited_places.count(offset));
 				}
@@ -1517,7 +1559,7 @@ struct task_processor : ::boost::noncopyable {
 		bool do_shrink(false);
 		if (better_find_since_last_recentered_sync == false) { // 'better find took place' cases are taken care of later... (need to reduce complexities AFTER recentering)
 			if (redistribute_remaining_complexities == true) { // ... who knows why -- could be many different causes... see below:
-				if (do_redistribute_remaining_complexities() == false)
+				if (do_redistribute_remaining_complexities(coroutine_caller) == false)
 					do_shrink = true;
 			}
 		}
@@ -1538,7 +1580,7 @@ struct task_processor : ::boost::noncopyable {
 			assert(e_min_complexity != static_cast<size_type>(-1));
 
 			// because on_peer_report clobbers coeffs 'value' when converting complexity to index for 'visited_places' et al
-			offset.zero();
+			offset = 0;
 			combos_modem.demodulate(e_min_complexity, coefficients_metadata, coefficients_size);
 			for (size_type i(0); i != coefficients_size; ++i) {
 				coefficients_metadata[i].value_save();
@@ -1552,7 +1594,7 @@ struct task_processor : ::boost::noncopyable {
 			remaining_complexities.clear();
 			censoc::netcpu::range_utils::add(remaining_complexities, ::std::make_pair(static_cast<size_type>(0), (current_complexity_level = combos_modem.metadata().begin())->first));
 			reduce_remaining_complexities(0, current_complexity_level->first);
-			if (do_redistribute_remaining_complexities() == true)
+			if (do_redistribute_remaining_complexities(coroutine_caller) == true)
 				do_send_recentre_message = true;
 			else
 				do_shrink = true;
@@ -1569,7 +1611,7 @@ struct task_processor : ::boost::noncopyable {
 
 			am_bootstrapping = true;
 
-			offset.one();
+			offset = 1;
 			assert(offset.size());
 			for (size_type i(0); i != coefficients_size; ++i)
 				coefficients_metadata[i].pre_shrink(coefficients_rand_range_ended_wait, shrink_slowdown);
@@ -1635,7 +1677,9 @@ struct task_processor : ::boost::noncopyable {
 					<< ::std::endl;
 
 				//assert(0);
-				netcpu::pending_tasks.front()->markcompleted();
+				// posting as opposed to calling markcompleted directly from here because such a cass invokes destructor (i.e. ala 'delete this') which destroys the coroutine... which is actually calling this method and then is used to determine whether to continue calling again or not...
+				++io_key;
+				server_state_sync_timer.timeout(&task_processor::on_converged, this); 
 				return;
 			}
 
@@ -1693,6 +1737,14 @@ struct task_processor : ::boost::noncopyable {
 		// call timer again...
 		post_server_state_sync_timeout();
 #endif
+	}
+
+	void
+	on_converged()
+	{
+		// to prevent the dtor from saving the convergence state again (currently such saving is done explicitly in the on_sync_timeout stage)
+		save_convergence_state_timer.cancel();
+		netcpu::pending_tasks.front()->markcompleted();
 	}
 
 private:
@@ -1815,7 +1867,7 @@ public:
 
 	// io-messages cached (for activating/communicating-with processing peers)
 	converger_1::message::res res_msg;
-	typename Model::meta_msg_type meta_msg;
+	converger_1::message::meta<N, F, typename Model::meta_msg_type> meta_msg;
 
 	//typename Model::bulk_msg_type bulk_msg; // now just using the cached raw wrapper to save on re-compressing the same (unchanged) data whenever sending the bulk_msg to the newly connected processing peer (of which there could be many, e.g. > 100)
 	::std::vector<uint8_t> bulk_msg_wire;
@@ -1895,6 +1947,8 @@ struct processing_peer : netcpu::io_wrapper<netcpu::message::async_driver> {
 	// grid-related accounting
 	complexities_type remaining_complexities;
 
+	netcpu::message::async_timer retry_on_read_timer;
+
 	processing_peer(task_processor<N, F, Model, ModelId> & processor, netcpu::message::async_driver & io_driver)
 	: netcpu::io_wrapper<netcpu::message::async_driver>(io_driver), processor(processor), scoped_peers_i(processor.scoped_peers, processor.scoped_peers.insert(processor.scoped_peers.end(), this)), processing_peers_i(processor.processing_peers)
 #ifndef NDEBUG
@@ -1902,6 +1956,7 @@ struct processing_peer : netcpu::io_wrapper<netcpu::message::async_driver> {
 #endif
 	{
 		io().error_callback(&processing_peer::on_error, this);
+		retry_on_read_timer.timeout_callback(&processing_peer::on_read, this);
 		netcpu::message::task_offer msg;
 		msg.task_id(ModelId);
 		io().write(msg, &processing_peer::on_write, this);
@@ -1975,27 +2030,30 @@ struct processing_peer : netcpu::io_wrapper<netcpu::message::async_driver> {
 	void 
 	on_read() // for peer-reporting 
 	{
-		bool io_was_stale(processor.io_key - io_key_echo_ >= stale_io_limit ? true : false); 
-		if (converger_1::message::bootstrapping_peer_report<N, F>::myid == io().read_raw.id()) {
-			processor.bootstrapping_peer_report_msg.from_wire(io().read_raw);
-			io_key_echo_ = processor.bootstrapping_peer_report_msg.echo_status_key();
-			if (processor.io_key == io_key_echo_) 
-				processor.on_bootstrapping_peer_report();
-			else if (io_was_stale == true)
-				sync_peer_to_server(processor.server_state_sync_msg);	
-		} else if (converger_1::message::peer_report<N, F>::myid == io().read_raw.id()) {
-			processor.peer_report_msg.from_wire(io().read_raw);
-			io_key_echo_ = processor.peer_report_msg.echo_status_key();
-			censoc::llog() << "received on_read in processing peer, my key: [" << processor.io_key << "], peer key: [" << io_key_echo_ << "]\n";
-			if (processor.io_key == io_key_echo_) 
-				processor.on_peer_report(*this);
-			else if (io_was_stale == true)
-				sync_peer_to_server(processor.server_state_sync_msg);	
-		} else {
-			io().cancel();
-			return;
-		}
-		io().read();
+		if (processor.is_on_sync_in_progress() == false) {
+			bool io_was_stale(processor.io_key - io_key_echo_ >= stale_io_limit ? true : false); 
+			if (converger_1::message::bootstrapping_peer_report<N, F>::myid == io().read_raw.id()) {
+				processor.bootstrapping_peer_report_msg.from_wire(io().read_raw);
+				io_key_echo_ = processor.bootstrapping_peer_report_msg.echo_status_key();
+				if (processor.io_key == io_key_echo_) 
+					processor.on_bootstrapping_peer_report();
+				else if (io_was_stale == true)
+					sync_peer_to_server(processor.server_state_sync_msg);	
+			} else if (converger_1::message::peer_report<N, F>::myid == io().read_raw.id()) {
+				processor.peer_report_msg.from_wire(io().read_raw);
+				io_key_echo_ = processor.peer_report_msg.echo_status_key();
+				censoc::llog() << "received on_read in processing peer, my key: [" << processor.io_key << "], peer key: [" << io_key_echo_ << "]\n";
+				if (processor.io_key == io_key_echo_) 
+					processor.on_peer_report(*this);
+				else if (io_was_stale == true)
+					sync_peer_to_server(processor.server_state_sync_msg);	
+			} else {
+				io().cancel();
+				return;
+			}
+			io().read();
+		} else
+			retry_on_read_timer.timeout();
 	}
 
 	/**
@@ -2158,6 +2216,8 @@ struct task : netcpu::task {
 	// TODO !!! -- consider reworking the naming/use, as per current design it is not really that short :-)
 	::std::string short_description;
 
+	censoc::vector<uint8_t, size_type> task_info_user_data;
+
 	task(netcpu::tasks_size_type const & id, ::std::string const & name, time_t birthday = ::time(NULL))
 	: netcpu::task(id, name, birthday) {
 	}
@@ -2207,6 +2267,7 @@ struct task : netcpu::task {
 	void 
 	load_coefficients_info_et_al(netcpu::message::tasks_list & tasks_list, netcpu::message::task_info & task)
 	{
+		task.model_id(ModelId);
 		if (active_task_processor.get() != NULL) {
 			// todo -- really a quick and nasty hack at the moment. later must refactor interface to the task_processor so as not to do "active_task_processor.get()->" all the time, etc.
 
@@ -2274,6 +2335,11 @@ struct task : netcpu::task {
 		}
 		task.short_description.resize(short_description.size());
 		::memcpy(task.short_description.data(), short_description.data(), short_description.size());
+
+		if (task_info_user_data.size()) {
+			task.user_data.resize(task_info_user_data.size());
+			::memcpy(task.user_data.data(), task_info_user_data.data(), task_info_user_data.size());
+		}
 	}
 
 	void activate() 
@@ -2321,12 +2387,35 @@ struct task : netcpu::task {
 	{
 		return active_task_processor.get() != NULL ? true : false;
 	}
+
+	void
+	set_task_info_user_data(converger_1::message::meta<N, F, typename Model::meta_msg_type> const & meta_msg)
+	{
+		Model::set_task_info_user_data(meta_msg.model, task_info_user_data);
+	}
+
+	void
+	load_task_info_user_data()
+	{
+		netcpu::message::read_wrapper wrapper;
+
+		::std::ifstream meta_file((netcpu::root_path + name() + "/meta.msg").c_str(), ::std::ios::binary);
+		if (!meta_file)
+			throw ::std::runtime_error("missing meta message during load");
+		netcpu::message::fstream_to_wrapper(meta_file, wrapper);
+
+		converger_1::message::meta<N, F, typename Model::meta_msg_type> meta_msg;
+		meta_msg.from_wire(wrapper);
+
+		set_task_info_user_data(meta_msg);
+	}
 };
 
 template <typename N, typename F, typename Model, netcpu::models_ids::val ModelId>
 struct task_loader_detail : netcpu::io_wrapper<netcpu::message::async_driver> {
 	typedef censoc::lexicast< ::std::string> xxx;
 	typedef typename netcpu::message::typepair<N>::ram size_type;
+	typedef F float_type;
 
 	::std::unique_ptr<converger_1::task<N, F, Model, ModelId> > t;
 
@@ -2366,7 +2455,7 @@ struct task_loader_detail : netcpu::io_wrapper<netcpu::message::async_driver> {
 				|| // lower precedence than &&	
 			msg.float_res() == converger_1::message::float_res<float>::value && msg.extended_float_res() == converger_1::message::float_res<double>::value
 		) ; else 
-			throw netcpu::message::exception(xxx("unsupported floating resolutions: [") << msg.float_res() << "], [" << msg.extended_float_res() << ']');
+			throw censoc::exception::validation(xxx("unsupported floating resolutions: [") << msg.float_res() << "], [" << msg.extended_float_res() << ']');
 
 		::std::cerr << "ctor task loader detail\n";
 		io().read(&task_loader_detail::on_read, this);
@@ -2378,7 +2467,7 @@ struct task_loader_detail : netcpu::io_wrapper<netcpu::message::async_driver> {
 		delete this;
 	}
 
-	typedef typename Model::meta_msg_type meta_msg_type;
+	typedef converger_1::message::meta<N, F, typename Model::meta_msg_type> meta_msg_type;
 	meta_msg_type meta_msg;
 
 	void
@@ -2405,7 +2494,7 @@ struct task_loader_detail : netcpu::io_wrapper<netcpu::message::async_driver> {
 		meta_msg.from_wire(io().read_raw);
 
 		if (meta_msg.model.dataset.max_alternatives() >= ::boost::integer_traits<uint8_t>::const_max)
-			throw netcpu::message::exception(xxx("too many alternatives(=") << meta_msg.model.dataset.max_alternatives() << ") in the supplied dataset for the new task");
+			throw censoc::exception::validation(xxx("too many alternatives(=") << meta_msg.model.dataset.max_alternatives() << ") in the supplied dataset for the new task");
 
 		io().write(netcpu::message::good(), &task_loader_detail::on_meta_reply_write, this);
 	}
@@ -2417,7 +2506,7 @@ struct task_loader_detail : netcpu::io_wrapper<netcpu::message::async_driver> {
 		io().read(&task_loader_detail::on_bulk_read, this);
 	}
 
-	typedef typename Model::bulk_msg_type bulk_msg_type;
+	typedef netcpu::converger_1::message::bulk<N, F, typename Model::bulk_msg_type> bulk_msg_type;
 	bulk_msg_type bulk_msg;
 
 	void
@@ -2450,6 +2539,10 @@ struct task_loader_detail : netcpu::io_wrapper<netcpu::message::async_driver> {
 
 		bulk_msg.from_wire(io().read_raw);
 
+		Model::verify(meta_msg.model, bulk_msg.model);
+
+		t->set_task_info_user_data(meta_msg);
+
 		// verify all of the supplied tasks data (mainly so that processors will not crash out)
 		size_type max_alternatives(meta_msg.model.dataset.max_alternatives());
 		size_type matrix_composite_elements(meta_msg.model.dataset.matrix_composite_elements()); 
@@ -2460,16 +2553,27 @@ struct task_loader_detail : netcpu::io_wrapper<netcpu::message::async_driver> {
 		choice_sets_alternatives.reset(new uint8_t[choice_sets_alternatives_size]);
 		::memcpy(choice_sets_alternatives.get(), bulk_msg.model.dataset.choice_sets_alternatives.data(), choice_sets_alternatives_size);
 
-		::boost::scoped_array<int8_t> matrix_composite; 
+		::boost::scoped_array<float_type> matrix_composite; 
 		size_type const matrix_composite_size(bulk_msg.model.dataset.matrix_composite.size());
 		if (matrix_composite_size != matrix_composite_elements)
-			throw netcpu::message::exception(xxx("new task has invalid messages. composite matrix size from meta message (=") << matrix_composite_elements << "), vs the actual size of composite matrix size in bulk message (=" << matrix_composite_size << ')');
-		matrix_composite.reset(new int8_t[matrix_composite_size]);
+			throw censoc::exception::validation(xxx("new task has invalid messages. composite matrix size from meta message (=") << matrix_composite_elements << "), vs the actual size of composite matrix size in bulk message (=" << matrix_composite_size << ')');
+		matrix_composite.reset(new float_type[matrix_composite_size]);
 		for (size_type i(0); i != matrix_composite_size; ++i)
-			matrix_composite[i] = netcpu::message::deserialise_from_unsigned_to_signed_integral(bulk_msg.model.dataset.matrix_composite(i));
+			matrix_composite[i] = netcpu::message::deserialise_from_decomposed_floating<float_type>(bulk_msg.model.dataset.matrix_composite(i));
+
+
+		::boost::scoped_array<uint8_t> choice_column; 
+		size_type const choice_column_size(bulk_msg.model.dataset.choice_column.size());
+		if (choice_sets_alternatives_size != choice_column_size)
+			throw censoc::exception::validation("new task has invalid dataset -- choice_column should be have same size as the one of choice_sets_alternatives");
+		choice_column.reset(new uint8_t[choice_column_size]);
+		for (size_type i(0); i != choice_column_size; ++i)
+			choice_column[i] = bulk_msg.model.dataset.choice_column(i);
+
 
 		uint8_t * choice_sets_alternatives_end;
-		int8_t * matrix_composite_end;
+		float_type * matrix_composite_end;
+		uint8_t * choice_column_end;
 
 		choice_sets_alternatives_end = choice_sets_alternatives.get() + choice_sets_alternatives_size;
 		assert(choice_sets_alternatives_end > choice_sets_alternatives.get());
@@ -2477,35 +2581,43 @@ struct task_loader_detail : netcpu::io_wrapper<netcpu::message::async_driver> {
 		matrix_composite_end = matrix_composite.get() + matrix_composite_size;
 		assert(matrix_composite_end > matrix_composite.get());
 
+		choice_column_end = choice_column.get() + choice_column_size;
+		assert(choice_column_end > choice_column.get());
+
 		::std::vector<size_type> respondents_choice_sets;
 		size_type const respondents_size(bulk_msg.model.dataset.respondents_choice_sets.size());
+		if (!respondents_size)
+			throw censoc::exception::validation("new task has invalid dataset. Must have some respondents.");
 		respondents_choice_sets.reserve(respondents_size);
-		for (unsigned i(0); i != respondents_size; ++i)
-			respondents_choice_sets.push_back(bulk_msg.model.dataset.respondents_choice_sets(i));
+		for (unsigned i(0); i != respondents_size; ++i) {
+			size_type const choice_sets(bulk_msg.model.dataset.respondents_choice_sets(i));
+			if (!choice_sets)
+				throw censoc::exception::validation(xxx("new task has invalid dataset. Respondent (=") << i + 1 << ", after sorting) must have some choice sets.");
+			respondents_choice_sets.push_back(choice_sets);
+		}
 
 		size_type total_choicesets_from_respondents_choice_sets(0);
 		for (size_type i(0); i != respondents_size; total_choicesets_from_respondents_choice_sets += respondents_choice_sets[i++]);
 		if (total_choicesets_from_respondents_choice_sets != choice_sets_alternatives_size)
-			throw netcpu::message::exception(xxx("new task has invalid dataset. choicesets count from 'respondents_choice_sets' (=") << total_choicesets_from_respondents_choice_sets << "), vs choicesets count from choice_sets_alternatives' (=" << choice_sets_alternatives_size << ')');
+			throw censoc::exception::validation(xxx("new task has invalid dataset. choicesets count from 'respondents_choice_sets' (=") << total_choicesets_from_respondents_choice_sets << "), vs choicesets count from choice_sets_alternatives' (=" << choice_sets_alternatives_size << ')');
 
 		size_type total_alternatives_count(0);
-		int8_t * matrix_composite_i(matrix_composite.get());
-		for (uint8_t * i(choice_sets_alternatives.get()); i != choice_sets_alternatives_end; total_alternatives_count += *i, ++i) {
+		float_type * matrix_composite_i(matrix_composite.get());
+		uint8_t * choice_column_ptr(choice_column.get());
+		for (uint8_t * i(choice_sets_alternatives.get()); i != choice_sets_alternatives_end; total_alternatives_count += *i, ++choice_column_ptr, matrix_composite_i += *i * x_size, ++i) {
 			if (*i > max_alternatives)
-				throw netcpu::message::exception("new task has invalid dataset -- max_alternatives from meta_msg does not agree with alternatives-count values in bulk_msg");
+				throw censoc::exception::validation("new task has invalid dataset -- max_alternatives from meta_msg does not agree with alternatives-count values in bulk_msg");
 			if (*i == ::boost::integer_traits<uint8_t>::const_max)
-				throw netcpu::message::exception("new task has invalid dataset -- too many alternatives");
-			int8_t * chosen_alternative_ptr(matrix_composite_i + *i * x_size);
-			if (chosen_alternative_ptr <= matrix_composite_i)
-				throw netcpu::message::exception("new task has invalid dataset -- chosen alternative in composite matrix is past valid array bounds");
-			if (*chosen_alternative_ptr < 0 || *chosen_alternative_ptr > *i)
-				throw netcpu::message::exception("new task has invalid dataset -- chosen alternative is not of valid value");
-			matrix_composite_i = chosen_alternative_ptr + 1;
-			if (matrix_composite_i < chosen_alternative_ptr || matrix_composite_i > matrix_composite_end)
-				throw netcpu::message::exception("new task has invalid dataset -- next choice set is past valid array bounds");
+				throw censoc::exception::validation("new task has invalid dataset -- too many alternatives");
+			if (matrix_composite_i >= matrix_composite_end)
+				throw censoc::exception::validation("new task has invalid dataset -- next choice set is past valid array bounds");
+			if (choice_column_ptr == choice_column_end)
+				throw censoc::exception::validation("new task has invalid dataset -- chosen alternative in composite matrix is past valid array bounds");
+			if (*choice_column_ptr < 0 || *choice_column_ptr > *i)
+				throw censoc::exception::validation("new task has invalid dataset -- chosen alternative is not of valid value");
 		}
-		if (total_alternatives_count * x_size + choice_sets_alternatives_size != matrix_composite_size || matrix_composite_i != matrix_composite_end)
-			throw netcpu::message::exception("new task has invalid dataset -- overall composite matrix size does not agree with other thingies");
+		if (total_alternatives_count * x_size != matrix_composite_size || matrix_composite_i != matrix_composite_end)
+			throw censoc::exception::validation("new task has invalid dataset -- overall composite matrix size does not agree with other thingies");
 
 		assert(io().is_read_pending() == false);
 		io().read(&task_loader_detail::on_short_description_read, this);
@@ -2524,7 +2636,7 @@ struct task_loader_detail : netcpu::io_wrapper<netcpu::message::async_driver> {
 		short_description_msg.from_wire(io().read_raw);
 
 		if (short_description_msg.text.size() > 2048) // todo -- will, probably, need to be more flexible
-			throw netcpu::message::exception("new task has short description which is too long");
+			throw censoc::exception::validation("new task has short description which is too long");
 
 		::std::string const jsoned_short_description(converger_1::escape_json(::std::string(short_description_msg.text.data(), short_description_msg.text.size())));
 
@@ -2624,7 +2736,7 @@ struct task_loader : netcpu::io_wrapper<netcpu::message::async_driver> {
 		else if (msg.float_res() == converger_1::message::float_res<double>::value)
 			new task_loader_detail<IntRes, double, Model<IntRes, double>, ModelId >(io());
 		else // TODO -- may be as per 'on_read' -- write a bad message to client (more verbose)
-			throw netcpu::message::exception(xxx("unsupported floating resolution: [") << msg.float_res() << ']');
+			throw censoc::exception::validation(xxx("unsupported floating resolution: [") << msg.float_res() << ']');
 	}
 	void
 	on_bad_write()
@@ -2670,7 +2782,7 @@ struct model_factory : netcpu::model_factory_base<ModelId> {
 		else if (int_res == converger_1::message::int_res<uint64_t>::value)
 			new_task_detail<uint64_t>(float_res, id, name, pending, birthday);
 		else
-			throw ::std::runtime_error(xxx("unsupported int resolution: [") << int_res << ']');
+			throw censoc::exception::validation(xxx("unsupported int resolution: [") << int_res << ']');
 	}
 
 private:
@@ -2683,7 +2795,7 @@ private:
 		else if (float_res == converger_1::message::float_res<double>::value)
 			new_task_detail<IntRes, double>(id, name, pending, birthday);
 		else // TODO -- may be as per 'on_read' -- write a bad message to client (more verbose)
-			throw ::std::runtime_error(xxx("unsupported floating resolution: [") << float_res << ']');
+			throw censoc::exception::validation(xxx("unsupported floating resolution: [") << float_res << ']');
 		// no need for scope or shared ptr -- queued_taks is self-managed (and externally managed by the pending_tasks list), moreover if any of the insertions throw in ctor of task -- then such will not be ctored/newed-up anyway
 	}
 
@@ -2693,6 +2805,7 @@ private:
 	{
 		converger_1::task<IntRes, FloatRes, Model<IntRes, FloatRes>, ModelId> * t(new converger_1::task<IntRes, FloatRes, Model<IntRes, FloatRes>, ModelId>(id, name, birthday));
 		t->load_short_description();
+		t->load_task_info_user_data();
 		if (pending == true)
 			t->markpending();
 		else 

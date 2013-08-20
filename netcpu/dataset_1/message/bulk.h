@@ -49,8 +49,8 @@ template <typename N>
 struct bulk  {
 	netcpu::message::array<typename netcpu::message::typepair<N>::wire> respondents_choice_sets;
 	netcpu::message::array<uint8_t> choice_sets_alternatives;
-
-	netcpu::message::array<uint8_t> matrix_composite;
+	netcpu::message::array<netcpu::message::decomposed_floating<> > matrix_composite;
+	netcpu::message::array<uint8_t> choice_column;
 };
 
 }}}}

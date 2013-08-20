@@ -677,6 +677,7 @@ main(int argc, char * * argv)
 	// return 0;
 }
 
+#include "multi_logit/processor.h"
 #include "gmnl_2a/processor.h"
 #include "gmnl_2/processor.h"
 #include "logit/processor.h"

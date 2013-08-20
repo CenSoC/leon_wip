@@ -100,10 +100,12 @@ struct task_processor : censoc::exp_lookup::exponent_evaluation_choice<EF, typen
 
 #ifndef NDEBUG
 	uint8_t * debug_choice_sets_alternatives_end;
-	int8_t * debug_matrix_composite_end;
+	float_type * debug_matrix_composite_end;
+	uint8_t * debug_choice_column_end;
 #endif
 	::boost::scoped_array<uint8_t> choice_sets_alternatives;
-	::boost::scoped_array<int8_t> matrix_composite; 
+	::boost::scoped_array<float_type> matrix_composite; 
+	::boost::scoped_array<uint8_t> choice_column; 
 
 	bool reduce_exp_complexity;
 
@@ -145,9 +147,14 @@ public:
 		::memcpy(choice_sets_alternatives.get(), bulk_msg.model.dataset.choice_sets_alternatives.data(), choice_sets_alternatives_size);
 
 		size_type const matrix_composite_size(bulk_msg.model.dataset.matrix_composite.size());
-		matrix_composite.reset(new int8_t[matrix_composite_size]);
+		matrix_composite.reset(new float_type[matrix_composite_size]);
 		for (size_type i(0); i != matrix_composite_size; ++i)
-			matrix_composite[i] = netcpu::message::deserialise_from_unsigned_to_signed_integral(bulk_msg.model.dataset.matrix_composite(i));
+			matrix_composite[i] = netcpu::message::deserialise_from_decomposed_floating<float_type>(bulk_msg.model.dataset.matrix_composite(i));
+
+		size_type const choice_column_size(bulk_msg.model.dataset.choice_column.size());
+		choice_column.reset(new uint8_t[choice_column_size]);
+		for (size_type i(0); i != choice_column_size; ++i)
+			choice_column[i] = bulk_msg.model.dataset.choice_column(i);
 
 #ifndef NDEBUG
 		{
@@ -155,12 +162,14 @@ public:
 		assert(debug_choice_sets_alternatives_end > choice_sets_alternatives.get());
 		debug_matrix_composite_end = matrix_composite.get() + matrix_composite_size;
 		assert(debug_matrix_composite_end > matrix_composite.get());
+		debug_choice_column_end = choice_column.get() + choice_column_size;
+		assert(debug_choice_column_end > choice_column.get());
 		size_type total_choicesets_from_respondents_choice_sets(0);
 		for (size_type i(0); i != respondents_size; total_choicesets_from_respondents_choice_sets += respondents_choice_sets[i++]);
 		assert(total_choicesets_from_respondents_choice_sets == choice_sets_alternatives_size);
 		size_type total_alternatives_count(0);
 		for (uint8_t * i(choice_sets_alternatives.get()); i != debug_choice_sets_alternatives_end; total_alternatives_count += *i, ++i);
-		assert(total_alternatives_count * x_size + choice_sets_alternatives_size == matrix_composite_size);
+		assert(total_alternatives_count * x_size == matrix_composite_size);
 		}
 #endif
 	}
@@ -180,7 +189,8 @@ public:
 		float_type accumulated_probability(0); 
 
 		uint8_t const * choice_sets_alternatives_ptr(choice_sets_alternatives.get());
-		int8_t const * matrix_composite_ptr(matrix_composite.get());
+		float_type const * matrix_composite_ptr(matrix_composite.get());
+		uint8_t const * choice_column_ptr(choice_column.get());
 
 		for (size_type i(0); i != respondents_choice_sets.size(); ++i) {
 
@@ -199,47 +209,49 @@ public:
 				// setting first pass explicitly as opposed to additional call to 'set to zero' initially and then += ones...
 				assert(x_size);
 #ifndef NDEBUG
-				int8_t const * const debug_end_of_row_in_composite_matrix(matrix_composite_ptr + alternatives * x_size + 1);
+				float_type const * const debug_end_of_row_in_composite_matrix(matrix_composite_ptr + alternatives * x_size + 1);
 				assert(debug_end_of_row_in_composite_matrix <= debug_matrix_composite_end);
+				assert(choice_column_ptr <= debug_choice_column_end);
 #endif
 				// x == 0 (first pass)
 				for (size_type a(0); a != alternatives; ++a) {
 					assert(matrix_composite_ptr < debug_end_of_row_in_composite_matrix);
-					int const control(*matrix_composite_ptr++);
-					switch (control) {
-					case 0: 
-						betas_mult_choice[a] = 0;
-					break;
-					case 1:
+					float_type const control(*matrix_composite_ptr++);
+					if (control == .0)
+						betas_mult_choice[a] = .0;
+					else if (control == 1.)
 						betas_mult_choice[a] = coefficients[0].value();
-					break;
-					case -1:
+					else if (control == -1.)
 						betas_mult_choice[a] = -coefficients[0].value();
-					break;
-					default:
+					else if (control == 2.)
+						betas_mult_choice[a] = coefficients[0].value() + coefficients[0].value();
+					else if (control == -2.)
+						betas_mult_choice[a] = -(coefficients[0].value() + coefficients[0].value());
+					else
 						betas_mult_choice[a] = control * coefficients[0].value();
-					}
 				}
 				// now to the rest of passes ( 1 <= x < x_size)
 				for (size_type x(1), alternatives_columns_begin(alternatives); x != x_size; ++x) {
 					for (size_type a(0); a != alternatives; ++a, ++alternatives_columns_begin) {
-					assert(matrix_composite_ptr < debug_end_of_row_in_composite_matrix);
-					int const control(*matrix_composite_ptr++);
-						switch (control) {
-						case 1:
-							betas_mult_choice[a] += coefficients[x].value();
-						break;
-						case -1:
-							betas_mult_choice[a] -= coefficients[x].value();
-						break;
-						default:
-							betas_mult_choice[a] += coefficients[x].value() * control;
+						assert(matrix_composite_ptr < debug_end_of_row_in_composite_matrix);
+						float_type const control(*matrix_composite_ptr++);
+						if (control != .0) {
+							if (control == 1.)
+								betas_mult_choice[a] += coefficients[x].value();
+							else if (control == -1.)
+								betas_mult_choice[a] -= coefficients[x].value();
+							else if (control == 2.)
+								betas_mult_choice[a] += coefficients[x].value() + coefficients[x].value();
+							else if (control == -2.)
+								betas_mult_choice[a] -= coefficients[x].value() + coefficients[x].value();
+							else
+								betas_mult_choice[a] += coefficients[x].value() * control;
 						}
 					}
 				}
 				// move to the last column in row -- a chosen alternative
-				assert(matrix_composite_ptr < debug_end_of_row_in_composite_matrix);
-				size_type const chosen_alternative(*matrix_composite_ptr++);
+				assert(matrix_composite_ptr == debug_end_of_row_in_composite_matrix);
+				size_type const chosen_alternative(*choice_column_ptr++);
 				assert(chosen_alternative < alternatives);
 				// todo some sanity-checking assertions
 
@@ -317,6 +329,7 @@ public:
 
 		uint_fast64_t anticipated_ram_utilization(
 			matrix_composite_elements
+			// TODO -- put choice_columns calculation here!!!
 		); 
 
 		return netcpu::test_anticipated_ram_utilization(anticipated_ram_utilization);

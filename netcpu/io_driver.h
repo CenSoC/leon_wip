@@ -104,7 +104,7 @@ public:
 			try {
 				if (timeout_callback) 
 					timeout_callback();
-			} catch (netcpu::message::exception const & e) { 
+			} catch (censoc::exception::generic const & e) { 
 				censoc::llog() << "message-related exception in timer: [" << e.what() << "]\n"; 
 				if (error_callback)
 					error_callback();
@@ -433,7 +433,7 @@ public:
 		if (!error) { 
 			try {
 				handshake_callback_();
-			} catch (netcpu::message::exception const & e) { 
+			} catch (censoc::exception::generic const & e) { 
 				censoc::llog() << "ssl handshake-related exception: [" << e.what() << ", " << socket.lowest_layer().remote_endpoint(netcpu::ec) << "]\n";
 				error_callback_(e.what());
 			} catch (...) { 
@@ -479,7 +479,7 @@ public:
 						read_callback_();
 					}
 				}
-			} catch (netcpu::message::exception const & e) { 
+			} catch (censoc::exception::generic const & e) { 
 				censoc::llog() << "message-related exception: [" << e.what() << ", " << socket.lowest_layer().remote_endpoint(netcpu::ec) << "]\n"; 
 				error_callback_(e.what());
 			} catch (...) { 
@@ -504,7 +504,7 @@ public:
 			try {
 				read_is_pending = false;
 				read_callback_();
-			} catch (netcpu::message::exception const & e) { 
+			} catch (censoc::exception::generic const & e) { 
 				censoc::llog() << "message-related exception: [" << e.what() << ", " << socket.lowest_layer().remote_endpoint(netcpu::ec) << "]\n"; 
 				error_callback_(e.what());
 			} catch (...) { 
@@ -573,7 +573,7 @@ public:
 			try {
 				write_is_pending = false;
 				write_callback_();
-			} catch (netcpu::message::exception const & e) { 
+			} catch (censoc::exception::generic const & e) { 
 				censoc::llog() << "message-related exception: [" << e.what() << ", " << socket.lowest_layer().remote_endpoint(netcpu::ec) << "]\n"; 
 				error_callback_(e.what());
 			} catch (...) { 

@@ -42,9 +42,11 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 	@NOTE -- currently largely a hack to be able to represent unevrsally-unique position in the solution space (total solution space, not just iterated-one via the combos_builder)
  */
 
-#include <openssl/bn.h>
+#include <stdlib.h>
+#include <gmp.h>
 
-#include <boost/shared_ptr.hpp>
+#include <memory>
+#include <vector>
 
 #include <censoc/aligned_alloc.h>
 
@@ -68,66 +70,87 @@ struct fnv_1a_hash_traits<uint64_t> {
 
 // hacky singleton -- don't want to have a separate translation unit for classic version just yet... (later if this wrapper of bignum happens to be of use -- move to outer scope and perhaps make the context to be a classic singleton)
 struct big_int_context_type {
-	BN_CTX * context; // BN_CTX is not externally declared in current installation of openssl -- meaning that initialization of statically declared BN_CTX is not possible
-	::std::vector< ::boost::shared_ptr< ::BIGNUM> > cached_bns;
+	::std::vector< ::std::shared_ptr< ::mpz_t> > cached_bns;
 	uint_fast32_t hash_data_size;
 	censoc::aligned_alloc<uint8_t> hash_data;
 	uint8_t * hash_data_ptr;
 
 	big_int_context_type()
-	: context(::BN_CTX_new()), hash_data_size(16), hash_data_ptr(hash_data.alloc(hash_data_size)) {
-		//::BN_CTX_init(context);
-		unsigned const static cache_size(5000000);
+	: hash_data_size(16), hash_data_ptr(hash_data.alloc(hash_data_size)) {
+		unsigned const static cache_size(7000000);
 		cached_bns.reserve(cache_size);
-		for (unsigned i(0); i != cache_size; ++i) {
-			::BIGNUM * tmp(::BN_new());
-			::BN_set_bit(tmp, hash_data_size * 8);
-			cached_bns.push_back(::boost::shared_ptr< ::BIGNUM>(tmp, ::BN_free));
-		}
+		for (unsigned i(0); i != cache_size; ++i)
+			cached_bns.push_back(get_new_bn());
 	}
 
-	::boost::shared_ptr< ::BIGNUM>
+	static ::mpz_t * 
+	mpz_type_alloc() noexcept
+	{
+		::mpz_t * rv(static_cast< ::mpz_t *>(::malloc(sizeof(::mpz_t))));
+		assert(rv != NULL);
+		return rv;
+	}
+
+	void static
+	mpz_type_free(mpz_t * x)
+	{
+		assert(x != NULL);
+		::mpz_clear(*x);
+		::free(x);
+	}
+
+	::std::shared_ptr< ::mpz_t> 
+	get_new_bn()
+	{
+		::std::shared_ptr< ::mpz_t> rv(mpz_type_alloc(), mpz_type_free);
+		::mpz_init2(*rv, hash_data_size * 8);
+		return rv;
+	}
+
+	::std::shared_ptr< ::mpz_t>
+	get_cached_bn()
+	{
+		assert(cached_bns.back().unique() == true);
+		::std::shared_ptr< ::mpz_t> rv(cached_bns.back());
+		cached_bns.pop_back();
+		return rv;
+	}
+
+	::std::shared_ptr< ::mpz_t>
 	get_bn() noexcept 
 	{
-		if (cached_bns.empty() == true)
-			return ::boost::shared_ptr< ::BIGNUM>(::BN_new(), ::BN_free);
-		else {
-			assert(cached_bns.back().use_count() == 1);
-			::boost::shared_ptr< ::BIGNUM> rv(cached_bns.back());
-			cached_bns.pop_back();
-			return rv;
-		}
+		return cached_bns.empty() == true ? get_new_bn() : get_cached_bn(); 
 	}
 
 	void
-	copy_on_write(::boost::shared_ptr< ::BIGNUM> & num)
+	copy_on_write(::std::shared_ptr< ::mpz_t> & num)
 	{
-		if (num.use_count() > 1) { 
+		if (num.unique() == false) { 
+			::mpz_t & old(*num);
 			if (cached_bns.empty() == true)
-				num.reset(::BN_dup(num.get()), ::BN_free);
+				num.reset(mpz_type_alloc(), mpz_type_free);
 			else {
-				::BIGNUM * old(num.get());
-				assert(cached_bns.back().use_count() == 1);
+				assert(cached_bns.back().unique() == true);
 				num = cached_bns.back();
 				cached_bns.pop_back();
-				::BN_copy(num.get(), old);
 			}
+			::mpz_init_set(*num, old);
 		}
-		assert(num.use_count() == 1);
+		assert(num.unique() == true);
 	}
 
 	void
-	isolate_on_write(::boost::shared_ptr< ::BIGNUM> & num) 
+	isolate_on_write(::std::shared_ptr< ::mpz_t> & num) 
 	{
-		if (num.use_count() > 1)
+		if (num.unique() == false)
 			num = get_bn();
-		assert(num.use_count() == 1);
+		assert(num.unique() == true);
 	}
 
 	void
-	return_bn(::boost::shared_ptr< ::BIGNUM> & x) noexcept
+	return_bn(::std::shared_ptr< ::mpz_t> & x) noexcept
 	{
-		assert(x.use_count() == 1);
+		assert(x.unique() == true);
 		cached_bns.push_back(x);
 	}
 
@@ -135,12 +158,9 @@ struct big_int_context_type {
 	void
 	reset()
 	{
-		::BN_CTX_free(context);
-		context = ::BN_CTX_new();
-		//::BN_CTX_init(&context);
 #ifndef NDEBUG
-		for (::std::vector< ::boost::shared_ptr< ::BIGNUM> >::const_iterator i(cached_bns.begin()); i != cached_bns.end(); ++i)
-			assert(i->use_count() == 1);
+		for (::std::vector< ::std::shared_ptr< ::mpz_t> >::const_iterator i(cached_bns.begin()); i != cached_bns.end(); ++i)
+			assert(i->unique() == true);
 #endif
 		cached_bns.clear();
 	}
@@ -149,19 +169,20 @@ struct big_int_context_type {
 	// not really needed -- expected to be static scope anyways
 	~big_int_context_type()
 	{
-		::BN_CTX_free(context);
 	}
 
 
 	template <typename SizeType>
 	SizeType
-	hash_bn(::BIGNUM * x)
+	hash_bn(::std::shared_ptr< ::mpz_t> const & x)
 	{
 		// todo -- consider whether hash-caching of the 'unchanged' number is a possibility (depends on whether there are frequent 'hash' calls on the same number, or if there are 'rehash' use-cases on things like unoredered containers)
-		unsigned const x_size(BN_num_bytes(x));
+		unsigned const x_size((::mpz_sizeinbase(*x, 2) + 7) / 8);
 		if (hash_data_size < x_size)
-			hash_data_ptr = hash_data.alloc(hash_data_size = x_size * 2);
-		::BN_bn2bin(x, hash_data_ptr);
+			hash_data_ptr = hash_data.alloc(hash_data_size = x_size * 1.25);
+		hash_data_ptr[0] = 0; // export may not write anything at all actually...
+		::mpz_export(hash_data_ptr, NULL, 1, 1, 0, 0, *x);
+
 
 		CENSOC_ALIGNED_RESTRICTED_CONST_PTR_FROM_LOCAL_SCALAR(SizeType, hash_rv_ptr, fnv_1a_hash_traits<SizeType>::base);
 		CENSOC_ALIGNED_RESTRICTED_CONST_PTR(uint8_t const, hash_data_ptr_, hash_data_ptr);

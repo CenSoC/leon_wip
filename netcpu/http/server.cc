@@ -67,6 +67,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <censoc/type_traits.h>
 #include <censoc/lexicast.h>
 
+#include <netcpu/models_ids.h>
+
 //}
 
 namespace censoc { namespace netcpu { 
@@ -821,7 +823,7 @@ struct new_task : io_wrapper<http_adapter_driver> {
 		}
 		~scoped_zip_archive()
 		{
-			::archive_read_finish(impl);
+			::archive_read_free(impl);
 		}
 	};
 
@@ -847,7 +849,7 @@ struct new_task : io_wrapper<http_adapter_driver> {
 					if (extension == ".zip") {
 						scoped_zip_archive a;
 						::archive_entry *ae;
-						if (::archive_read_support_compression_compress(a.impl) == ARCHIVE_OK && ::archive_read_support_format_zip(a.impl) == ARCHIVE_OK && 
+						if (::archive_read_support_filter_compress(a.impl) == ARCHIVE_OK && ::archive_read_support_format_zip(a.impl) == ARCHIVE_OK && 
 							// me thinks libarchive has an interface bug... at least w.r.t. doco/implementation, the buf data argument (no. 2) should have been declared const... alas an ugly cast for the time being... if later versions of libarchive become more explicit w.r.t. whether the buf data is modified during call then will adjust/re-factor later...
 							::archive_read_open_memory(a.impl, const_cast<char *>(i->second.data()), i->second.size()) == ARCHIVE_OK && ::archive_read_next_header(a.impl, &ae) == ARCHIVE_OK && ae != NULL
 						) {
@@ -949,7 +951,19 @@ struct get_tasks_list : io_wrapper<http_adapter_driver> {
 	::std::string
 	task_info_2_json(netcpu::message::task_info const & task)
 	{
-		::std::string rv("{\"name\":\"" + ::std::string(task.name.data(), task.name.size()) + "\",\"short_description\":\"" + ::std::string(task.short_description.data(), task.short_description.size()) + "\",\"state\":\"" + (task.state() == netcpu::message::task_info::state_type::pending ? "pending" : "complete") + "\",\"value\":" + ::boost::lexical_cast< ::std::string>(netcpu::message::deserialise_from_decomposed_floating<double>(task.value)));
+		::std::string task_state;
+		switch (task.state()) {
+		case netcpu::message::task_info::state_type::active:
+		task_state = "active";
+		break;
+		case netcpu::message::task_info::state_type::pending:
+		task_state = "pending";
+		break;
+		case netcpu::message::task_info::state_type::completed:
+		task_state = "completed";
+		break;
+		}
+		::std::string rv("{\"name\":\"" + ::std::string(task.name.data(), task.name.size()) + "\",\"short_description\":\"" + ::std::string(task.short_description.data(), task.short_description.size()) + "\",\"state\":\"" + task_state + "\",\"value\":" + ::boost::lexical_cast< ::std::string>(netcpu::message::deserialise_from_decomposed_floating<double>(task.value)));
 		if (task.coefficients.size()) {
 			rv += ",\"coefficients\":[";
 			for (uint_fast32_t i(0); i != task.coefficients.size(); ++i) {
@@ -965,6 +979,13 @@ struct get_tasks_list : io_wrapper<http_adapter_driver> {
 			}
 			rv += ']';
 		}
+
+		// store user_data (currently a hack for multi_logit only)
+		if (task.model_id() == netcpu::models_ids::multi_logit) {
+			assert(task.user_data.size());
+			rv += ",\"user_data\":{\"betas_sets_size\":" + ::boost::lexical_cast< ::std::string>(static_cast<unsigned>(task.user_data(0))) + '}';
+		}
+
 		rv += '}';
 		return rv;
 	}
@@ -1441,11 +1462,15 @@ main(int argc, char * * argv)
 	return 0;
 }
 
+#include "converger_1/controller.h"
+
+#include "../multi_logit/controller.h"
 #include "../gmnl_2a/controller.h"
 #include "../gmnl_2/controller.h"
 #include "../mixed_logit/controller.h"
 #include "../logit/controller.h"
 
+::censoc::netcpu::converger_1::model_factory< ::censoc::netcpu::http_adapter_driver, ::censoc::netcpu::multi_logit::model_traits, ::censoc::netcpu::models_ids::multi_logit> static multi_logit_factory;
 ::censoc::netcpu::converger_1::model_factory< ::censoc::netcpu::http_adapter_driver, ::censoc::netcpu::gmnl_2a::model_traits, ::censoc::netcpu::models_ids::gmnl_2a> static gmnl_2a_factory;
 ::censoc::netcpu::converger_1::model_factory< ::censoc::netcpu::http_adapter_driver, ::censoc::netcpu::gmnl_2::model_traits, ::censoc::netcpu::models_ids::gmnl_2> static gmnl2_factory;
 ::censoc::netcpu::converger_1::model_factory< ::censoc::netcpu::http_adapter_driver, ::censoc::netcpu::mixed_logit::model_traits, ::censoc::netcpu::models_ids::mixed_logit> static mixed_logit_factory;

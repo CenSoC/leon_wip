@@ -42,13 +42,12 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 	@NOTE -- currently largely a hack for the range_utils to be able to represent unevrsally-unique position in the solution space (total solution space, not just iterated-one via the combos_builder)
  */
 
-#include <openssl/bn.h>
-#include <openssl/crypto.h>
-#include <openssl/err.h>
+#include <gmp.h>
+
+#include <memory>
 
 #include <boost/integer_traits.hpp>
 #include <boost/static_assert.hpp>
-#include <boost/shared_ptr.hpp>
 
 #include <censoc/type_traits.h>
 
@@ -65,16 +64,15 @@ class big_uint {
 	typedef typename censoc::param<size_type>::type size_paramtype;
 
 	BOOST_STATIC_ASSERT(::boost::integer_traits<size_type>::const_max <= ::boost::integer_traits<unsigned long>::const_max);
-	BOOST_STATIC_ASSERT(::boost::integer_traits<size_type>::const_max <= ::boost::integer_traits<BN_ULONG>::const_max);
 
 /**
-	@NOTE -- hack: currently using copy-on-write implementation to save on redundant copying (i.e. ::BN_copy(num, x.num)) when passing by value (e.g. std::make_pair, etc.) 
+	@NOTE -- hack: currently using copy-on-write implementation to save on redundant copying (i.e. ::BN_copy, ::mpz_init_set, etc.) when passing by value (e.g. std::make_pair, etc.) 
 	
 	@TODO -- Later, however, would be better to implement this using explicit "move" semantics (either via template specialisation or, better yet, using new/upcoming c++ standard). This way some things could be even faster based on compile-time determination of whether the move or copy-based assignment is taking place in the code.
 
 	For the time-being, however, it would be quicker (i.e. less development time) to deploy the copy-on-write semantics w/o any noticeable performance-related bottlenecks as big_uint is not expected to be used in the actual opaque method whose terrain is being minimized.
 	*/
-	::boost::shared_ptr< ::BIGNUM> num;
+	::std::shared_ptr< ::mpz_t> num;
 
 	typedef ::std::hash<big_uint<size_type> > hasher_type;
 
@@ -82,75 +80,32 @@ public:
 
 	big_uint()
 	: num(netcpu::big_int_context.get_bn()) {
-		assert(num.use_count() == 1); 
+		assert(num.unique() == true); 
 	}
 
 	big_uint(big_uint const & x)
 	: num(x.num) {
-		assert(num.use_count() > 1); 
+		assert(num.unique() == false); 
 	}
 
 	big_uint(size_paramtype x)
 	: num(netcpu::big_int_context.get_bn()) {
-		assert(num.use_count() == 1); 
-		// TODO -- specialize better for 64bit ints etc. using BN_bin2bn et al
+		assert(num.unique() == true); 
+		// TODO -- perhaps specialize better for 64bit ints etc. using numeric-lib-native calls et al (if present)
 		assert(x <= ::std::numeric_limits<unsigned long>::max());
-#ifndef NDEBUG
-		int rv =
-#endif
-		::BN_set_word(num.get(), x);
-		assert(rv);
+		::mpz_set_ui(*num, x);
 	}
 
 	~big_uint()
 	{
-		if (num.use_count() == 1) 
+		if (num.unique() == true) 
 			netcpu::big_int_context.return_bn(num);
-	}
-
-	void
-	zero()
-	{
-		netcpu::big_int_context.isolate_on_write(num);
-#ifndef NDEBUG
-		int rv = 
-#endif
-		BN_zero(num.get());
-		assert(rv);
-	}
-
-	void
-	one()
-	{
-		netcpu::big_int_context.isolate_on_write(num);
-#ifndef NDEBUG
-		int rv = 
-#endif
-		BN_one(num.get());
-		assert(rv);
-	}
-
-	void
-	rand(big_uint const & range)
-	{
-		netcpu::big_int_context.isolate_on_write(num);
-#ifndef NDEBUG
-		int rv = 
-#endif
-		::BN_pseudo_rand_range(num.get(), range.num.get());
-#ifndef NDEBUG
-	 if (!rv) {
-			::std::cerr << range.to_string() << ::std::endl;
-			::std::cerr << ::ERR_error_string(::ERR_get_error(), NULL) << ::std::endl;
-		}
-		assert(rv);
-#endif
 	}
 
 	// TODO -- specialize better for 64bit ints etc. using BN_bin2bn et al
 	operator size_type () const
 	{
-		unsigned long const tmp(::BN_get_word(num.get()));
+		unsigned long const tmp(::mpz_get_ui(*num));
 		assert(0xffffffffL != tmp);
 		assert(tmp <= ::std::numeric_limits<size_type>::max());
 		return tmp;
@@ -167,18 +122,14 @@ public:
 	operator = (size_paramtype x) 
 	{
 		netcpu::big_int_context.isolate_on_write(num);
-#ifndef NDEBUG
-		int rv =
-#endif
-		::BN_set_word(num.get(), x);
-		assert(rv);
+		::mpz_set_ui(*num, x);
 	}
 
 	big_uint 
 	operator + (size_paramtype x) const
 	{
-		big_uint tmp(x);
-		::BN_add(tmp.num.get(), tmp.num.get(), num.get());
+		big_uint tmp;
+		::mpz_add_ui(*tmp.num, *num, x);
 		return tmp;
 	}
 
@@ -186,7 +137,7 @@ public:
 	operator + (big_uint const & x) const
 	{
 		big_uint tmp;
-		::BN_add(tmp.num.get(), num.get(), x.num.get());
+		::mpz_add(*tmp.num, *num, *x.num);
 		return tmp;
 	}
 
@@ -194,7 +145,7 @@ public:
 	operator += (big_uint const & x) 
 	{
 		netcpu::big_int_context.copy_on_write(num);
-		::BN_add(num.get(), num.get(), x.num.get());
+		::mpz_add(*num, *num, *x.num);
 		return *this;
 	}
 
@@ -203,7 +154,7 @@ public:
 	{
 		assert(x <= ::std::numeric_limits<unsigned long>::max());
 		netcpu::big_int_context.copy_on_write(num);
-		::BN_add_word(num.get(), x);
+		::mpz_add_ui(*num, *num, x);
 		return *this;
 	}
 
@@ -211,7 +162,7 @@ public:
 	operator-(big_uint const & x) const
 	{
 		big_uint tmp;
-		::BN_sub(tmp.num.get(), num.get(), x.num.get());
+		::mpz_sub(*tmp.num, *num, *x.num);
 		return tmp;
 	}
 
@@ -219,18 +170,15 @@ public:
 	operator-=(big_uint const & x) 
 	{
 		netcpu::big_int_context.copy_on_write(num);
-		::BN_sub(num.get(), num.get(), x.num.get());
+		::mpz_sub(*num, *num, *x.num);
 		return *this;
 	}
 
 	big_uint
 	operator*(size_paramtype x) const
 	{
-		//big_uint tmp(x);
-		//::BN_mul(tmp.num.get(), tmp.num.get(), num.get(), netcpu::big_int_context.context);
-		big_uint tmp(*this);
-		netcpu::big_int_context.copy_on_write(tmp.num);
-		::BN_mul_word(tmp.num.get(), x);
+		big_uint tmp;
+		::mpz_mul_ui(*tmp.num, *num, x);
 		return tmp;
 	}
 
@@ -238,7 +186,7 @@ public:
 	operator*=(big_uint const & x) 
 	{
 		netcpu::big_int_context.copy_on_write(num);
-		::BN_mul(num.get(), num.get(), x.num.get(), netcpu::big_int_context.context);
+		::mpz_mul(*num, *num, *x.num);
 		return *this;
 	}
 
@@ -247,7 +195,7 @@ public:
 	{
 		assert(x <= ::std::numeric_limits<unsigned long>::max());
 		netcpu::big_int_context.copy_on_write(num);
-		::BN_mul_word(num.get(), x);
+		::mpz_mul_ui(*num, *num, x);
 		return *this;
 	}
 
@@ -255,9 +203,8 @@ public:
 	operator/(size_paramtype x) const
 	{
 		assert(x <= ::std::numeric_limits<unsigned long>::max());
-		big_uint tmp(*this);
-		netcpu::big_int_context.copy_on_write(tmp.num);
-		::BN_div_word(tmp.num.get(), x);
+		big_uint tmp;
+		::mpz_tdiv_q_ui(*tmp.num, *num, x);
 		return tmp;
 	}
 
@@ -266,7 +213,7 @@ public:
 	{
 		assert(x <= ::std::numeric_limits<unsigned long>::max());
 		netcpu::big_int_context.copy_on_write(num);
-		::BN_div_word(num.get(), x);
+		::mpz_tdiv_q_ui(*num, *num, x);
 		return *this;
 	}
 
@@ -274,91 +221,88 @@ public:
 	operator%(big_uint const & x) const
 	{
 		big_uint tmp;
-		::BN_mod(tmp.num.get(), num.get(), x.num.get(), netcpu::big_int_context.context);
+		::mpz_tdiv_r(*tmp.num, *num, *x.num);
 		return tmp;
 	}
 
 	big_uint &
 	operator%=(big_uint const & x)
 	{
-		// doco suggests that result may not be the same as any of the sources...
-		big_uint tmp;
-		::BN_mod(tmp.num.get(), num.get(), x.num.get(), netcpu::big_int_context.context);
-		return *this = tmp;
+		netcpu::big_int_context.copy_on_write(num);
+		::mpz_tdiv_r(*num, *num, *x.num);
+		return *this;
 	}
 
 
 	int
 	operator>(big_uint const & x) const
 	{
-		return ::BN_ucmp(num.get(), x.num.get()) == 1 ? !0 : 0;
+		return ::mpz_cmp(*num, *x.num) > 0 ? !0 : 0;
 	}
 
 	int
 	operator>=(big_uint const & x) const
 	{
-		int const rv(::BN_ucmp(num.get(), x.num.get()));
-		return rv == 1 || !rv ? !0 : 0;
+		return ::mpz_cmp(*num, *x.num) >= 0 ? !0 : 0;
 	}
 
 	int
 	operator<(big_uint const & x) const
 	{
-		return ::BN_ucmp(num.get(), x.num.get()) == -1 ? !0 : 0;
+		return ::mpz_cmp(*num, *x.num) < 0 ? !0 : 0;
 	}
 
 	int
 	operator<=(big_uint const & x) const
 	{
-		int const rv(::BN_ucmp(num.get(), x.num.get()));
-		return  rv == -1 || !rv ? !0 : 0;
+		return  ::mpz_cmp(*num, *x.num) <= 0 ? !0 : 0;
 	}
 
 	int
 	operator==(big_uint const & x) const
 	{
-		return !::BN_ucmp(num.get(), x.num.get());
+		return !::mpz_cmp(*num, *x.num) ? !0 : 0;
 	}
 
 	int
 	operator!=(big_uint const & x) const
 	{
-		return ::BN_ucmp(num.get(), x.num.get());
+		return ::mpz_cmp(*num, *x.num) ? !0 : 0;
 	}
 
 	size_type // ret by val because vector.size returns by val
-	size() const
+	size() const noexcept
 	{
-		return BN_num_bytes(num.get());
+		return (::mpz_sizeinbase(*num, 2) + 7) / 8;
 	}
 
 	void
-	store(unsigned char *to) const
+	store(unsigned char *to) const noexcept
 	{
-		::BN_bn2bin(num.get(), to);
+		assert(to != NULL);
+		to[0] = 0; // export may not write anything at all actually...
+		::mpz_export(to, NULL, 1, 1, -1, 0, *num);
 	}
 
 	void
 	load(unsigned char const * from, size_paramtype from_size) 
 	{
 		netcpu::big_int_context.isolate_on_write(num);
-		::BN_bin2bn(from, from_size, num.get());
+		::mpz_import(*num, from_size, 1, 1, -1, 0, from);
 	}
 
 	::std::string
 	to_string() const
 	{
-		char * const tmp(::BN_bn2dec(num.get()));
-		::std::string rv(tmp);
-		OPENSSL_free(tmp);
-		return rv;
+		::std::vector<char> chars(::mpz_sizeinbase(*num, 10) + 1);
+		return ::mpz_get_str(chars.data(), 10, *num);
 	}
 
 	size_type
 	hash() const 
 	{
 		assert(num.get() != NULL);
-		return netcpu::big_int_context.hash_bn<size_type>(num.get());
+		return netcpu::big_int_context.hash_bn<size_type>(num);
 	}
 };
 

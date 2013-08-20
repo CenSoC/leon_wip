@@ -49,7 +49,8 @@ struct models_ids {
 		logit = 1,
 		mixed_logit = 2,
 		gmnl_2 = 3,
-		gmnl_2a = 4
+		gmnl_2a = 4,
+		multi_logit = 5
 	};
 };
 

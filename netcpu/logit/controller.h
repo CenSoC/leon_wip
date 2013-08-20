@@ -40,16 +40,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 // TODO -- if the model is going to be used past the test-only environment, then refactor the common elements with the gmnl_2 code
 
-#include <iostream>
-#include <set>
-
+#include <censoc/exception.h>
 #include <censoc/lexicast.h>
-#include <censoc/spreadsheet/util.h>
-#include <censoc/compare.h>
-#include <censoc/stl_container_utils.h>
-#include <netcpu/io_wrapper.h>
-#include <netcpu/combos_builder.h>
-#include <netcpu/converger_1/controller.h>
 #include <netcpu/dataset_1/controller.h>
 
 #include "message/meta.h"
@@ -67,8 +59,8 @@ namespace censoc { namespace netcpu { namespace logit {
 template <typename N, typename F>
 struct model_traits {
 
-	typedef netcpu::converger_1::message::meta<N, F, logit::message::meta<N> > meta_msg_type;
-	typedef netcpu::converger_1::message::bulk<N, F, logit::message::bulk<N> > bulk_msg_type;
+	typedef logit::message::meta<N> meta_msg_type;
+	typedef logit::message::bulk<N> bulk_msg_type;
 
 	typedef typename netcpu::message::typepair<N>::wire size_type;
 	typedef typename censoc::param<size_type>::type size_paramtype;
@@ -86,14 +78,14 @@ struct model_traits {
 	{
 		if (name == "--reduce_exp_complexity") {
 			if (value == "off") {
-				meta_msg.model.reduce_exp_complexity(0);
+				meta_msg.reduce_exp_complexity(0);
 			} else if (value == "on") {
-				meta_msg.model.reduce_exp_complexity(1);
+				meta_msg.reduce_exp_complexity(1);
 			} else
-				throw netcpu::message::exception("unknown reduce_exp_complexity value: [" + value + ']');
+				throw censoc::exception::validation("unknown reduce_exp_complexity value: [" + value + ']');
 			censoc::llog() << "Reduce exponential complexity during computation run: [" << value << "]\n";
 		} else 
-			return dataset_loader.parse_arg(name, value, meta_msg.model.dataset, bulk_msg.model.dataset);
+			return dataset_loader.parse_arg(name, value, meta_msg.dataset, bulk_msg.dataset);
 		return true;
 	}
 
@@ -101,10 +93,10 @@ struct model_traits {
 	verify_args(meta_msg_type & meta_msg, bulk_msg_type & bulk_msg)
 	{
 		// calling it before, because 'respondents_choiceset_sets.size()' is relied upon by the following code (e.g. when setting 'draws_sets_size')
-		dataset_loader.verify_args(meta_msg.model.dataset, bulk_msg.model.dataset);
+		dataset_loader.verify_args(meta_msg.dataset, bulk_msg.dataset);
 
-		if (meta_msg.model.reduce_exp_complexity() == static_cast<typename netcpu::message::typepair<uint8_t>::wire>(-1))
-			throw netcpu::message::exception("must supply --reduce_exp_complexity on or off");
+		if (meta_msg.reduce_exp_complexity() == static_cast<typename netcpu::message::typepair<uint8_t>::wire>(-1))
+			throw censoc::exception::validation("must supply --reduce_exp_complexity on or off");
 	}
 };
 

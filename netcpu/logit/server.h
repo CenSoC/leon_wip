@@ -56,8 +56,12 @@ namespace censoc { namespace netcpu { namespace logit {
 
 template <typename N, typename F>
 struct model_traits {
-	typedef netcpu::converger_1::message::meta<N, F, logit::message::meta<N> > meta_msg_type;
-	typedef netcpu::converger_1::message::bulk<N, F, logit::message::bulk<N> > bulk_msg_type;
+	typedef typename netcpu::message::typepair<N>::ram size_type;
+	typedef logit::message::meta<N> meta_msg_type;
+	typedef logit::message::bulk<N> bulk_msg_type;
+
+	void static set_task_info_user_data(meta_msg_type const &, censoc::vector<uint8_t, size_type> &) { }
+	void static verify(meta_msg_type const &, bulk_msg_type const &) { }
 };
 
 netcpu::converger_1::model_factory<logit::model_traits, netcpu::models_ids::logit> static factory;

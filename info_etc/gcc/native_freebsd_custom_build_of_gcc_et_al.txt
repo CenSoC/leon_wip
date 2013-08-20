@@ -224,6 +224,8 @@ define (uncomment) BOOST_DISABLE_THREADS
 #define BOOST_ASIO_DISABLE_IOCP 
 #define BOOST_NO_RTTI
 #define BOOST_NO_TYPEID
+#define BOOST_DISABLE_ASSERTS
+#define BOOST_ASIO_DISABLE_THREADS
 
 define (uncomment) WIN32 nonsense
 
@@ -266,3 +268,20 @@ gmake install
 ./configure --prefix=/usr/home/${USER}/libarchive/installed/ --disable-shared --enable-static --disable-bsdtar --disable-bsdcpio --without-iconv
 make
 make install
+
+-------
+
+GNU MP (GMP) fast build (not for gcc itself but for the complied programs)
+
+CFLAGS="-march=native -O3 -flto" CPPFLAGS="-march=native -O3 -flto" LDFLAGS="-flto" ./configure --prefix=/usr/home/censoc/gmp_fast/installed/ --disable-shared --build=amd64-freebsd-freebsd --disable-cxx
+gmake
+cd tune
+gmake tuneup
+./tuneup -f 150000 > leonlog.txt 2>&1
+gmake clean
+then follow the instructions in leonlog.txt (namely put the hash defines into file mentioned at the beginning of the file, e.g. Parameters for ./mpn/x86_64/k8/gmp-mparam.h)
+gmake
+gmake check
+gmake install
+
+-------

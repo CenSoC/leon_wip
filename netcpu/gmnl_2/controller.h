@@ -38,16 +38,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 */
 
-#include <iostream>
-#include <set>
-
+#include <censoc/exception.h>
 #include <censoc/lexicast.h>
-#include <censoc/spreadsheet/util.h>
-#include <censoc/compare.h>
-#include <censoc/stl_container_utils.h>
-#include <netcpu/io_wrapper.h>
-#include <netcpu/combos_builder.h>
-#include <netcpu/converger_1/controller.h>
 #include <netcpu/dataset_1/controller.h>
 
 #include "message/meta.h"
@@ -65,8 +57,8 @@ namespace censoc { namespace netcpu { namespace gmnl_2 {
 template <typename N, typename F>
 struct model_traits {
 
-	typedef netcpu::converger_1::message::meta<N, F, gmnl_2::message::meta<N> > meta_msg_type;
-	typedef netcpu::converger_1::message::bulk<N, F, gmnl_2::message::bulk<N> > bulk_msg_type;
+	typedef gmnl_2::message::meta<N> meta_msg_type;
+	typedef gmnl_2::message::bulk<N> bulk_msg_type;
 
 	typedef typename netcpu::message::typepair<N>::wire size_type;
 	typedef typename censoc::param<size_type>::type size_paramtype;
@@ -83,21 +75,21 @@ struct model_traits {
 	parse_arg(::std::string const & name, ::std::string const & value, meta_msg_type & meta_msg, bulk_msg_type & bulk_msg) 
 	{
 		if (name == "--draws_sets_size") {
-			meta_msg.model.draws_sets_size(censoc::lexicast<size_type>(value));
-			censoc::llog() << "Draws sets size: [" << meta_msg.model.draws_sets_size() << "]\n";
+			meta_msg.draws_sets_size(censoc::lexicast<size_type>(value));
+			censoc::llog() << "Draws sets size: [" << meta_msg.draws_sets_size() << "]\n";
 		} else if (name == "--reduce_exp_complexity") {
 			if (value == "off") {
-				meta_msg.model.reduce_exp_complexity(0);
+				meta_msg.reduce_exp_complexity(0);
 			} else if (value == "on") {
-				meta_msg.model.reduce_exp_complexity(1);
+				meta_msg.reduce_exp_complexity(1);
 			} else
-				throw netcpu::message::exception("unknown reduce_exp_complexity value: [" + value + ']');
+				throw censoc::exception::validation("unknown reduce_exp_complexity value: [" + value + ']');
 			censoc::llog() << "Reduce exponential complexity during computation run: [" << value << "]\n";
 		} else if (name == "--repeats") {
-			meta_msg.model.repetitions(censoc::lexicast<size_type>(value));
-			censoc::llog() << "Repetitions in a simulation run: [" << meta_msg.model.repetitions() << "]\n";
+			meta_msg.repetitions(censoc::lexicast<size_type>(value));
+			censoc::llog() << "Repetitions in a simulation run: [" << meta_msg.repetitions() << "]\n";
 		} else 
-			return dataset_loader.parse_arg(name, value, meta_msg.model.dataset, bulk_msg.model.dataset);
+			return dataset_loader.parse_arg(name, value, meta_msg.dataset, bulk_msg.dataset);
 		return true;
 	}
 
@@ -105,23 +97,23 @@ struct model_traits {
 	verify_args(meta_msg_type & meta_msg, bulk_msg_type & bulk_msg)
 	{
 		// calling it before, because 'respondents_choiceset_sets.size()' is relied upon by the following code (e.g. when setting 'draws_sets_size')
-		dataset_loader.verify_args(meta_msg.model.dataset, bulk_msg.model.dataset);
+		dataset_loader.verify_args(meta_msg.dataset, bulk_msg.dataset);
 
-		if (meta_msg.model.repetitions() == static_cast<typename netcpu::message::typepair<N>::wire>(-1))
-			throw netcpu::message::exception("must supply number of repetitions in a simulation run");
+		if (meta_msg.repetitions() == static_cast<typename netcpu::message::typepair<N>::wire>(-1))
+			throw censoc::exception::validation("must supply number of repetitions in a simulation run");
 
-		if (meta_msg.model.repetitions() % 2)
-			throw netcpu::message::exception("the number of repetitions must be even");
+		if (meta_msg.repetitions() % 2)
+			throw censoc::exception::validation("the number of repetitions must be even");
 
-		if (meta_msg.model.reduce_exp_complexity() == static_cast<typename netcpu::message::typepair<uint8_t>::wire>(-1))
-			throw netcpu::message::exception("must supply --reduce_exp_complexity on or off");
+		if (meta_msg.reduce_exp_complexity() == static_cast<typename netcpu::message::typepair<uint8_t>::wire>(-1))
+			throw censoc::exception::validation("must supply --reduce_exp_complexity on or off");
 
-		if (meta_msg.model.draws_sets_size() == static_cast<typename netcpu::message::typepair<N>::wire>(-1))
-			throw netcpu::message::exception("must supply vaild draws sets size of > 0");
-		else if (!meta_msg.model.draws_sets_size())
-			meta_msg.model.draws_sets_size(bulk_msg.model.dataset.respondents_choice_sets.size());
+		if (meta_msg.draws_sets_size() == static_cast<typename netcpu::message::typepair<N>::wire>(-1))
+			throw censoc::exception::validation("must supply vaild draws sets size of > 0");
+		else if (!meta_msg.draws_sets_size())
+			meta_msg.draws_sets_size(bulk_msg.dataset.respondents_choice_sets.size());
 		else
-			meta_msg.model.draws_sets_size(::std::min(static_cast<size_type>(bulk_msg.model.dataset.respondents_choice_sets.size()), static_cast<size_type>(meta_msg.model.draws_sets_size())));
+			meta_msg.draws_sets_size(::std::min(static_cast<size_type>(bulk_msg.dataset.respondents_choice_sets.size()), static_cast<size_type>(meta_msg.draws_sets_size())));
 
 	}
 };

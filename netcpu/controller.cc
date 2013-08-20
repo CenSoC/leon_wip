@@ -306,11 +306,15 @@ main(int argc, char * * argv)
 	return 0;
 }
 
+#include "converger_1/controller.h"
+
+#include "multi_logit/controller.h"
 #include "gmnl_2a/controller.h"
 #include "gmnl_2/controller.h"
 #include "mixed_logit/controller.h"
 #include "logit/controller.h"
 
+::censoc::netcpu::converger_1::model_factory< ::censoc::netcpu::message::async_driver, ::censoc::netcpu::multi_logit::model_traits, ::censoc::netcpu::models_ids::multi_logit> static multi_logit_factory;
 ::censoc::netcpu::converger_1::model_factory< ::censoc::netcpu::message::async_driver, ::censoc::netcpu::gmnl_2a::model_traits, ::censoc::netcpu::models_ids::gmnl_2a> static gmnl_2a_factory;
 ::censoc::netcpu::converger_1::model_factory< ::censoc::netcpu::message::async_driver, ::censoc::netcpu::gmnl_2::model_traits, ::censoc::netcpu::models_ids::gmnl_2> static gmnl2_factory;
 ::censoc::netcpu::converger_1::model_factory< ::censoc::netcpu::message::async_driver, ::censoc::netcpu::mixed_logit::model_traits, ::censoc::netcpu::models_ids::mixed_logit> static mixed_logit_factory;

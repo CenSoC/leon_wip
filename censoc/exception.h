@@ -38,34 +38,47 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 */
 
-// includes... {
+#include <exception>
 
-#include <netcpu/converger_1/server.h>
+#ifndef CENSOC_EXCEPTION_H
+#define CENSOC_EXCEPTION_H
 
-#include "message/meta.h"
-#include "message/bulk.h"
+namespace censoc { namespace exception {
 
-// includes }
-
-#ifndef CENSOC_NETCPU_GMNL_2_SERVER_H
-#define CENSOC_NETCPU_GMNL_2_SERVER_H
-
-//{ for the time-being model_factory_interface will be automatically declared, no need to include explicitly...}
-
-namespace censoc { namespace netcpu { namespace gmnl_2 { 
-
-template <typename N, typename F>
-struct model_traits {
-	typedef typename netcpu::message::typepair<N>::ram size_type;
-	typedef gmnl_2::message::meta<N> meta_msg_type;
-	typedef gmnl_2::message::bulk<N> bulk_msg_type;
-
-	void static set_task_info_user_data(meta_msg_type const &, censoc::vector<uint8_t, size_type> &) { }
-	void static verify(meta_msg_type const &, bulk_msg_type const &) { }
+struct generic : ::std::exception {
+	::std::string const error;
+	generic(char const * const x)
+	: error(x) {
+	}
+	generic(::std::string const & x)
+	: error(x) {
+	}
+	virtual char const * 
+	what() const noexcept
+	{
+		return error.c_str();
+	}
 };
 
-netcpu::converger_1::model_factory<gmnl_2::model_traits, netcpu::models_ids::gmnl_2> static factory;
+struct conversion : generic {
+	conversion(char const * const x)
+	: generic(x) {
+	}
+	conversion(::std::string const & x)
+	: generic(x) {
+	}
+};
 
-}}}
+struct validation : generic {
+	validation(char const * const x)
+	: generic(x) {
+	}
+	validation(::std::string const & x)
+	: generic(x) {
+	}
+};
 
+
+}}
+	
 #endif

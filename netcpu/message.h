@@ -101,12 +101,12 @@ namespace controller_messages_ids {
 	};
 }
 
-struct exception : public ::std::runtime_error {
+struct exception : censoc::exception::generic {
 	exception(char const * const x)
-	: ::std::runtime_error(x) {
+	: censoc::exception::generic(x) {
 	}
 	exception(::std::string const & x)
-	: ::std::runtime_error(x) {
+	: censoc::exception::generic(x) {
 	}
 };
 	
@@ -1007,10 +1007,12 @@ struct task_coefficient_info {
 struct task_info {
 	message::array<char> name;
 	message::array<char> short_description;
-	enum state_type { pending, completed };
+	enum state_type { active, pending, completed };
 	message::scalar<uint8_t> state; 
 	message::decomposed_floating<> value;
 	message::array<message::task_coefficient_info> coefficients;
+	message::scalar<typename message::typepair<uint16_t>::wire> model_id;
+	message::array<uint8_t> user_data;
 };
 
 struct tasks_list : message_base<message::controller_messages_ids::tasks_list>  {

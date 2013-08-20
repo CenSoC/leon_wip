@@ -49,6 +49,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <boost/integer_traits.hpp>
 
+#include "exception.h"
 #include "type_traits.h"
 
 #ifndef CENSOC_LEXICAST_H
@@ -185,7 +186,7 @@ eightbit_helper(::std::stringstream & ss, Rv & rv)
 {
 	ss >> rv;
 	if (!ss)
-		throw ::std::runtime_error(lexicast< ::std::string>("failed in lexical numeric conversion from: [") << ss.str() << "] to: [" << rv << "]");
+		throw censoc::exception::conversion(lexicast< ::std::string>("failed in lexical numeric conversion from: [") << ss.str() << "] to: [" << rv << "]");
 }
 void static
 eightbit_helper(::std::stringstream & ss, int8_t & rv)
@@ -193,7 +194,7 @@ eightbit_helper(::std::stringstream & ss, int8_t & rv)
 	int16_t tmp;
 	ss >> tmp;
 	if (!ss || tmp > ::boost::integer_traits<int8_t>::const_max || tmp < ::boost::integer_traits<int8_t>::const_min)
-		throw ::std::runtime_error(lexicast< ::std::string>("failed in lexical numeric conversion from: [") << ss.str() << "] to: [" << rv << "]");
+		throw censoc::exception::conversion(lexicast< ::std::string>("failed in lexical numeric conversion from: [") << ss.str() << "] to: [" << rv << "]");
 	rv = static_cast<int8_t>(tmp);
 }
 void static
@@ -202,7 +203,7 @@ eightbit_helper(::std::stringstream & ss, uint8_t & rv)
 	uint16_t tmp;
 	ss >> tmp;
 	if (!ss || tmp > ::boost::integer_traits<int8_t>::const_max)
-		throw ::std::runtime_error(lexicast< ::std::string>("failed in lexical numeric conversion from: [") << ss.str() << "] to: [" << rv << "]");
+		throw censoc::exception::conversion(lexicast< ::std::string>("failed in lexical numeric conversion from: [") << ss.str() << "] to: [" << rv << "]");
 	rv = static_cast<uint8_t>(tmp);
 }
 

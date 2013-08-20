@@ -657,7 +657,7 @@ public:
 			netcpu::message::task_info & tsk(msg.tasks[task_i]);
 			tsk.name.resize((*i)->name().size());
 			::memcpy(tsk.name.data(), (*i)->name().c_str(), (*i)->name().size());
-			tsk.state(netcpu::message::task_info::state_type::pending);
+			tsk.state(task_i ? netcpu::message::task_info::state_type::pending : netcpu::message::task_info::state_type::active);
 			(*i)->load_coefficients_info_et_al(msg, tsk);
 		}
 		for (::std::multimap< ::time_t, netcpu::task *>::const_iterator i(completed_tasks.begin()); i != completed_tasks.end(); ++i, ++task_i) {
@@ -1008,6 +1008,7 @@ main(int argc, char * * argv)
 	return 0;
 }
 
+#include "multi_logit/server.h"
 #include "gmnl_2a/server.h"
 #include "gmnl_2/server.h"
 #include "logit/server.h"

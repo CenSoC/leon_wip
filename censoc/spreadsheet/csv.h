@@ -52,6 +52,9 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <vector>
 #include <fstream>
 
+#include <boost/algorithm/string.hpp>
+
+#include <censoc/exception.h>
 #include <censoc/type_traits.h>
 #include <censoc/lexicast.h>
 #include <censoc/compare.h>
@@ -160,29 +163,89 @@ public:
 	{
 		assert(assert_common() == true);
 		if (i >= grid.size())
-			throw ::std::runtime_error(xxx() << "the 1-based row(=" << i  + 1 << ") is out of range(=" << grid.size() << ")");
+			throw censoc::exception::generic(xxx() << "the 1-based row(=" << i  + 1 << ") is out of range(=" << grid.size() << ")");
 
 		current_row_i = i;
 	}
 
+private:
+	void inline
+	check_column_bounds(size_paramtype x) const
+	{
+		if (x >= grid[current_row_i].size())
+				throw censoc::exception::generic(xxx() << "in the 1-based row: [" << current_row_i  + 1 << "] the 1-based column: [" << x + 1 << "] (alpha: [" << Base::utils().alpha_tofrom_numeric(x) << "]) is out of range. Total rows: [" << grid.size() << "] and columns if that row: [" << grid[current_row_i].size() << ']');
+	}
+	template <typename T> struct column_sub_type {};
+	template <typename T>
+	T inline
+	column_sub(column_sub_type<T> const &, size_paramtype x) const
+	{
+		assert(assert_common() == true);
+		check_column_bounds(x);
+
+#if 0
+		if (grid[current_row_i][x].empty() == true)
+			throw censoc::exception::generic(xxx() << "in the 1-based row: [" << current_row_i  + 1 << "] the 1-based column: [" << x + 1 << "] (alpha: [" << Base::utils().alpha_tofrom_numeric(x) << "]) is rather empty (currently not allowed).");
+#endif
+
+		return censoc::lexicast<T>(grid[current_row_i][x]);
+	}
+	::std::string inline
+	column_sub(column_sub_type< ::std::string> const &, size_paramtype x) const
+	{
+		assert(assert_common() == true);
+		check_column_bounds(x);
+		return grid[current_row_i][x];
+	}
+
+	
+	template <typename T> struct compare_sub_type {};
+
+	template <typename T>
+	censoc::compared inline
+	compare_sub(compare_sub_type<T> const &, size_paramtype lhs, size_paramtype rhs, size_paramtype i) const
+	{
+		T const & lhs(censoc::lexicast<T>(grid[lhs][i]));
+		T const & rhs(censoc::lexicast<T>(grid[rhs][i]));
+		return lhs < rhs ? lt : lhs > rhs ? gt : eq;
+	}
+
+public:
+	struct compare_as_case_sensitive_trimmed_string { };
+private:
+	censoc::compared inline
+	compare_sub(compare_sub_type<compare_as_case_sensitive_trimmed_string> const &, size_paramtype lhs, size_paramtype rhs, size_paramtype i) const
+	{
+		::std::string trimmed_lhs(grid[lhs][i]);
+		::std::string trimmed_rhs(grid[rhs][i]);
+		::boost::trim(trimmed_lhs);
+		::boost::trim(trimmed_rhs);
+		size_type const trimmed_lhs_size(trimmed_lhs.size());
+		size_type const trimmed_rhs_size(trimmed_rhs.size());
+		if (trimmed_lhs_size < trimmed_rhs_size)
+			return lt;
+		else if (trimmed_lhs_size > trimmed_rhs_size)
+			return gt;
+		else {
+			assert(trimmed_lhs_size == trimmed_rhs_size);
+			for (::std::string::const_iterator l(trimmed_lhs.begin()), r(trimmed_rhs.begin()); l != trimmed_lhs.end(); ++l, ++r)
+				if (*l < *r)
+					return lt;
+				else if (*l > *r)
+					return gt;
+			return eq;
+		}
+	}
+public:
 	/**
 		@desc using current internal semantic row "read pointer", returns data in a given column
 		@param "i" is 0-based
 	*/
 	template <typename T>
-	T 
-	column(size_paramtype x)
+	T inline
+	column(size_paramtype x) const
 	{
-		assert(assert_common() == true);
-		if (x >= grid[current_row_i].size())
-				throw ::std::runtime_error(xxx() << "in the 1-based row: [" << current_row_i  + 1 << "] the 1-based column: [" << x + 1 << "] (alpha: [" << Base::utils().alpha_tofrom_numeric(x) << "]) is out of range. Total rows: [" << grid.size() << "] and columns if that row: [" << grid[current_row_i].size() << ']');
-
-#if 0
-		if (grid[current_row_i][x].empty() == true)
-			throw ::std::runtime_error(xxx() << "in the 1-based row: [" << current_row_i  + 1 << "] the 1-based column: [" << x + 1 << "] (alpha: [" << Base::utils().alpha_tofrom_numeric(x) << "]) is rather empty (currently not allowed).");
-#endif
-
-		return censoc::lexicast<T>(grid[current_row_i][x]);
+		return column_sub(column_sub_type<T>(), x);
 	}
 
 	/**
@@ -190,10 +253,10 @@ public:
 		@past returns if 'lhs' is < than 'rhs'
 	*/
 	template <typename T>
-	censoc::compared
-	compare(size_paramtype lhs, size_paramtype rhs, size_paramtype i) 
+	censoc::compared inline
+	compare(size_paramtype lhs, size_paramtype rhs, size_paramtype i) const
 	{
-		return compare_sub<T>(censoc::lexicast<T>(grid[lhs][i]), censoc::lexicast<T>(grid[rhs][i]));
+		return compare_sub(compare_sub_type<T>(), lhs, rhs, i);
 	}
 
 	size_type
@@ -215,12 +278,6 @@ private:
 		return false;
 	}
 
-	template <typename T>
-	censoc::compared
-	compare_sub(T const & lhs, T const & rhs) const
-	{
-		return lhs < rhs ? lt : lhs > rhs ? gt : eq;
-	}
 
 	bool
 	assert_common() const

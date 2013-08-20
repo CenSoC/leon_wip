@@ -130,10 +130,15 @@ struct response_generator {
 		for (size_type i(0); i != messages.bulk_msg.respondents_choice_sets.size(); ++i) 
 			respondents_choice_sets.push_back(messages.bulk_msg.respondents_choice_sets(i));
 
-		::std::vector<int8_t> matrix_composite(messages.bulk_msg.matrix_composite.size());
+		::std::vector<float_type> matrix_composite(messages.bulk_msg.matrix_composite.size());
 		for (size_type i(0); i != matrix_composite.size(); ++i)
-			matrix_composite[i] = netcpu::message::deserialise_from_unsigned_to_signed_integral(messages.bulk_msg.matrix_composite(i));
-		int8_t * matrix_composite_ptr(matrix_composite.data());
+			matrix_composite[i] = netcpu::message::deserialise_from_decomposed_floating<float_type>(messages.bulk_msg.matrix_composite(i));
+		float_type * matrix_composite_ptr(matrix_composite.data());
+
+		::std::vector<uint8_t> choice_column(messages.bulk_msg.choice_column.size());
+		for (size_type i(0); i != choice_column.size(); ++i)
+			choice_column[i] = messages.bulk_msg.choice_column(i);
+		uint8_t * choice_column_ptr(choice_column.data());
 
 		::std::vector<float_type> vector_haltons_sigma(respondents_choice_sets.size());
 		for (size_type i(0); i != respondents_choice_sets.size(); ++i)
@@ -201,7 +206,7 @@ struct response_generator {
 						chosen_alternative = a;
 					} 
 				}
-				*matrix_composite_ptr++ = chosen_alternative;
+				*choice_column_ptr++ = chosen_alternative;
 
 				if (censoc::was_fpu_ok(ev_cache_tmp_or_censor_cache_tmp.data()) == false) 
 					throw ::std::runtime_error("fpu exception taken place for the chosen coefficients");
@@ -218,11 +223,12 @@ struct response_generator {
 
 		choice_sets_alternatives_ptr = choice_sets_alternatives.data();
 		matrix_composite_ptr = matrix_composite.data();
+		choice_column_ptr = choice_column.data();
 
 		for (size_type i(0); i != respondents_choice_sets.size(); ++i) {
 			for (size_type t(0); t != respondents_choice_sets[i]; ++t) {
 				uint8_t const alternatives(*choice_sets_alternatives_ptr++);
-				int8_t const choice(matrix_composite_ptr[alternatives * x_size]);
+				uint8_t const choice(*choice_column_ptr++);
 				for (uint8_t a(0); a != alternatives; ++a) {
 					::std::cout << i + 1 << ',' << t + 1 << ',' << a + 1 << ',';
 					if (a == choice)
@@ -233,7 +239,7 @@ struct response_generator {
 						::std::cout << ',' << static_cast<int>(matrix_composite_ptr[x * alternatives + a]);
 					::std::cout << '\n';
 				}
-				matrix_composite_ptr += alternatives *  x_size + 1;
+				matrix_composite_ptr += alternatives *  x_size;
 			}
 		} 
 		//}

@@ -154,10 +154,15 @@ simulate()
 		respondents_choice_sets.push_back(bulk_msg.model.dataset.respondents_choice_sets(i));
 
 
-	::std::vector<int8_t> matrix_composite(bulk_msg.model.dataset.matrix_composite.size());
+	::std::vector<float_type> matrix_composite(bulk_msg.model.dataset.matrix_composite.size());
 	for (size_type i(0); i != matrix_composite.size(); ++i)
-		matrix_composite[i] = netcpu::message::deserialise_from_unsigned_to_signed_integral(bulk_msg.model.dataset.matrix_composite(i));
-	int8_t * matrix_composite_ptr(matrix_composite.data());
+		matrix_composite[i] = netcpu::message::deserialise_from_decomposed_floating<float_type>(bulk_msg.model.dataset.matrix_composite(i));
+	float_type * matrix_composite_ptr(matrix_composite.data());
+
+	::std::vector<uint8_t> choice_column(bulk_msg.model.dataset.choice_column.size());
+	for (size_type i(0); i != choice_column.size(); ++i)
+		choice_column[i] = bulk_msg.model.dataset.choice_column(i);
+	uint8_t * choice_column_ptr(choice_column.data());
 
 	::std::vector<double> vector_haltons_sigma(respondents_choice_sets.size());
 	for (size_type i(0); i != respondents_choice_sets.size(); ++i)
@@ -288,7 +293,7 @@ simulate()
 					chosen_alternative = a;
 				} 
 			}
-			*matrix_composite_ptr++ = chosen_alternative;
+			*choice_column_ptr++ = chosen_alternative;
 
 			if (censoc::was_fpu_ok(ev_cache_tmp_or_censor_cache_tmp.data()) == false) 
 				throw ::std::runtime_error("fpu exception taken place for the chosen coefficients");
@@ -298,7 +303,10 @@ simulate()
 
 	// todo -- rather crude, only need to overwrite the chosen alternative value (last in the 'row').
 	for (size_type i(0); i != matrix_composite.size(); ++i)
-		bulk_msg.model.dataset.matrix_composite(i, matrix_composite[i]);
+		netcpu::message::serialise_to_decomposed_floating(matrix_composite[i], bulk_msg.model.dataset.matrix_composite(i));
+
+	for (size_type i(0); i != choice_column.size(); ++i)
+		bulk_msg.model.dataset.choice_column(i, choice_column[i]);
 
 	netcpu::message::write_wrapper write_raw; 
 	bulk_msg.to_wire(write_raw);

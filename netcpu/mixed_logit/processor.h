@@ -162,10 +162,12 @@ struct task_processor : censoc::exp_lookup::exponent_evaluation_choice<EF, typen
 
 #ifndef NDEBUG
 	uint8_t * debug_choice_sets_alternatives_end;
-	int8_t * debug_matrix_composite_end;
+	float_type * debug_matrix_composite_end;
+	uint8_t * debug_choice_column_end;
 #endif
 	::boost::scoped_array<uint8_t> choice_sets_alternatives;
-	::boost::scoped_array<int8_t> matrix_composite; 
+	::boost::scoped_array<float_type> matrix_composite; 
+	::boost::scoped_array<uint8_t> choice_column; 
 
 
 
@@ -306,9 +308,15 @@ public:
 		::memcpy(choice_sets_alternatives.get(), bulk_msg.model.dataset.choice_sets_alternatives.data(), choice_sets_alternatives_size);
 
 		size_type const matrix_composite_size(bulk_msg.model.dataset.matrix_composite.size());
-		matrix_composite.reset(new int8_t[matrix_composite_size]);
+		matrix_composite.reset(new float_type[matrix_composite_size]);
 		for (size_type i(0); i != matrix_composite_size; ++i)
-			matrix_composite[i] = netcpu::message::deserialise_from_unsigned_to_signed_integral(bulk_msg.model.dataset.matrix_composite(i));
+			matrix_composite[i] = netcpu::message::deserialise_from_decomposed_floating<float_type>(bulk_msg.model.dataset.matrix_composite(i));
+
+		size_type const choice_column_size(bulk_msg.model.dataset.choice_column.size());
+		choice_column.reset(new uint8_t[choice_column_size]);
+		for (size_type i(0); i != choice_column_size; ++i)
+			choice_column[i] = bulk_msg.model.dataset.choice_column(i);
+
 
 #ifndef NDEBUG
 		{
@@ -316,12 +324,14 @@ public:
 		assert(debug_choice_sets_alternatives_end > choice_sets_alternatives.get());
 		debug_matrix_composite_end = matrix_composite.get() + matrix_composite_size;
 		assert(debug_matrix_composite_end > matrix_composite.get());
+		debug_choice_column_end = choice_column.get() + choice_column_size;
+		assert(debug_choice_column_end > choice_column.get());
 		size_type total_choicesets_from_respondents_choice_sets(0);
 		for (size_type i(0); i != respondents_size; total_choicesets_from_respondents_choice_sets += respondents_choice_sets[i++]);
 		assert(total_choicesets_from_respondents_choice_sets == choice_sets_alternatives_size);
 		size_type total_alternatives_count(0);
 		for (uint8_t * i(choice_sets_alternatives.get()); i != debug_choice_sets_alternatives_end; total_alternatives_count += *i, ++i);
-		assert(total_alternatives_count * x_size + choice_sets_alternatives_size == matrix_composite_size);
+		assert(total_alternatives_count * x_size == matrix_composite_size);
 		}
 #endif
 	}
@@ -352,7 +362,8 @@ public:
 		float_type accumulated_probability(0); 
 
 		uint8_t const * choice_sets_alternatives_ptr(choice_sets_alternatives.get());
-		int8_t const * matrix_composite_ptr(matrix_composite.get());
+		float_type const * matrix_composite_ptr(matrix_composite.get());
+		uint8_t const * choice_column_ptr(choice_column.get());
 
 		coefficient_metadata_type const * const etavar(coefficients + x_size);
 
@@ -438,54 +449,64 @@ public:
 				assert(alternatives <= max_alternatives);
 				assert(x_size);
 #ifndef NDEBUG
-				int8_t const * const debug_end_of_row_in_composite_matrix(matrix_composite_ptr + alternatives * x_size + 1);
+				float_type const * const debug_end_of_row_in_composite_matrix(matrix_composite_ptr + alternatives * x_size);
 				assert(debug_end_of_row_in_composite_matrix <= debug_matrix_composite_end);
+				assert(choice_column_ptr <= debug_choice_column_end);
 #endif
 				// x == 0 (first pass)
 				for (size_type a(0); a != alternatives; ++a) {
 					assert(matrix_composite_ptr < debug_end_of_row_in_composite_matrix);
-					int const control(*matrix_composite_ptr++);
+					float_type const control(*matrix_composite_ptr++);
 					CENSOC_ALIGNED_RESTRICTED_CONST_PTR(float_type, dst, ev_cache_tmp_or_censor_cache_tmp + a * float_repetitions_column_stride_size);
 					CENSOC_ALIGNED_RESTRICTED_CONST_PTR(float_type const, src, eta_cache + eta_cache_respondent_column_begin * float_repetitions_column_stride_size);
-					switch (control) {
-					case 0:
-					for (size_type tmp_i(0); tmp_i != repetitions; ++tmp_i) 
-						dst[tmp_i] = 0;
-					break;
-					case 1:
-					for (size_type tmp_i(0); tmp_i != repetitions; ++tmp_i) 
-						dst[tmp_i] = src[tmp_i];
-					break;
-					case -1:
-					for (size_type tmp_i(0); tmp_i != repetitions; ++tmp_i) 
-						dst[tmp_i] = -src[tmp_i];
-					break;
-					default:
-					for (size_type tmp_i(0); tmp_i != repetitions; ++tmp_i) 
-						dst[tmp_i] = -src[tmp_i] * control;
-					}
+
+					if (control == .0)
+						for (size_type tmp_i(0); tmp_i != repetitions; ++tmp_i) 
+							dst[tmp_i] = .0;
+					else if (control == 1.)
+						for (size_type tmp_i(0); tmp_i != repetitions; ++tmp_i) 
+							dst[tmp_i] = src[tmp_i];
+					else if (control == -1.)
+						for (size_type tmp_i(0); tmp_i != repetitions; ++tmp_i) 
+							dst[tmp_i] = -src[tmp_i];
+					else if (control == 2.)
+						for (size_type tmp_i(0); tmp_i != repetitions; ++tmp_i) 
+							dst[tmp_i] = src[tmp_i] + src[tmp_i];
+					else if (control == -2.)
+						for (size_type tmp_i(0); tmp_i != repetitions; ++tmp_i) 
+							dst[tmp_i] = -(src[tmp_i] + src[tmp_i]);
+					else
+						for (size_type tmp_i(0); tmp_i != repetitions; ++tmp_i) 
+							dst[tmp_i] = src[tmp_i] * control;
+
 				}
 
 				// now to the rest of passes ( 1 <= x < x_size)
 				for (size_type x(1); x != x_size; ++x) {
 					for (size_type a(0); a != alternatives; ++a) {
-					assert(matrix_composite_ptr < debug_end_of_row_in_composite_matrix);
-					int const control(*matrix_composite_ptr++);
-						CENSOC_ALIGNED_RESTRICTED_CONST_PTR(float_type, dst, ev_cache_tmp_or_censor_cache_tmp + a * float_repetitions_column_stride_size);
-						CENSOC_ALIGNED_RESTRICTED_CONST_PTR(float_type const, src, eta_cache + (eta_cache_respondent_column_begin + x) * float_repetitions_column_stride_size);
-						//assert(control == 0 || control == -1 || control == 1);
-						switch (control) {
-						case 1:
-						for (size_type tmp_i(0); tmp_i != repetitions; ++tmp_i) 
-							dst[tmp_i] += src[tmp_i];
-						break;
-						case -1:
-						for (size_type tmp_i(0); tmp_i != repetitions; ++tmp_i) 
-							dst[tmp_i] -= src[tmp_i];
-						break;
-						default:
-						for (size_type tmp_i(0); tmp_i != repetitions; ++tmp_i) 
-							dst[tmp_i] += src[tmp_i] * control;
+						assert(matrix_composite_ptr < debug_end_of_row_in_composite_matrix);
+						float_type const control(*matrix_composite_ptr++);
+
+						if (control != .0) {
+
+							CENSOC_ALIGNED_RESTRICTED_CONST_PTR(float_type, dst, ev_cache_tmp_or_censor_cache_tmp + a * float_repetitions_column_stride_size);
+							CENSOC_ALIGNED_RESTRICTED_CONST_PTR(float_type const, src, eta_cache + (eta_cache_respondent_column_begin + x) * float_repetitions_column_stride_size);
+
+							if (control == 1.)
+								for (size_type tmp_i(0); tmp_i != repetitions; ++tmp_i) 
+									dst[tmp_i] += src[tmp_i];
+							else if (control == -1.)
+								for (size_type tmp_i(0); tmp_i != repetitions; ++tmp_i) 
+									dst[tmp_i] -= src[tmp_i];
+							else if (control == 2.)
+								for (size_type tmp_i(0); tmp_i != repetitions; ++tmp_i) 
+									dst[tmp_i] += src[tmp_i] + src[tmp_i];
+							else if (control == -2.)
+								for (size_type tmp_i(0); tmp_i != repetitions; ++tmp_i) 
+									dst[tmp_i] -= src[tmp_i] + src[tmp_i];
+							else
+								for (size_type tmp_i(0); tmp_i != repetitions; ++tmp_i) 
+									dst[tmp_i] += src[tmp_i] * control;
 						}
 					}
 				}
@@ -497,8 +518,8 @@ public:
 #endif
 
 				// move to the last column in row -- a chosen alternative
-				assert(matrix_composite_ptr < debug_end_of_row_in_composite_matrix);
-				size_type const chosen_alternative(*matrix_composite_ptr++);
+				assert(matrix_composite_ptr == debug_end_of_row_in_composite_matrix);
+				size_type const chosen_alternative(*choice_column_ptr++);
 				assert(chosen_alternative < alternatives);
 				// todo some sanity-checking assertions
 
@@ -619,13 +640,14 @@ public:
 				+ 2 * repetitions * draws_sets_size // sigma_cache {main, tmp}
 				+ 2 * repetitions * x_size * draws_sets_size // eta_cache and eta_cache_x
 				+ repetitions * max_alternatives // ev_cache_tmp_or_censor_cache_tmp
+				+ matrix_composite_elements // matrix_composite
 			) 
 			+ sizeof(extended_float_type) * (
 				+ repetitions // ev_cache
 				+ repetitions // respondent_probability_cache
 				+ repetitions // repetitions_cache_rowwise_tmp
 			)
-			+ matrix_composite_elements // matrix_composite
+			// TODO -- put choice_columns calculation here!!!
 		); 
 
 		return netcpu::test_anticipated_ram_utilization(anticipated_ram_utilization);
