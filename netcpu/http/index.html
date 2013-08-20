@@ -840,6 +840,11 @@ function select_csv_column_type(pid, index)
 	this.gui.appendChild(tmp);
 
 	tmp = document.createElement("option");
+	tmp.value = 4;
+	tmp.appendChild(document.createTextNode("Attribute"));
+	this.gui.appendChild(tmp);
+
+	tmp = document.createElement("option");
 	tmp.value = 1;
 	tmp.appendChild(document.createTextNode("Respondent"));
 	this.gui.appendChild(tmp);
@@ -852,11 +857,6 @@ function select_csv_column_type(pid, index)
 	tmp = document.createElement("option");
 	tmp.value = 3;
 	tmp.appendChild(document.createTextNode("Alternative"));
-	this.gui.appendChild(tmp);
-
-	tmp = document.createElement("option");
-	tmp.value = 4;
-	tmp.appendChild(document.createTextNode("Attribute"));
 	this.gui.appendChild(tmp);
 
 	tmp = document.createElement("option");
