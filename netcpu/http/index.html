@@ -211,6 +211,13 @@ label, input[type='checkbox'], button {
 	font-style:italic;
 }
 
+
+td.first_row_of_task {
+	border-top-width: 3px;
+	border-top-color: purple;
+	border-style: ridge;
+}
+
 .task_order_column {
 	background-color: #efefff;
 }
@@ -3198,7 +3205,8 @@ function tasks_list_type()
 				var filtered_existing_detail_showing_animated_task = filtered_existing_detail_showing_animated_tasks[tmp_tasksubtask_name];
 				if (filtered_existing_detail_showing_animated_task)
 					tasks_list_type_this.existing_detail_showing_animated_tasks[tmp_tasksubtask_name] = filtered_existing_detail_showing_animated_task;
-				++alternating_display;
+				if (!subtask_i)
+					++alternating_display;
 			}
 
 			function individual_task_stub() 
@@ -3248,18 +3256,20 @@ function tasks_list_type()
 
 				new_task_names_set[tasksubtask_name] = true;
 
-				var header_row = document.createElement("tr");
-				if (odd_even)
-					header_row.className = "task_order_column_alt";
-				else
-					header_row.className = "task_order_column";
-				
+				var header_row;
 
 				// quick-hack (temporary testing of GUI listing textual discription all the time, even when in the collapsed/tabled mode)
 				if (!subtask_i) { // short description
 
+					header_row = document.createElement("tr");
+					if (odd_even)
+						header_row.className = "task_order_column_alt";
+					else
+						header_row.className = "task_order_column";
+
 					var short_description_container = document.createElement("td");
 					short_description_container.colSpan = 5;
+					short_description_container.className = "first_row_of_task";
 
 					var short_description_pre = document.createElement("pre");
 					short_description_pre.className = "help_content_fieldname";
