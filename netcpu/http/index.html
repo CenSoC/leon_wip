@@ -1071,12 +1071,12 @@ function new_task_type()
 	new_task_type_this.multi_logit_betas_sets_size_input = document.createElement("input");
 	new_task_type_this.multi_logit_betas_sets_size_input.type = "number";
 	new_task_type_this.multi_logit_betas_sets_size_input.size = 2;
-	new_task_type_this.multi_logit_betas_sets_size_input.value = 5;
+	new_task_type_this.multi_logit_betas_sets_size_input.value = 3;
 	new_task_type_this.multi_logit_betas_sets_size_input.onchange = function () {
 		var value = parseInt(this.value);
 		if (isNaN(value) == true || value < 1) {
 			alert("value must be a number and not less than 1");
-			this.value = 5;
+			this.value = 3;
 		} else
 			new_task_type_this.model.onchange();
 	}
