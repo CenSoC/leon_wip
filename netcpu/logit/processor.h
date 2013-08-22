@@ -209,7 +209,7 @@ public:
 				// setting first pass explicitly as opposed to additional call to 'set to zero' initially and then += ones...
 				assert(x_size);
 #ifndef NDEBUG
-				float_type const * const debug_end_of_row_in_composite_matrix(matrix_composite_ptr + alternatives * x_size + 1);
+				float_type const * const debug_end_of_row_in_composite_matrix(matrix_composite_ptr + alternatives * x_size);
 				assert(debug_end_of_row_in_composite_matrix <= debug_matrix_composite_end);
 				assert(choice_column_ptr <= debug_choice_column_end);
 #endif
