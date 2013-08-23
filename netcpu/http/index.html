@@ -1001,7 +1001,7 @@ function new_task_type()
 
 	tmp = document.createElement("option");
 	tmp.value = 5;
-	tmp.appendChild(document.createTextNode("Multi logit"));
+	tmp.appendChild(document.createTextNode("LC"));
 	this.model.appendChild(tmp);
 
 	this.model.onchange = function () {
@@ -1057,11 +1057,9 @@ function new_task_type()
 				repeats.disabled = draws_sets_size.disabled = true;
 
 				var betas_sets_size = parseInt(new_task_type_this.multi_logit_betas_sets_size_input.value);
-				for (var c = 0; c != betas_sets_size; ++c) {
-					new_task_type_this.coefficients.push("<b>&tau;</b><sub>(" + (c + 1) + ")</sub>");
+				for (var c = 0; c != betas_sets_size; ++c)
 					for (var i = 0; i != Object.keys(new_task_type_this.attributes).length; i++)
 						new_task_type_this.coefficients.push("<b>&beta;</b><sub>(" + (c + 1) + ')' + (i + 1) + "</sub>");
-				}
 				break;
 		}
 		populate_complexity_tables();
@@ -3116,8 +3114,7 @@ function tasks_list_type()
 					subtask.value = obj.tasks[i].value;
 
 					var slice_end = slice_begin + coefficients_per_betas_set;
-					subtask.coefficients = coefficients.slice(slice_begin + 1, slice_end);
-					subtask.coefficients.push(coefficients[slice_begin]);
+					subtask.coefficients = coefficients.slice(slice_begin, slice_end);
 
 					subtasks.push(subtask);
 					slice_begin = slice_end;
@@ -3235,7 +3232,7 @@ function tasks_list_type()
 				model_name = "Gmnl2a";
 				break;
 				case 5:
-				model_name = "MultiL"+ '[' + (subtask_i + 1) + ']';
+				model_name = "LC"+ '[' + (subtask_i + 1) + ']';
 				break;
 				}
 
@@ -3519,12 +3516,9 @@ function tasks_list_type()
 							case 5:
 								td_.appendChild(document.createTextNode("Log-likelihood (for all classes): -" + display_float(terrain_elevation_value)));
 								tr_.appendChild(td_);
-								betas_size = coefficients.length - 1;
+								betas_size = coefficients.length;
 								calculate_normalised_betas(coefficients, 0, betas_size);
 								generate_headings("<b>&beta;</b>", tr_, betas_size, "");
-								td_ = document.createElement("td");
-								td_.innerHTML = "&tau;";
-								tr_.appendChild(td_);
 							break;
 							default:
 								td_.appendChild(document.createTextNode("Terrain minimisation: " + display_float(terrain_elevation_value)));
@@ -4001,7 +3995,8 @@ function timer_callback(now)
 <body onload="main();" onclick="batch_fill_context_menu.hide();">
 <div class="help_content" id="help_model_content">
 <br>
-Available models: <a href="http://en.wikipedia.org/wiki/Multinomial_logit" target="_blank">Logit</a>, <a href="http://en.wikipedia.org/wiki/Mixed_logit" target="_blank">Mixed logit</a>, <a href="http://www.censoc.uts.edu.au/researchoutput/wp09-002.pdf" target="_blank">GMNL-II</a>, <a href="https://dl.dropbox.com/s/ri2v6k4fagm0hzm/GMNL2a.pdf?token_hash=AAEMQl1t0DMSBNAzUgP0VerakeLb8ixjdRQmQdqABtP7Eg&dl=1" target="_blank">Gmnl2a</a> (although Gmnl2a is currently under a very heavy development and it is very likely indeed that the aforementioned documentation hyperlink will be "out of sync" with the actual code... this should be resolved automatically in due time). 
+Available models: <a href="http://en.wikipedia.org/wiki/Multinomial_logit" target="_blank">Logit</a>, <a href="http://en.wikipedia.org/wiki/Mixed_logit" target="_blank">Mixed logit</a>, <a href="http://www.censoc.uts.edu.au/researchoutput/wp09-002.pdf" target="_blank">GMNL-II</a>, <a href="https://dl.dropbox.com/s/ri2v6k4fagm0hzm/GMNL2a.pdf?token_hash=AAEMQl1t0DMSBNAzUgP0VerakeLb8ixjdRQmQdqABtP7Eg&dl=1" target="_blank">Gmnl2a</a>, LC (Latent Class Logit) 
+<br>...although Gmnl2a is currently under a very heavy development and it is very likely indeed that the aforementioned documentation hyperlink will be "out of sync" with the actual code... this should be resolved automatically in due time). 
 <p>Wherever applicable: 
 <ul>
 <li>Normal distribution is used for <b>&sigma;</b><sub>&beta;</sub> (a.k.a. <b>&eta;</b> in some of the aforementioned model-documentation hyperlinks). Such distributions are not covariant (i.e. only a diagonal variance-covariance matrix is used). 

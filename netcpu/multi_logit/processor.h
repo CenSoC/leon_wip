@@ -134,7 +134,7 @@ public:
 	size_type
 	get_coefficients_size() const noexcept
 	{	
-		return (x_size + 1) * betas_sets_size;
+		return x_size * betas_sets_size;
 	}
 
 	void
@@ -233,8 +233,6 @@ public:
 					assert(alternatives <= max_alternatives);
 
 					// todo -- may be aligned foo...
-					float_type const betas_set_scale(coefficients[current_coefficient_i_inner++].value());
-
 
 					// setting first pass explicitly as opposed to additional call to 'set to zero' initially and then += ones...
 					assert(x_size);
