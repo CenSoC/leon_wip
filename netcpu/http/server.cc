@@ -1153,14 +1153,74 @@ struct delete_task : io_wrapper<http_adapter_driver> {
 #endif
 };
 
+// todo -- a bit of a temporary, overy generic, hack... 
+struct get_dataset_csv : io_wrapper<http_adapter_driver> {
+
+	::std::string static
+	get_id()
+	{
+		return "post /get_dataset_csv http/1.1";
+	}
+
+	void
+	on_process(::std::string const & resource_id, ::std::list< ::std::pair< ::std::string, ::std::string> > & body_fields)
+	{
+		if (resource_id == get_id()) {
+
+			if (body_fields.size() != 1 || body_fields.front().first != "--task_name" || body_fields.front().second.empty() == true)
+				throw netcpu::message::exception("on get_dataset_csv bad fields in http request");
+
+			// todo -- when the http webgui delploys xmlhttpresquest (as opposed to current explicit-form sending hack) then can take the Content-Disposition setting out and let the javascript explicitly save the response int the background.
+			::std::string const task_name(body_fields.front().second);
+
+			io().http_protocol::content = "text/csv\r\nContent-Disposition: inline; filename=\"" + task_name + "_lc_dataset.csv" + "\"";
+
+			netcpu::message::get_task_file msg;
+			msg.task_name.resize(task_name.size());
+			::memcpy(msg.task_name.data(), task_name.c_str(), task_name.size());
+
+			char const static task_file_str[] = "dataset.csv";
+			msg.task_file.resize(sizeof(task_file_str) - 1);
+			::memcpy(msg.task_file.data(), task_file_str, sizeof(task_file_str) - 1);
+
+			io().native_protocol::write(msg, &get_dataset_csv::on_native_protocol_get_task_file_written, this);
+
+		} else 
+			apply_resource_processor(io(), resource_id, body_fields);
+	}
+
+	void
+	on_native_protocol_get_task_file_written()
+	{
+		io().native_protocol::read(&get_dataset_csv::on_native_protocol_task_file_read, this);
+	}
+
+	void
+	on_native_protocol_task_file_read()
+	{
+		if (netcpu::message::task_file::myid == io().native_protocol::read_raw.id()) {
+			netcpu::message::task_file msg;
+			msg.from_wire(io().native_protocol::read_raw);
+			if (msg.bytes.size())
+				return io().http_protocol::write(::std::string(reinterpret_cast<char const *>(msg.bytes.data()), msg.bytes.size()));
+		} 
+		io().http_protocol::content = "text/plain";
+		throw netcpu::message::exception("Server refused to produce dataset.csv -- ask server admin as to why");
+	}
+
+	get_dataset_csv(http_adapter_driver & io)
+	: io_wrapper<http_adapter_driver>(io) {
+		io.http_protocol::process_callback = ::boost::bind(&get_dataset_csv::on_process, this, _1, _2);
+	}
+};
+
 struct file_cache {
 	::boost::scoped_array<uint8_t> buffer; 
 	unsigned size;
 	file_cache(::std::string const & filepath) 
 	{
 		::std::ifstream file(filepath, ::std::ios::binary);
-		::std::istreambuf_iterator<char> i(file);
-		::std::vector<char> const file_data(i, ::std::istreambuf_iterator<char>());
+		::std::vector<char> const file_data(::std::istreambuf_iterator<char>(file), (::std::istreambuf_iterator<char>()));
 		uLongf deflated_payload_size(file_data.size() * 1.03 + 12);
 		buffer.reset(new uint8_t[deflated_payload_size]);
 		if (::compress2(buffer.get(), &deflated_payload_size, reinterpret_cast<char unsigned const *>(file_data.data()), file_data.size(), 9) != Z_OK)
@@ -1432,6 +1492,7 @@ run(int argc, char * * argv)
 	resources_insert<get_tasks_list>();
 	resources_insert<move_task_in_list>();
 	resources_insert<delete_task>();
+	resources_insert<get_dataset_csv>();
 
 	::boost::scoped_ptr<interface> ui(new interface(argc, argv));
 	::boost::shared_ptr<netcpu::acceptor> acceptor_ptr(new acceptor(ui->endpoints_i)); 

@@ -40,27 +40,21 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <netcpu/message.h>
 
-#ifndef CENSOC_NETCPU_CONVERGER_1_ID_H
-#define CENSOC_NETCPU_CONVERGER_1_ID_H
+#ifndef CENSOC_NETCPU_DATASET_1_MESSAGE_DATASET_META_H
+#define CENSOC_NETCPU_DATASET_1_MESSAGE_DATASET_META_H
 
-namespace censoc { namespace netcpu { namespace converger_1 { namespace message {
+namespace censoc { namespace netcpu { namespace dataset_1 { namespace message {
 
-struct messages_ids {
-	enum val {
-		res = netcpu::message::messages_ids::end_id,
-		meta,
-		bulk,
-		short_description,
-		server_state_sync,
-		bootstrapping_peer_report,
-		peer_report,
-		server_recentre_only_sync,
-		server_complexity_only_sync,
-		convergence_state,
-		haltons,
-		skip_bulk,
-		dataset_meta
-	};
+template <unsigned MsgId>
+struct dataset_meta : netcpu::message::message_base<MsgId> {
+
+	typedef netcpu::message::array<uint8_t> string_type;
+	typedef netcpu::message::array<string_type> strings_type;
+
+	strings_type respondents;
+	strings_type choice_sets;
+	strings_type alternatives;
+
 };
 
 }}}}

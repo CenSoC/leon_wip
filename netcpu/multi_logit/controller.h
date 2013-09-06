@@ -96,11 +96,12 @@ struct model_traits {
 		return true;
 	}
 
+	template <unsigned DataSetMsgId>
 	void
-	verify_args(meta_msg_type & meta_msg, bulk_msg_type & bulk_msg)
+	verify_args(meta_msg_type & meta_msg, bulk_msg_type & bulk_msg, netcpu::dataset_1::message::dataset_meta<DataSetMsgId> & dataset_meta_msg)
 	{
 		// calling it before, because 'respondents_choiceset_sets.size()' is relied upon by the following code (e.g. when setting 'draws_sets_size')
-		dataset_loader.verify_args(meta_msg.dataset, bulk_msg.dataset);
+		dataset_loader.verify_args(meta_msg.dataset, bulk_msg.dataset, dataset_meta_msg);
 
 		if (meta_msg.reduce_exp_complexity() == static_cast<typename netcpu::message::typepair<uint8_t>::wire>(-1))
 			throw censoc::exception::validation("must supply --reduce_exp_complexity on or off");

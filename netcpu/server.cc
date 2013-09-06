@@ -51,6 +51,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <string>
 #include <cstdlib>
 #include <iostream>
+#include <vector>
 #include <set>
 #include <map>
 #include <list>
@@ -63,6 +64,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <boost/asio/ssl.hpp>
 #include <boost/enable_shared_from_this.hpp>
 #include <boost/lexical_cast.hpp>
+#include <boost/filesystem.hpp>
 
 #include <censoc/empty.h>
 #include <censoc/type_traits.h>
@@ -271,7 +273,7 @@ struct task {
 
 	void virtual deactivate() = 0;
 	void virtual activate() = 0;
-	bool virtual active() = 0;
+	bool virtual active() const = 0;
 	void virtual new_processing_peer(netcpu::message::async_driver & io) = 0;
 	
 
@@ -656,7 +658,7 @@ public:
 #endif
 			netcpu::message::task_info & tsk(msg.tasks[task_i]);
 			tsk.name.resize((*i)->name().size());
-			::memcpy(tsk.name.data(), (*i)->name().c_str(), (*i)->name().size());
+			::std::copy((*i)->name().cbegin(), (*i)->name().cend(), tsk.name.data());
 			tsk.state(task_i ? netcpu::message::task_info::state_type::pending : netcpu::message::task_info::state_type::active);
 			(*i)->load_coefficients_info_et_al(msg, tsk);
 		}
@@ -677,7 +679,7 @@ public:
 		msg.from_wire(io().read_raw);
 		int const steps_to_move_by(netcpu::message::deserialise_from_unsigned_to_signed_integral(msg.steps_to_move_by()));
 		if (steps_to_move_by) {
-			::std::string task_name(::std::string(msg.task_name.data(), msg.task_name.size()));
+			::std::string task_name(msg.task_name.data(), msg.task_name.size());
 			::std::map< ::std::string, netcpu::task * >::iterator i(named_tasks.find(task_name));
 			if (i != named_tasks.end()) {
 				while (i->second->pending_i != pending_tasks_scoped_membership_iterator::iterator_type()) {
@@ -704,7 +706,7 @@ public:
 	{
 		netcpu::message::delete_task msg;
 		msg.from_wire(io().read_raw);
-		::std::string task_name(::std::string(msg.task_name.data(), msg.task_name.size()));
+		::std::string task_name(msg.task_name.data(), msg.task_name.size());
 		::std::cerr << "deleting a task " << task_name << '\n';
 		::std::map< ::std::string, netcpu::task * >::iterator i(named_tasks.find(task_name));
 		if (i != named_tasks.end()) {
@@ -720,6 +722,34 @@ public:
 			censoc::llog() << "controller is asking to delete a task which does not exist [" << task_name << "]\n";
 			io().write(netcpu::message::bad());
 		}
+	}
+
+	// todo -- a bit of a temporary, overy generic, hack. later, perhaps revisit the need for such a generic interface and re-factor for a more specific api (e.g. not just being able to serve out any file) 
+	void
+	on_get_task_file()
+	{
+		netcpu::message::get_task_file msg;
+		msg.from_wire(io().read_raw);
+		::std::string const task_name(msg.task_name.data(), msg.task_name.size());
+		::std::string const task_file(msg.task_file.data(), msg.task_file.size());
+
+		::std::string const filepath(netcpu::root_path + task_name + '/' + task_file);
+
+		struct ::stat s;
+		if (!::stat(filepath.c_str(), &s) && S_ISREG(s.st_mode))  {
+			// todo -- later specialize for basic_ifstream<uint8_t> -- this would include specializing/setting char traits as well as facets
+			::std::ifstream f(filepath, ::std::ios::binary);
+			if (s.st_size) {
+				netcpu::message::task_file msg;
+				msg.bytes.resize(s.st_size);
+				::std::copy(::std::istreambuf_iterator<char>(f), ::std::istreambuf_iterator<char>(), reinterpret_cast<char *>(msg.bytes.data()));
+				io().write(msg);
+				return;
+			} 
+			censoc::llog() << "controller is asking for file which cannot be read or is 0 bytes [" << filepath << "]\n";
+		}
+		censoc::llog() << "controller is asking for file which does not exist [" << filepath << "]\n";
+		io().write(netcpu::message::bad());
 	}
 
 	void 
@@ -754,6 +784,9 @@ public:
 
 		case netcpu::message::delete_task::myid : 
 		return on_delete_task();
+
+		case netcpu::message::get_task_file::myid : 
+		return on_get_task_file();
 
 		default:
 		censoc::llog() << "unexpected message: [" << id << "], ignoring.\n";

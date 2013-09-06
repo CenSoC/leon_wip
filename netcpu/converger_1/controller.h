@@ -49,6 +49,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <netcpu/io_wrapper.h>
 #include <netcpu/combos_builder.h>
+#include <netcpu/dataset_1/message/dataset_meta.h>
 
 #include "types.h"
 #include "message/res.h"
@@ -95,6 +96,7 @@ struct task_loader_detail : netcpu::io_wrapper<AsyncDriver> {
 	converger_1::message::meta<N, F, typename Model::meta_msg_type> meta_msg;
 	converger_1::message::bulk<N, F, typename Model::bulk_msg_type> bulk_msg;
 	converger_1::message::short_description short_description_msg;
+	netcpu::dataset_1::message::dataset_meta<converger_1::message::messages_ids::dataset_meta> dataset_meta_msg;
 
 	struct cli_coefficient_range_metadata {
 		cli_coefficient_range_metadata(size_paramtype i, 
@@ -295,7 +297,7 @@ struct task_loader_detail : netcpu::io_wrapper<AsyncDriver> {
 					throw censoc::exception::validation(xxx() << "unknown argument: [" << i->first << ']');
 		}
 
-		model.verify_args(meta_msg.model, bulk_msg.model);
+		model.verify_args(meta_msg.model, bulk_msg.model, dataset_meta_msg);
 
 		if (!short_description_msg.text.size())
 			throw censoc::exception::validation("Must supply --short_description option");
@@ -490,12 +492,19 @@ struct task_loader_detail : netcpu::io_wrapper<AsyncDriver> {
 	void
 	on_write_short_description()
 	{
-		censoc::llog() << "short_description message written\n";
-		base_type::io().AsyncDriver::native_protocol::read(&task_loader_detail::on_read_short_description_response, this);
+		censoc::llog() << "short_description written, will now send dataset_meta message\n";
+		base_type::io().AsyncDriver::native_protocol::write(dataset_meta_msg, &task_loader_detail::on_write_dataset_meta, this);
 	}
 
 	void
-	on_read_short_description_response()
+	on_write_dataset_meta()
+	{
+		censoc::llog() << "dataset_meta written\n";
+		base_type::io().AsyncDriver::native_protocol::read(&task_loader_detail::on_read_server_job_accepted_response, this);
+	}
+
+	void
+	on_read_server_job_accepted_response()
 	{
 		if (netcpu::message::new_taskname::myid == base_type::io().AsyncDriver::native_protocol::read_raw.id()) {
 			netcpu::message::new_taskname msg(base_type::io().AsyncDriver::native_protocol::read_raw);

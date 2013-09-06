@@ -61,8 +61,9 @@ POSTFASTFLAGS_YUCK = -fno-lto -fno-whole-program -fno-use-linker-plugin
 
 .MAIN : tests server processor controller update_server update_client lognormal_test flexi_dist_test exp_lookup_test survey_generator gmnl_2a/response_generator gmnl_2a/simulator gmnl_2/2csv http/server
 
-server : numpunct
-	make LIBS_DEFINED="numpunct.o -lboost_coroutine -lboost_context -lboost_filesystem -lboost_system -lgmp -lssl -lcrypto -lz" ${.TARGET}.exe
+# todo -- The finite_math(.o) presence in this target is only temporary and relates to multi_logit (latent class) model doing modal class calculations on the server side. If/when a proper network-based distribution of the respondents-classes-probability calculation takes place (in the multi_logit model) then must remember to take out the 'finite_math' dependency.	
+server : numpunct finite_math
+	make LIBS_DEFINED="numpunct.o finite_math.o -lboost_coroutine -lboost_context -lboost_filesystem -lboost_system -lgmp -lssl -lcrypto -lz" ${.TARGET}.exe
 
 # -liconv
 http/server :

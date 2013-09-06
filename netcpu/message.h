@@ -97,7 +97,11 @@ namespace controller_messages_ids {
 		get_tasks_list = message::messages_ids::end_id,
 		tasks_list,
 		move_task_in_list,
-		delete_task
+		delete_task,
+		// todo -- a bit of a temporary, overy generic, hack... 
+		get_task_file,
+		task_file
+		// 
 	};
 }
 
@@ -1037,6 +1041,14 @@ struct move_task_in_list : message::message_base<message::controller_messages_id
 
 struct delete_task : message::message_base<message::controller_messages_ids::delete_task> {
 	message::array<char> task_name;
+};
+
+struct get_task_file : message::message_base<message::controller_messages_ids::get_task_file> {
+	message::array<char> task_name;
+	message::array<char> task_file;
+};
+struct task_file : message::message_base<message::controller_messages_ids::task_file> {
+	message::array<uint8_t> bytes;
 };
 
 }}}

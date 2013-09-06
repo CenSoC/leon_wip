@@ -818,6 +818,8 @@ struct end_process_writer : netcpu::io_wrapper<netcpu::message::async_driver> {
 	}
 };
 
+template <typename N, typename F, typename Model, netcpu::models_ids::val ModelId> struct task;
+
 template <typename N, typename F, typename Model, netcpu::models_ids::val ModelId>
 struct task_processor : ::boost::noncopyable {
 
@@ -838,6 +840,8 @@ struct task_processor : ::boost::noncopyable {
 	typedef ::std::map<size_type, size_type> complexities_type;
 
 	//}
+
+	task<N, F, Model, ModelId> & t;
 
 	float_type shrink_slowdown;
 
@@ -900,8 +904,8 @@ public:
 	::boost::unordered_set<netcpu::big_uint<size_type>, ::std::hash<netcpu::big_uint<size_type> > > duplicates_elimination_uniques;
 	complexities_type accumulated_duplicates;
 
-	task_processor()
-	: 
+	task_processor(task<N, F, Model, ModelId> & t)
+	: t(t), 
 #ifndef NDEBUG
 	intended_coeffs_at_once(0),
 #endif
@@ -1458,8 +1462,9 @@ public:
 				}
 #endif
 			}
-		} // some peer must have done it's complexities... or similar
-		do_redistribute_remaining_peers_complexities();
+		} 
+		if (processing_peers.empty() == false)
+			do_redistribute_remaining_peers_complexities();
 		return true;
 	}
 
@@ -1744,7 +1749,8 @@ public:
 	{
 		// to prevent the dtor from saving the convergence state again (currently such saving is done explicitly in the on_sync_timeout stage)
 		save_convergence_state_timer.cancel();
-		netcpu::pending_tasks.front()->markcompleted();
+		assert(t.active_task_processor.get() == this);
+		t.on_converged();
 	}
 
 private:
@@ -2342,7 +2348,8 @@ struct task : netcpu::task {
 		}
 	}
 
-	void activate() 
+	void 
+	activate() override
 	{
 		/* { NOTE -- what to do if reactivating and generic list of processing-ready peers already contains processors which have rejected current (this) task and are in the list because they are awaiting a new task?
 			 The answer is easy -- just re-process those as if they were not the prior rejectors. This may appear wastefull but keeping in mind that a task is very likely to be deactivated AND another task is activated in it's place -- so the 'prior rejectors' list may well contain those that are no longer relevant to this particular task anyway.
@@ -2353,7 +2360,7 @@ struct task : netcpu::task {
 		assert(netcpu::pending_tasks.empty() == false);
 		assert(active_task_processor.get() == NULL);
 		censoc::llog() << "converger_1's model factory is instantiating a task processor" << ::std::endl;
-		active_task_processor.reset(new converger_1::task_processor<N, F, Model, ModelId>);
+		active_task_processor.reset(new converger_1::task_processor<N, F, Model, ModelId>(*this));
 
 		// here loop through 'netcpu::ready_to_process_peers' and ask active_task_processor to 'new up' the right implementation for every one.
 
@@ -2372,6 +2379,13 @@ struct task : netcpu::task {
 		}
 	}
 
+	void virtual
+	on_converged()
+	{
+		assert(netcpu::pending_tasks.front() == this);
+		netcpu::pending_tasks.front()->markcompleted();
+	}
+
 	void 
 	new_processing_peer(netcpu::message::async_driver & io_driver)
 	{
@@ -2383,16 +2397,16 @@ struct task : netcpu::task {
 		// todo -- write additional method -- assert(active() == true) and which will accept newly-ready-to-process generic peer and call on active task processor to 'new up' the right implementation.
 
 	bool
-	active() 
+	active() const override 
 	{
 		return active_task_processor.get() != NULL ? true : false;
 	}
 
-	void
-	set_task_info_user_data(converger_1::message::meta<N, F, typename Model::meta_msg_type> const & meta_msg)
-	{
-		Model::set_task_info_user_data(meta_msg.model, task_info_user_data);
-	}
+	void virtual
+	set_task_info_user_data(converger_1::message::meta<N, F, typename Model::meta_msg_type> const & meta_msg) { }
+
+	void virtual
+	verify(converger_1::message::meta<N, F, typename Model::meta_msg_type> const & meta_msg, converger_1::message::bulk<N, F, typename Model::bulk_msg_type>  const &) { }
 
 	void
 	load_task_info_user_data()
@@ -2430,7 +2444,7 @@ struct task_loader_detail : netcpu::io_wrapper<netcpu::message::async_driver> {
 		// generating name in a form "COUNTER_MODELID-INTRESxFLOATRES" e.g. "1_1-0x1" (TODO -- make it more elegant)
 		netcpu::generate_taskdir(::std::string(xxx(int(ModelId))) + '-' + ::std::string(xxx(int(converger_1::message::int_res<N>::value))) + 'x' + ::std::string(xxx(int(converger_1::message::float_res<F>::value))), id, name);
 
-		t.reset(new converger_1::task<N, F, Model, ModelId>(id, name));
+		t.reset(new typename Model::template task_type<ModelId>(id, name));
 
 		assert(t != NULL);
 
@@ -2539,7 +2553,7 @@ struct task_loader_detail : netcpu::io_wrapper<netcpu::message::async_driver> {
 
 		bulk_msg.from_wire(io().read_raw);
 
-		Model::verify(meta_msg.model, bulk_msg.model);
+		t->verify(meta_msg, bulk_msg);
 
 		t->set_task_info_user_data(meta_msg);
 
@@ -2653,6 +2667,25 @@ struct task_loader_detail : netcpu::io_wrapper<netcpu::message::async_driver> {
 
 		t->set_short_description(jsoned_short_description);
 
+		io().read(&task_loader_detail::on_dataset_meta_read, this);
+	}
+
+	void
+	on_dataset_meta_read()
+	{
+		if (converger_1::message::messages_ids::dataset_meta != io().read_raw.id()) 
+			throw netcpu::message::exception(xxx("wrong message: [") << io().read_raw.id() << "] want dataset_meta id: [" << static_cast<netcpu::message::id_type>(converger_1::message::messages_ids::dataset_meta) << ']');
+
+		::std::string const dataset_meta_filepath(netcpu::root_path + t->name() + "/dataset_meta.msg");
+		{
+			::std::ofstream dataset_meta_file((dataset_meta_filepath + ".tmp").c_str(), ::std::ios::binary | ::std::ios::trunc);
+			dataset_meta_file.write(reinterpret_cast<char const *>(io().read_raw.head()), io().read_raw.size());
+			if (!dataset_meta_file)
+				throw ::std::runtime_error("could not write " + dataset_meta_filepath + ".tmp");
+			if (::rename((dataset_meta_filepath + ".tmp").c_str(), dataset_meta_filepath.c_str()))
+				throw ::std::runtime_error("could not rename/mv dataset_meta_filepath temporary file");
+		}
+
 		netcpu::message::new_taskname msg(t->name());
 		io().write(msg, &task_loader_detail::on_new_taskname_write, this);
 	}
@@ -2734,7 +2767,7 @@ struct task_loader : netcpu::io_wrapper<netcpu::message::async_driver> {
 		if (msg.float_res() == converger_1::message::float_res<float>::value)
 			new task_loader_detail<IntRes, float, Model<IntRes, float>, ModelId>(io());
 		else if (msg.float_res() == converger_1::message::float_res<double>::value)
-			new task_loader_detail<IntRes, double, Model<IntRes, double>, ModelId >(io());
+			new task_loader_detail<IntRes, double, Model<IntRes, double>, ModelId>(io());
 		else // TODO -- may be as per 'on_read' -- write a bad message to client (more verbose)
 			throw censoc::exception::validation(xxx("unsupported floating resolution: [") << msg.float_res() << ']');
 	}
@@ -2760,7 +2793,7 @@ struct model_factory : netcpu::model_factory_base<ModelId> {
 	}
 
 	void
-	new_task(netcpu::tasks_size_type const & id, ::std::string const & name, bool pending, time_t birthday)
+	new_task(netcpu::tasks_size_type const & id, ::std::string const & name, bool pending, time_t birthday) override
 	{
 		// expecting name in a form "COUNTER_MODELID-INTRESxFLOATRES" e.g. "1_1-0x1"
 		::std::string::size_type int_res_pos(name.find_first_of('-'));
@@ -2803,7 +2836,7 @@ private:
 	void
 	new_task_detail(netcpu::tasks_size_type const & id, ::std::string const & name, bool pending, time_t birthday)
 	{
-		converger_1::task<IntRes, FloatRes, Model<IntRes, FloatRes>, ModelId> * t(new converger_1::task<IntRes, FloatRes, Model<IntRes, FloatRes>, ModelId>(id, name, birthday));
+		converger_1::task<IntRes, FloatRes, Model<IntRes, FloatRes>, ModelId> * t(new typename Model<IntRes, FloatRes>::template task_type<ModelId>(id, name, birthday));
 		t->load_short_description();
 		t->load_task_info_user_data();
 		if (pending == true)

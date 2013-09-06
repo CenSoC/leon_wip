@@ -3303,7 +3303,34 @@ function tasks_list_type()
 						}
 					}
 
+					// todo -- a quick hack (later on consider using XMLHttpRequest thingy)
+					if (model_id == 5 && task_completed == true) {
+						short_description_container.appendChild(document.createTextNode("\u00a0\u00a0\u00a0"));
+						download_dataset_label = document.createElement("label");
+						download_dataset_label.appendChild(document.createTextNode("/download dataset with classes/"));
+						download_dataset_label.className = "active_task_meta_text";
+						download_dataset_label.style.textDecoration = "underline";
+						download_dataset_label.onclick = function ()
+						{
+							var form = document.createElement("form");
+							form.method = "POST";
+							form.action = server_at + "get_dataset_csv";
+							form.target = "_blank";
+							form.enctype = "multipart/form-data";
+							var input = document.createElement("input");
+							input.type = "hidden";
+							input.name = "--task_name";
+							input.value = task_name;
+							form.appendChild(input);
+							document.body.appendChild(form);
+							form.submit();
+							document.body.removeChild(form);
+						}
+						short_description_container.appendChild(download_dataset_label);
+					}
+
 					header_row.appendChild(short_description_container);
+
 					tbl.appendChild(header_row);
 				}
 
@@ -3409,6 +3436,7 @@ function tasks_list_type()
 							div.appendChild(document.createTextNode(meta_text));
 							//div.innerHTML = "<pre class='active_task_meta_text'>" + meta_text + "\n(do not try to click/reload all the bloody time as numbers may update rarely -- like in a few minutes or so)</pre>";
 							td.appendChild(div);
+
 						}
 
 

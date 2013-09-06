@@ -59,6 +59,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <censoc/stl_container_utils.h>
 
 #include <netcpu/message.h>
+#include <netcpu/dataset_1/message/dataset_meta.h>
 
 #include "message/meta.h"
 #include "message/bulk.h"
@@ -200,7 +201,7 @@ struct composite_matrix_loader {
 		operator () (size_type lhs, size_type rhs) const
 		{
 			for (typename ::std::list<size_type>::const_iterator i(sortby.begin()); i != sortby.end(); ++i) {
-				censoc::compared const tmp(grid.template compare<typename rawgrid_type::compare_as_case_sensitive_trimmed_string>(lhs, rhs, *i));
+				censoc::compared const tmp(grid.template compare<typename rawgrid_type::compare_as_numeric_first_then_size_prioritised_case_sensitive_trimmed_string>(lhs, rhs, *i));
 				if (tmp == lt)
 					return true;
 				else if (tmp == gt) 
@@ -356,8 +357,23 @@ private:
 		} 
 		return false;
 	}
+
+	template <typename List, typename Msg>
 	void
-	verify_args_sub(rawgrid_type & grid_obj, dataset_1::message::meta<N> & meta_msg, dataset_1::message::bulk<N> & bulk_msg) 
+	strings_list_to_msg(List & list, size_type const & list_size, Msg & field)
+	{
+		field.resize(list_size);
+		size_type tmp_i(0);
+		for (typename ::std::list< ::std::string>::const_iterator i(list.begin()); i != list.end(); ++i, ++tmp_i) {
+			auto & tmp_resp_str(field[tmp_i]);
+			tmp_resp_str.resize(i->size());
+			::memcpy(tmp_resp_str.data(), i->data(), i->size());
+		}
+	}
+
+	template <unsigned ModelId>
+	void
+	verify_args_sub(rawgrid_type & grid_obj, dataset_1::message::meta<N> & meta_msg, dataset_1::message::bulk<N> & bulk_msg, dataset_1::message::dataset_meta<ModelId> & dataset_meta_msg) 
 	{
 		//if (sheet_i == static_cast<size_type>(-1))
 		//	throw censoc::exception::validation("must supply which sheet in the excel file contains relevant data");
@@ -429,6 +445,10 @@ private:
 		if (sortby.empty() == false)
 			sorted.sort(grid_sorter(sortby, grid_obj));
 
+		::std::list< ::std::string> respondent_ids;
+		::std::list< ::std::string> choice_set_ids;
+		censoc::stl::fastsize< ::std::list< ::std::string>, size_type> alternative_ids;
+
 		censoc::stl::fastsize< ::std::list<uint8_t>, size_type> choice_sets_alternatives;
 		uint8_t max_alternatives(0);
 		size_type matrix_composite_elements_size(0);
@@ -456,14 +476,14 @@ private:
 					throw censoc::exception::validation(xxx("design has duplicate rows w.r.t. tuple of {respondent, choice set, alternative} e.g. {") << respondent << ',' << choice_set << ',' << alternative << '}');
 				switch (stage) { // falling through on purpose...
 					case 1:
-						old_respondent = respondent;
+						respondent_ids.push_back(old_respondent = respondent);
 						respondents_choice_sets.push_back(0);
 					case 2:
-						old_choice_set = choice_set;
+						choice_set_ids.push_back(old_choice_set = choice_set);
 						++respondents_choice_sets.back();
 						choice_sets_alternatives.push_back(0);
 					case 3:
-						old_alternative =  alternative;
+						alternative_ids.push_back(old_alternative =  alternative);
 						if (++choice_sets_alternatives.back() > max_alternatives) {
 							max_alternatives = choice_sets_alternatives.back();
 							if (::boost::integer_traits<uint8_t>::const_max == max_alternatives)
@@ -496,6 +516,16 @@ private:
 
 		if (respondents_choice_sets.empty() == true)
 			throw censoc::exception::validation("must have at least some respondents.");
+
+
+		strings_list_to_msg(respondent_ids, respondents_choice_sets.size(), dataset_meta_msg.respondents);
+		strings_list_to_msg(choice_set_ids, choice_sets_alternatives.size(), dataset_meta_msg.choice_sets);
+		strings_list_to_msg(alternative_ids, alternative_ids.size(), dataset_meta_msg.alternatives);
+
+
+		assert(respondent_ids.size() == respondents_choice_sets.size());
+		assert(choice_set_ids.size() == choice_sets_alternatives.size());
+
 		bulk_msg.respondents_choice_sets.resize(respondents_choice_sets.size());
 		size_type bulk_msg_respondent_i(0);
 		for (typename ::std::list<size_type>::const_iterator i(respondents_choice_sets.begin()); i != respondents_choice_sets.end(); ++i) {
@@ -509,7 +539,6 @@ private:
 			censoc::llog() << *i << ", ";
 		}
 		*/
-
 
 		// transposition of alternatives into columns
 		typename ::std::list<size_type>::const_iterator sorted_i(sorted.begin()); 
@@ -558,8 +587,9 @@ private:
 	}
 
 public:
+	template <unsigned ModelId>
 	void
-	verify_args(dataset_1::message::meta<N> & meta_msg, dataset_1::message::bulk<N> & bulk_msg)
+	verify_args(dataset_1::message::meta<N> & meta_msg, dataset_1::message::bulk<N> & bulk_msg, dataset_1::message::dataset_meta<ModelId> & dataset_meta_msg)
 	{
 		cli_check_matrix_elements(x_elements, "x submatrix", ute);
 		uint8_t const utf8_tolerance[] = {0xEF, 0xBB, 0xBF};
@@ -575,7 +605,7 @@ public:
 			for (uint_fast8_t utf8_tolerance_i(0); is.peek() == utf8_tolerance[utf8_tolerance_i] && utf8_tolerance_i != 3; ++utf8_tolerance_i)
 				is.ignore();
 			rawgrid_type grid_obj(is, typename grid_base::ctor(ute));
-			verify_args_sub(grid_obj, meta_msg, bulk_msg);
+			verify_args_sub(grid_obj, meta_msg, bulk_msg, dataset_meta_msg);
 		} else if (filedata.size() > sizeof(utf8_tolerance)) {
 			// UTF-8 encoding BOM discarding...
 			char * filedata_data(filedata.data());
@@ -592,7 +622,7 @@ public:
 			::std::istream data(&buf);
 
 			rawgrid_type grid_obj(data, typename grid_base::ctor(ute));
-			verify_args_sub(grid_obj, meta_msg, bulk_msg);
+			verify_args_sub(grid_obj, meta_msg, bulk_msg, dataset_meta_msg);
 		} else if (filepath.empty() == false && filedata.size() || filepath.empty() == true && !filedata.size())
 			throw censoc::exception::validation("must either supply the filepath for the csv file or the filedata itself");
 		else

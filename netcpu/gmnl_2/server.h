@@ -60,8 +60,8 @@ struct model_traits {
 	typedef gmnl_2::message::meta<N> meta_msg_type;
 	typedef gmnl_2::message::bulk<N> bulk_msg_type;
 
-	void static set_task_info_user_data(meta_msg_type const &, censoc::vector<uint8_t, size_type> &) { }
-	void static verify(meta_msg_type const &, bulk_msg_type const &) { }
+	template <netcpu::models_ids::val ModelId>
+	using task_type = netcpu::converger_1::task<N, F, model_traits<N, F>, ModelId>;
 };
 
 netcpu::converger_1::model_factory<gmnl_2::model_traits, netcpu::models_ids::gmnl_2> static factory;

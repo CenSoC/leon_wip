@@ -50,6 +50,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <netcpu/dataset_1/controller.h>
 #include <netcpu/dataset_1/message/meta.h>
 #include <netcpu/dataset_1/message/bulk.h>
+#include <netcpu/dataset_1/message/dataset_meta.h>
+#include <netcpu/converger_1/message/id.h>
 
 
 namespace censoc { namespace netcpu { namespace gmnl_2a { 
@@ -81,6 +83,7 @@ struct response_generator {
 		netcpu::dataset_1::message::meta<N> meta_msg; 
 		netcpu::dataset_1::message::bulk<N> bulk_msg;
 	};
+	netcpu::dataset_1::message::dataset_meta<netcpu::converger_1::message::messages_ids::dataset_meta> dataset_meta_msg;
 
 	response_generator(int argc, char * * argv)
 	{
@@ -109,7 +112,7 @@ struct response_generator {
 		if (coefficients_values.empty() == true)
 			throw ::std::runtime_error("must supply --coefficients_values option");
 
-		dataset_loader.verify_args(messages.meta_msg, messages.bulk_msg); // should throw
+		dataset_loader.verify_args(messages.meta_msg, messages.bulk_msg, dataset_meta_msg); // should throw
 		//}
 
 		//{ simulate

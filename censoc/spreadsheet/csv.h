@@ -53,6 +53,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <fstream>
 
 #include <boost/algorithm/string.hpp>
+#include <boost/lexical_cast.hpp>
 
 #include <censoc/exception.h>
 #include <censoc/type_traits.h>
@@ -211,29 +212,68 @@ private:
 	}
 
 public:
-	struct compare_as_case_sensitive_trimmed_string { };
+	struct compare_as_numeric_first_then_size_prioritised_case_sensitive_trimmed_string { };
 private:
 	censoc::compared inline
-	compare_sub(compare_sub_type<compare_as_case_sensitive_trimmed_string> const &, size_paramtype lhs, size_paramtype rhs, size_paramtype i) const
+	compare_sub(compare_sub_type<compare_as_numeric_first_then_size_prioritised_case_sensitive_trimmed_string> const &, size_paramtype lhs, size_paramtype rhs, size_paramtype i) const
 	{
 		::std::string trimmed_lhs(grid[lhs][i]);
 		::std::string trimmed_rhs(grid[rhs][i]);
+
+		bool lhs_is_numeric(true);
+		double lhs_numeric;
+		try {
+			lhs_numeric = ::boost::lexical_cast<double>(trimmed_lhs);
+		} catch (::boost::bad_lexical_cast const &) {
+			lhs_is_numeric = false;
+		}
+
+		bool rhs_is_numeric(true);
+		double rhs_numeric;
+		try {
+			rhs_numeric = ::boost::lexical_cast<double>(trimmed_rhs);
+		} catch (::boost::bad_lexical_cast const &) {
+			rhs_is_numeric = false;
+		}
+
 		::boost::trim(trimmed_lhs);
 		::boost::trim(trimmed_rhs);
 		size_type const trimmed_lhs_size(trimmed_lhs.size());
 		size_type const trimmed_rhs_size(trimmed_rhs.size());
-		if (trimmed_lhs_size < trimmed_rhs_size)
+
+		// numbers are alwyas less than alpha-numeric
+		if (lhs_is_numeric == true && rhs_is_numeric == false)
 			return lt;
-		else if (trimmed_lhs_size > trimmed_rhs_size)
+		else if (lhs_is_numeric == false && rhs_is_numeric == true)
 			return gt;
-		else {
-			assert(trimmed_lhs_size == trimmed_rhs_size);
-			for (::std::string::const_iterator l(trimmed_lhs.begin()), r(trimmed_rhs.begin()); l != trimmed_lhs.end(); ++l, ++r)
-				if (*l < *r)
+		else if (lhs_is_numeric == true && rhs_is_numeric == true) {
+			if (lhs_numeric < rhs_numeric)
+				return lt;
+			else if (lhs_numeric > rhs_numeric)
+				return gt;
+			else { // unless the original strings are like "1" and "1.000" -- this should return unequal...
+				if (trimmed_lhs_size < trimmed_rhs_size)
 					return lt;
-				else if (*l > *r)
+				else if (trimmed_lhs_size > trimmed_rhs_size)
 					return gt;
-			return eq;
+				else
+					return eq;
+			}
+		} else { // compare as strings
+
+			if (trimmed_lhs_size < trimmed_rhs_size)
+				return lt;
+			else if (trimmed_lhs_size > trimmed_rhs_size)
+				return gt;
+			else {
+				assert(trimmed_lhs_size == trimmed_rhs_size);
+				for (::std::string::const_iterator l(trimmed_lhs.begin()), r(trimmed_rhs.begin()); l != trimmed_lhs.end(); ++l, ++r)
+					if (*l < *r)
+						return lt;
+					else if (*l > *r)
+						return gt;
+				return eq;
+			}
 		}
 	}
 public:
