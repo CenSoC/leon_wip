@@ -295,7 +295,7 @@ public:
 			base_type::value_from_grid(grid_i, grid_res);
 
 		assert(accumulating_offset_ != NULL);
-		*accumulating_offset_ += offset_ * tmp_value_.index();
+		accumulating_offset_->addmul(offset_, tmp_value_.index());
 		//::std::clog << "value_from_grid, offset_.size() " << offset_.size() << ", accumulating_offset_->size() " << accumulating_offset_->size() << ", tmp_value_.index() " << tmp_value_.index() << "\n";
 	}
 
@@ -304,7 +304,7 @@ public:
 	{
 		base_type::value_reset();
 		assert(accumulating_offset_ != NULL);
-		*accumulating_offset_ += offset_ * tmp_value_.index();
+		accumulating_offset_->addmul(offset_, tmp_value_.index());
 		//::std::clog << "value_reset, offset_.size() " << offset_.size() << ", accumulating_offset_->size() " << accumulating_offset_->size() << ", tmp_value_.index() " << tmp_value_.index() << "\n";
 	}
 #endif
@@ -380,7 +380,7 @@ public:
 		}
 
 		assert(accumulating_offset_ != NULL);
-		*accumulating_offset_ += offset_ * tmp_value_.index();
+		accumulating_offset_->addmul(offset_, tmp_value_.index());
 
 		assert(assert_values() == true);
 	}

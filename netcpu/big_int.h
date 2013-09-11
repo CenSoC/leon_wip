@@ -233,6 +233,39 @@ public:
 		return *this;
 	}
 
+	/*
+		 y += x * z
+		 */
+	big_uint &
+	addmul(big_uint const & x)
+	{
+		netcpu::big_int_context.copy_on_write(num);
+		::mpz_addmul(*num, *num, *x.num);
+		return *this;
+	}
+	big_uint &
+	addmul(size_paramtype x)
+	{
+		assert(x <= ::std::numeric_limits<unsigned long>::max());
+		netcpu::big_int_context.copy_on_write(num);
+		::mpz_addmul_ui(*num, *num, x);
+		return *this;
+	}
+	big_uint &
+	addmul(big_uint const & x, big_uint const & y)
+	{
+		netcpu::big_int_context.copy_on_write(num);
+		::mpz_addmul(*num, *x.num, *y.num);
+		return *this;
+	}
+	big_uint &
+	addmul(big_uint const & x, size_paramtype y)
+	{
+		assert(y <= ::std::numeric_limits<unsigned long>::max());
+		netcpu::big_int_context.copy_on_write(num);
+		::mpz_addmul_ui(*num, *x.num, y);
+		return *this;
+	}
 
 	int
 	operator>(big_uint const & x) const
