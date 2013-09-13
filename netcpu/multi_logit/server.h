@@ -165,6 +165,7 @@ struct task<N, F, Model, netcpu::models_ids::multi_logit> : netcpu::converger_1:
 
 		::std::vector<size_type> respondents_choice_sets;
 		::std::vector<size_type> respondents_modal_class;
+		::std::vector<size_type> classes_membership_count(betas_sets_size);
 		::boost::scoped_array<uint8_t> choice_sets_alternatives;
 		::boost::scoped_array<float_type> matrix_composite; 
 		::boost::scoped_array<uint8_t> choice_column; 
@@ -228,7 +229,7 @@ struct task<N, F, Model, netcpu::models_ids::multi_logit> : netcpu::converger_1:
 			uint8_t const * choice_column_ptr_inner;
 			size_type current_coefficient_i_outer(0);
 
-			extended_float_type modal_min(::std::numeric_limits<extended_float_type>::lowest());
+			extended_float_type modal_max(::std::numeric_limits<extended_float_type>::lowest());
 			size_type modal_i;
 
 			assert(betas_sets_size);
@@ -355,14 +356,15 @@ struct task<N, F, Model, netcpu::models_ids::multi_logit> : netcpu::converger_1:
 
 				respondents_classes_probability.push_back(tmp_log_prob);
 
-				if (modal_min < tmp_log_prob) {
-					modal_min = tmp_log_prob;
+				if (modal_max < tmp_log_prob) {
+					modal_max = tmp_log_prob;
 					modal_i = betas_set_i;
 				}
 
 			} // end for the betas_set
 
 			respondents_modal_class.push_back(modal_i);
+			++classes_membership_count[modal_i];
 
 
 			choice_sets_alternatives_ptr_outer = choice_sets_alternatives_ptr_inner;
@@ -390,9 +392,10 @@ struct task<N, F, Model, netcpu::models_ids::multi_logit> : netcpu::converger_1:
 			throw ::std::runtime_error("cannot write dataset.csv");
 		dataset_file << "respondent,choice_set,alternative,choice";
 		for (size_type i(0); i != x_size; ++i)
-			dataset_file << ",attribute_" << i + i;
+			dataset_file << ",attribute_" << i + 1;
+		float_type const inv_respondents_size_mul_100(100. / respondents_choice_sets.size());
 		for (size_type i(0); i != betas_sets_size; ++i)
-			dataset_file << ",LL_class_" << i + 1;
+			dataset_file << ",LL_class_" << i + 1 << " members(=" << classes_membership_count[i] << " =" << classes_membership_count[i] * inv_respondents_size_mul_100 << "%)";
 		dataset_file << ",modal_class\n";
 
 		matrix_composite_ptr_outer = matrix_composite.get();
@@ -430,7 +433,7 @@ struct task<N, F, Model, netcpu::models_ids::multi_logit> : netcpu::converger_1:
 					// modal class
 					dataset_file << ',' << respondents_modal_class[i] + 1 << '\n';
 				}
-				matrix_composite_ptr_outer = matrix_composite_ptr_inner;
+				matrix_composite_ptr_outer = matrix_composite_ptr_inner - alternatives + 1;
 			}
 			respondents_classes_probability_outer = respondents_classes_probability_inner;
 		}

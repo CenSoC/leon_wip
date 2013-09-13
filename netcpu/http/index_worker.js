@@ -188,9 +188,15 @@ function strip_csv(msg)
 					var cell_value = parseInt(row[x]);
 					if (delby_i.op == "eq" && cell_value == delby_value)
 						allow_row = false;
+					else if (delby_i.op == "ne" && cell_value != delby_value)
+						allow_row = false;
 					else if (delby_i.op == "lt" && cell_value < delby_value)
 						allow_row = false;
+					else if (delby_i.op == "le" && cell_value <= delby_value)
+						allow_row = false;
 					else if (delby_i.op == "gt" && cell_value > delby_value)
+						allow_row = false;
+					else if (delby_i.op == "ge" && cell_value >= delby_value)
 						allow_row = false;
 				}
 				if (delby_i.column == '*') {
