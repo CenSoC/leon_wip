@@ -52,6 +52,7 @@ struct coeffwise_bulk {
 
 	coeffwise_bulk()
 	{
+		netcpu::message::serialise_to_decomposed_floating<F>(-1, shrink_slowdown);
 	}
 	~coeffwise_bulk()
 	{
@@ -73,6 +74,7 @@ struct coeffwise_bulk {
 	size_type boot_end;
 #endif
 	float_type rand_range_end; // TODO -- possibly refactor later on -- bulk message when communicated to processing peer needs not have this variable (i.e. only used by server), but then again -- this 'bulk' communication only happens once per job per peer processor...
+	float_type shrink_slowdown;
 	size_arraytype grid_resolutions;
 
 	// TODO -- make a more quality-assured design w.r.t. contructors, arrays and copy-constructors... (one of the simplest ways would be to have an array of pointer-to-type, not the actual types... although this will make acts of re-using the same message object to read multiple messages 'from_wire' slower as each of such readings will invoke a few dtor/ctors and new/delete calls)
@@ -93,6 +95,7 @@ struct coeffwise_bulk {
 			<< "] boot to: [" << boot_end() 
 #endif
 			<< "] rand_range_end: [" << netcpu::message::deserialise_from_decomposed_floating<F>(rand_range_end)
+			<< "]shrink_slowdown: [" << netcpu::message::deserialise_from_decomposed_floating<F>(shrink_slowdown) 
 			<< "] grid_resolutions: [";
 		for (typename netcpu::message::typepair<N>::wire i(0); i != grid_resolutions.size(); ++i)
 			censoc::llog() << '[' << grid_resolutions(i) << ']';

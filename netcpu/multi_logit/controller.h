@@ -109,7 +109,7 @@ struct model_traits {
 		if (!meta_msg.betas_sets_size())
 			throw censoc::exception::validation("must supply --betas_sets_size argument");
 
-		coefficients_size_ = meta_msg.dataset.x_size() * meta_msg.betas_sets_size();
+		coefficients_size_ = (meta_msg.dataset.x_size() + 1) * meta_msg.betas_sets_size() - 1;
 	}
 };
 

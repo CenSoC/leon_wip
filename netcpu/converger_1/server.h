@@ -114,6 +114,7 @@ private:
 #endif
 
 	float_type rand_range_end_;
+	float_type shrink_slowdown_;
 
 	bool range_ended_;
 
@@ -190,7 +191,7 @@ public:
 		@pre -- sequence of calls is: "pre_shrink", "adjust the grid resolutions", "post_shrink"
 		*/
 	void
-	pre_shrink(size_type & coefficients_rand_range_ended_wait, float_paramtype shrink_slowdown)
+	pre_shrink(size_type & coefficients_rand_range_ended_wait)
 	{
 		assert(assert_values() == true);
 
@@ -202,9 +203,9 @@ public:
 			assert(grid_step_size >= 0);
 
 			float_type const new_value_from(now_value_.value() - grid_step_size);
-			float_type const from_diff((new_value_from - value_from_) * shrink_slowdown);
+			float_type const from_diff((new_value_from - value_from_) * shrink_slowdown_);
 			float_type const new_value_to(now_value_.value() + grid_step_size);
-			float_type const to_diff((value_from_ + rand_range_ - new_value_to) * shrink_slowdown);
+			float_type const to_diff((value_from_ + rand_range_ - new_value_to) * shrink_slowdown_);
 
 			value_from_ = new_value_from - from_diff;
 			// value_from_ = now_value_.value() - grid_step_size;
@@ -291,11 +292,17 @@ public:
 	void
 	value_from_grid(size_paramtype grid_i, size_paramtype grid_res)
 	{
-		if (range_ended_ == false)
-			base_type::value_from_grid(grid_i, grid_res);
-
 		assert(accumulating_offset_ != NULL);
-		accumulating_offset_->addmul(offset_, tmp_value_.index());
+		if (range_ended_ == false) {
+			base_type::value_from_grid(grid_i, grid_res);
+			accumulating_offset_->addmul(offset_, tmp_value_.index());
+		}
+#ifndef NDEBUG
+		else {
+			assert(tmp_value_.index() == 0);
+		}
+#endif
+
 		//::std::clog << "value_from_grid, offset_.size() " << offset_.size() << ", accumulating_offset_->size() " << accumulating_offset_->size() << ", tmp_value_.index() " << tmp_value_.index() << "\n";
 	}
 
@@ -314,7 +321,7 @@ public:
 #if 0
 			float_paramtype clamp_from, float_paramtype clamp_to, 
 #endif
-			float_paramtype rand_range_end, netcpu::big_uint<size_type> & accumulating_offset)
+			float_paramtype rand_range_end, float_paramtype shrink_slowdown, netcpu::big_uint<size_type> & accumulating_offset)
 	{ 
 		constrain_from_ = constrain_from;
 		constrain_to_ = constrain_to;
@@ -325,6 +332,8 @@ public:
 #endif
 
 		rand_range_end_ = rand_range_end;
+		assert(shrink_slowdown >= 0 && shrink_slowdown < 1);
+		shrink_slowdown_ = shrink_slowdown;
 		accumulating_offset_ = &accumulating_offset;
 		assert(accumulating_offset_ != NULL);
 	}
@@ -843,9 +852,6 @@ struct task_processor : ::boost::noncopyable {
 
 	task<N, F, Model, ModelId> & t;
 
-	float_type shrink_slowdown;
-
-
 	size_type coefficients_rand_range_ended_wait;
 
 	size_type coefficients_size;
@@ -937,8 +943,6 @@ public:
 		censoc::llog() << "read meta message:\n";
 		meta_msg.print();
 
-		shrink_slowdown = netcpu::message::deserialise_from_decomposed_floating<float_type>(meta_msg.shrink_slowdown);
-		assert(shrink_slowdown >= 0 && shrink_slowdown < 1);
 
 		::std::ifstream bulk_file((netcpu::root_path + netcpu::pending_tasks.front()->name() + "/bulk.msg").c_str(), ::std::ios::binary);
 		if (!bulk_file)
@@ -1005,7 +1009,7 @@ public:
 #if 0
 					netcpu::message::deserialise_from_decomposed_floating<float_type>(wire.clamp_from), netcpu::message::deserialise_from_decomposed_floating<float_type>(wire.clamp_to), 
 #endif
-					netcpu::message::deserialise_from_decomposed_floating<float_type>(wire.rand_range_end), offset);
+					netcpu::message::deserialise_from_decomposed_floating<float_type>(wire.rand_range_end), netcpu::message::deserialise_from_decomposed_floating<float_type>(wire.shrink_slowdown), offset);
 
 			if (convergence_state_present == true) {
 				convergence_state.load_coefficient();
@@ -1159,7 +1163,26 @@ public:
 		assert(combos_modem.metadata().begin() == current_complexity_level);
 		assert(current_complexity_level->first == remaining_complexities.begin()->second);
 		assert(!remaining_complexities.begin()->first);
-		reduce_remaining_complexities(0, current_complexity_level->first);
+		
+
+		// not using coroutine because one is not expected for the thing to take too long under current usage scenarios (one coefficient at a time means not that many evaluations)
+		if (coefficients_rand_range_ended_wait == coefficients_size)
+			reduce_remaining_complexities(0, current_complexity_level->first);
+		else  {
+			for (size_type i(0); i != current_complexity_level->first; ++i) {
+				offset = 0;
+				combos_modem.demodulate(i, coefficients_metadata, coefficients_size);
+				if (duplicates_elimination_uniques.insert(offset).second == false)
+					censoc::netcpu::range_utils::add(accumulated_duplicates, ::std::pair<size_type, size_type>(i, 1));
+				if (visited_places.count(offset)) 
+					censoc::netcpu::range_utils::subtract(remaining_complexities, ::std::pair<size_type, size_type>(i, 1));
+			}
+			if (accumulated_duplicates.empty() == false) {
+				censoc::netcpu::range_utils::subtract(remaining_complexities, accumulated_duplicates);
+				accumulated_duplicates.clear();
+			}
+			duplicates_elimination_uniques.clear();
+		}
 
 		do_redistribute_remaining_peers_complexities();
 		redistribute_remaining_complexities = false;
@@ -1414,40 +1437,42 @@ public:
 				reduce_remaining_complexities(pair_first, current_complexity_level->first, &coroutine_caller);
 
 				//{ re-check for dupliacates (in addition to the already achieved visited_places-based culling
+
 				//@note  ideally, the previous complexities would all have been 'visited' and, consequently, they would clear the 'about to be made current' complexities-range from its-own, implicit, duplicates (generated by the building process and causing duplicates whenever combined with any ginven 'central' point at a time)... 
-				// HOWEVER, when various x-coffes-at-once complexity-ranges have differing grid resolutions then previous complexity-level may not have explicitly visited "all" of the upcoming complexities-range 'duplicates' (because of the different grid resolutions between juxtaposed complexity-levels)... and so the explicit culling may need to take place...
+
+				// HOWEVER, when current x-coffes-at-once complexity level has differing grid resolutions (for its coefficients) as compared to the first complexity-level -- then 'visited places' may not have explicitly equated to all of the current-level duplicates (due to truncation of the current gri-res indicies potentially causing to multiply match the same index in the first complexity level)... and so the explicit culling may need to take place...
 				// ... so test if one need to explicitly scan for duplicates, even after the visited_places has been used to cull "already visited" locations...
-				typename ::std::map<size_type, ::std::vector<size_type> >::const_iterator prev_level(::std::prev(current_complexity_level));
-				if (prev_level != combos_modem.metadata().begin()) {
 #ifndef NDEBUG
-					for (size_type i(0); i != coefficients_size; ++i) {
-						assert(combos_modem.metadata().begin()->second.size() == coefficients_size); 
-						assert(prev_level->second.size() == coefficients_size);
-						assert(combos_modem.metadata().begin()->second[i] >= prev_level->second[i]);
-					}
-#endif
-					for (size_type i(0); i != coefficients_size; ++i)
-						if (current_complexity_level->second[i] != prev_level->second[i] && combos_modem.metadata().begin()->second[i] != prev_level->second[i]) {
-							size_type total_count(0);
-							for (typename complexities_type::const_iterator i(remaining_complexities.begin()); i != remaining_complexities.end(); ++i) {
-								for (size_type j(0); j != i->second; ++j) {
-									size_type const complexity_i(j + i->first);
-									offset = 0;
-									combos_modem.demodulate(complexity_i, coefficients_metadata, coefficients_size);
-									if (duplicates_elimination_uniques.insert(offset).second == false)
-										censoc::netcpu::range_utils::add(accumulated_duplicates, ::std::pair<size_type, size_type>(complexity_i, 1));
-									if (!(++total_count % coroutine_atomic_processing_size))
-										coroutine_caller();
-								}
-							}
-							if (accumulated_duplicates.empty() == false) {
-								censoc::netcpu::range_utils::subtract(remaining_complexities, accumulated_duplicates);
-								accumulated_duplicates.clear();
-							}
-							duplicates_elimination_uniques.clear();
-							break;
-						}
+				typename ::std::map<size_type, ::std::vector<size_type> >::const_iterator prev_level(::std::prev(current_complexity_level));
+				for (size_type i(0); i != coefficients_size; ++i) {
+					assert(combos_modem.metadata().begin()->second.size() == coefficients_size); 
+					assert(prev_level->second.size() == coefficients_size);
+					assert(combos_modem.metadata().begin()->second[i] >= prev_level->second[i]);
 				}
+#endif
+				for (size_type i(0); i != coefficients_size; ++i)
+					if (current_complexity_level->second[i] != combos_modem.metadata().begin()->second[i]
+							// must also allow for the cases where already-range_ended coefficients produce the same absolute coordinate, and thusly a duplicate...
+							|| coefficients_rand_range_ended_wait != coefficients_size) {
+						size_type total_count(0);
+						for (typename complexities_type::const_iterator i(remaining_complexities.begin()); i != remaining_complexities.end(); ++i) {
+							for (size_type j(0); j != i->second; ++j) {
+								size_type const complexity_i(j + i->first);
+								offset = 0;
+								combos_modem.demodulate(complexity_i, coefficients_metadata, coefficients_size);
+								if (duplicates_elimination_uniques.insert(offset).second == false)
+									censoc::netcpu::range_utils::add(accumulated_duplicates, ::std::pair<size_type, size_type>(complexity_i, 1));
+								if (!(++total_count % coroutine_atomic_processing_size))
+									coroutine_caller();
+							}
+						}
+						if (accumulated_duplicates.empty() == false) {
+							censoc::netcpu::range_utils::subtract(remaining_complexities, accumulated_duplicates);
+							accumulated_duplicates.clear();
+						}
+						duplicates_elimination_uniques.clear();
+						break;
+					}
 				//}
 #ifndef NDEBUG
 				{ // sanity checking
@@ -1619,7 +1644,7 @@ public:
 			offset = 1;
 			assert(offset.size());
 			for (size_type i(0); i != coefficients_size; ++i)
-				coefficients_metadata[i].pre_shrink(coefficients_rand_range_ended_wait, shrink_slowdown);
+				coefficients_metadata[i].pre_shrink(coefficients_rand_range_ended_wait);
 
 			// pseudo -- keep going through zoom levels and pick the latest acceptable one (if any)
 			for (typename coefficients_metadata_x_type::const_iterator coefficients_metadata_x_i(coefficients_metadata_x.begin()); coefficients_metadata_x_i != coefficients_metadata_x.end(); ++coefficients_metadata_x_i) {
@@ -1702,7 +1727,7 @@ public:
 			assert(current_complexity_level->first == remaining_complexities.begin()->second);
 			assert(current_complexity_level != combos_modem.metadata().end());
 			assert(current_complexity_level->second.size() == coefficients_size);
-			// no need to reduce remaining complexities -- on_bootstrapping_peer_report will do just that
+			// no need to generically reduce remaining complexities -- on_bootstrapping_peer_report will do just that
 
 			// NOTE -- currently visited places do not map onto the 'shrunken' grid (possible todo for future -- rescale/remap from currently visited places onto the newly shrunk grid any of the still-relevant visited places). would involve looping through all stored visited places and then seeing if their coordinates are no more than 1 step away from current mid point... then will also have to remember to NOT clear the 'visited_places' before calling the 'complete_server_state_sync_msg'... but currently will need to clear it exactly before calling 'complete_xxx' code
 			visited_places.clear();

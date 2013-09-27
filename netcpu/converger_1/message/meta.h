@@ -69,7 +69,6 @@ struct meta : meta_base {
 	size_type dissect_do;
 	size_type complexity_size;
 	float_type improvement_ratio_min;
-	float_type shrink_slowdown;
 	netcpu::message::array<uint8_t> bulk_msg_hush;
 
 	Model model;
@@ -78,7 +77,6 @@ struct meta : meta_base {
 	: dissect_do(-1), complexity_size(0)
 	{
 		netcpu::message::serialise_to_decomposed_floating<F>(0, improvement_ratio_min);
-		netcpu::message::serialise_to_decomposed_floating<F>(-1, shrink_slowdown);
 	}
 
 	void
@@ -88,7 +86,6 @@ struct meta : meta_base {
 		censoc::llog() << "dissect_do: " << dissect_do() << ::std::endl;
 		censoc::llog() << "total complexity limit: " << complexity_size() << ::std::endl; 
 		censoc::llog() << "minimpr: " << netcpu::message::deserialise_from_decomposed_floating<F>(improvement_ratio_min) << ::std::endl; 
-		censoc::llog() << "shrink_slowdown: " << netcpu::message::deserialise_from_decomposed_floating<F>(shrink_slowdown) << ::std::endl; 
 		model.print();
 	}
 };

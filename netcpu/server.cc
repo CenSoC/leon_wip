@@ -67,6 +67,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <boost/filesystem.hpp>
 
 #include <censoc/empty.h>
+// todo -- The finite_math(.o) presence in this target is only temporary and relates to multi_logit (latent class) model doing modal class calculations on the server side. If/when a proper network-based distribution of the respondents-classes-probability calculation takes place (in the multi_logit model) then must remember to take out the 'finite_math' dependency.	
+#include <censoc/finite_math.h>
 #include <censoc/type_traits.h>
 #include <censoc/lexicast.h>
 #include <censoc/opendir.h>
@@ -853,6 +855,9 @@ struct acceptor : ::boost::enable_shared_from_this<netcpu::acceptor> {
 void static
 run(int argc, char * * argv)
 {
+// todo -- The finite_math(.o) presence in this target is only temporary and relates to multi_logit (latent class) model doing modal class calculations on the server side. If/when a proper network-based distribution of the respondents-classes-probability calculation takes place (in the multi_logit model) then must remember to take out the 'finite_math' dependency.	
+	censoc::init_fpu_check();
+
 	::boost::scoped_ptr<interface> ui(new interface(argc, argv));
 
 	{

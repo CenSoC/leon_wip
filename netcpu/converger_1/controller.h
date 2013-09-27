@@ -107,7 +107,7 @@ struct task_loader_detail : netcpu::io_wrapper<AsyncDriver> {
 #if 0
 				float_paramtype boot_from, float_paramtype boot_to, 
 #endif
-				float_paramtype minstep)
+				float_paramtype minstep, float_paramtype shrink_slowdown)
 		: i(i), 
 #if 0
 		clamp_from(clamp_from), clamp_to(clamp_to), 
@@ -116,7 +116,7 @@ struct task_loader_detail : netcpu::io_wrapper<AsyncDriver> {
 #if 0
 		boot_from(boot_from), boot_to(boot_to), 
 #endif
-		minstep(minstep) {
+		minstep(minstep), shrink_slowdown(shrink_slowdown) {
 		}
 		size_type const i;
 #if 0
@@ -130,6 +130,7 @@ struct task_loader_detail : netcpu::io_wrapper<AsyncDriver> {
 		float_type const boot_to; // 1-based, inclusive
 #endif
 		float_type const minstep;
+		float_type const shrink_slowdown;
 		::std::list<size_type> grid_resolutions;
 		bool 
 		operator < (cli_coefficient_range_metadata const & rhs) const
@@ -200,7 +201,7 @@ struct task_loader_detail : netcpu::io_wrapper<AsyncDriver> {
 				if (use_first_cm_semantics == 1) {
 
 					char const static comment[] = "'coeff:"
-						"from:to:minstep:"
+						"from:to:minstep:shrink_slowdown:"
 						"grid_resolution[:grid_resolution:etc.]'";
 
 					if (token_i == tokens.end())
@@ -225,9 +226,16 @@ struct task_loader_detail : netcpu::io_wrapper<AsyncDriver> {
 					if (minstep <= 0)
 						throw censoc::exception::validation(xxx() << "incorrect --cm value: [" << i->second << "] need " << comment << " where 'minstep' > 0");
 
+					// shrink_slowdown
+					if (++token_i == tokens.end())
+						throw censoc::exception::validation(xxx() << "incorrect --cm value: [" << i->second << "] need " << comment);
+					float_type const shrink_slowdown((censoc::lexicast<float_type>(*token_i)));
+					if (shrink_slowdown < 0 || shrink_slowdown >= 1)
+						throw censoc::exception::validation(xxx() << "incorrect --cm value: [" << i->second << "] need " << comment << " where 0 <= 'shrink_slowdown' < 1");
+
 					cli_coefficient_range_metadata tmp(cr_i, 
 							from, to, 
-							minstep);
+							minstep, shrink_slowdown);
 
 					// grid_resolution(s)
 					for (unsigned j(0); ; ++j) {
@@ -286,9 +294,6 @@ struct task_loader_detail : netcpu::io_wrapper<AsyncDriver> {
 			} else if (i->first == "--minimpr") {
 				netcpu::message::serialise_to_decomposed_floating<float_type>(censoc::lexicast<float_type>(i->second), meta_msg.improvement_ratio_min);
 				censoc::llog() << "minimpr: [" << netcpu::message::deserialise_from_decomposed_floating<float_type>(meta_msg.improvement_ratio_min) << "]\n";
-			} else if (i->first == "--shrink_slowdown") {
-				netcpu::message::serialise_to_decomposed_floating<float_type>(censoc::lexicast<float_type>(i->second), meta_msg.shrink_slowdown);
-				censoc::llog() << "shrink_slowdown: [" << netcpu::message::deserialise_from_decomposed_floating<float_type>(meta_msg.shrink_slowdown) << "]\n";
 			} else if( i->first == "--short_description") {
 				short_description_msg.text.resize(i->second.size());
 				::memcpy(short_description_msg.text.data(), i->second.data(), i->second.size());
@@ -313,9 +318,6 @@ struct task_loader_detail : netcpu::io_wrapper<AsyncDriver> {
 
 		if (netcpu::message::deserialise_from_decomposed_floating<float_type>(meta_msg.improvement_ratio_min) < 1)
 			throw censoc::exception::validation("must supply vaild --minimpr value of no less than 1");
-
-		if (netcpu::message::deserialise_from_decomposed_floating<float_type>(meta_msg.shrink_slowdown) < 0 || netcpu::message::deserialise_from_decomposed_floating<float_type>(meta_msg.shrink_slowdown) >= 1)
-			throw censoc::exception::validation("must supply vaild --shrink_slowdown value: 0 <= x < 1");
 
 		size_type const coefficients_size(model.coefficients_size());
 
@@ -365,6 +367,7 @@ struct task_loader_detail : netcpu::io_wrapper<AsyncDriver> {
 
 
 			netcpu::message::serialise_to_decomposed_floating(k->minstep, bulk_msg.coeffs(i).rand_range_end);
+			netcpu::message::serialise_to_decomposed_floating(k->shrink_slowdown, bulk_msg.coeffs(i).shrink_slowdown);
 
 		}
 

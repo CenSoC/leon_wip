@@ -150,6 +150,7 @@ struct task<N, F, Model, netcpu::models_ids::multi_logit> : netcpu::converger_1:
 
 		size_type const x_size(meta_msg.model.dataset.x_size());
 		size_type const betas_sets_size(meta_msg.model.betas_sets_size());
+		size_type const classes_probability_i_end(betas_sets_size - 1);
 		size_type max_alternatives(meta_msg.model.dataset.max_alternatives());
 		::std::vector<float_type> betas_mult_choice(max_alternatives);
 
@@ -219,6 +220,21 @@ struct task<N, F, Model, netcpu::models_ids::multi_logit> : netcpu::converger_1:
 		float_type const * matrix_composite_ptr_inner;
 		uint8_t const * choice_column_ptr_outer(choice_column.get());
 
+		float_type classes_probability_normaliser_inv(1);
+		for (size_type betas_set_i(0); betas_set_i != classes_probability_i_end; ++betas_set_i) {
+			float_type const tmp_value(converged_coefficients[betas_set_i]);
+			float_type const tmp_value_transformed(tmp_value > 0 ? 1 + tmp_value * tmp_value : 1 / (1 + tmp_value * tmp_value));
+			classes_probability_normaliser_inv += converged_coefficients[betas_set_i] = tmp_value_transformed;
+		}
+		// the 1000 (instead of 1) below is to counter the raw-multiply when multiplying with the respondent's probability which is a raw product sequence of the observations...
+		classes_probability_normaliser_inv = 1000 / classes_probability_normaliser_inv;
+
+		::std::vector<float_type> classes_prior_probability(betas_sets_size);
+		for (size_type betas_set_i(0); betas_set_i != classes_probability_i_end; ++betas_set_i)
+			classes_prior_probability[betas_set_i] = converged_coefficients[betas_set_i] * classes_probability_normaliser_inv;
+		classes_prior_probability[classes_probability_i_end] = classes_probability_normaliser_inv;
+
+		::std::vector<extended_float_type> respondent_classes_posterior_probability(betas_sets_size);
 
 		assert(respondents_choice_sets.empty() == false);
 		for (size_type i(0); i != respondents_choice_sets.size(); ++i) {
@@ -227,9 +243,9 @@ struct task<N, F, Model, netcpu::models_ids::multi_logit> : netcpu::converger_1:
 			uint8_t const * choice_sets_alternatives_ptr_inner;
 			float_type const * matrix_composite_ptr_inner;
 			uint8_t const * choice_column_ptr_inner;
-			size_type current_coefficient_i_outer(0);
+			size_type current_coefficient_i_outer(classes_probability_i_end);
 
-			extended_float_type modal_max(::std::numeric_limits<extended_float_type>::lowest());
+			extended_float_type modal_max(0);
 			size_type modal_i;
 
 			assert(betas_sets_size);
@@ -352,90 +368,117 @@ struct task<N, F, Model, netcpu::models_ids::multi_logit> : netcpu::converger_1:
 
 				current_coefficient_i_outer = current_coefficient_i_inner;
 
-				extended_float_type tmp_log_prob(::std::log(respondent_probability));
+				extended_float_type const tmp_prob(classes_prior_probability[betas_set_i] * respondent_probability * classes_probability_normaliser_inv);
 
-				respondents_classes_probability.push_back(tmp_log_prob);
+				respondent_classes_posterior_probability[betas_set_i] = tmp_prob;
 
-				if (modal_max < tmp_log_prob) {
-					modal_max = tmp_log_prob;
+				if (modal_max < tmp_prob) {
+					modal_max = tmp_prob;
 					modal_i = betas_set_i;
 				}
 
 			} // end for the betas_set
 
+			extended_float_type respondent_classes_posterior_probability_sum_inv(0);
+			for (size_type betas_set_i(0); betas_set_i != betas_sets_size; ++betas_set_i)
+				respondent_classes_posterior_probability_sum_inv += respondent_classes_posterior_probability[betas_set_i];
+			respondent_classes_posterior_probability_sum_inv = 1 / respondent_classes_posterior_probability_sum_inv;
+			for (size_type betas_set_i(0); betas_set_i != betas_sets_size; ++betas_set_i)
+				respondents_classes_probability.push_back(::std::log(respondent_classes_posterior_probability[betas_set_i] * respondent_classes_posterior_probability_sum_inv));
+
 			respondents_modal_class.push_back(modal_i);
 			++classes_membership_count[modal_i];
-
 
 			choice_sets_alternatives_ptr_outer = choice_sets_alternatives_ptr_inner;
 			matrix_composite_ptr_outer = matrix_composite_ptr_inner;
 			choice_column_ptr_outer = choice_column_ptr_inner;
 
-
 		} // loop for all respondents
 
-
 		// write out the dataset...
-
-		// first read dataset_meta_msg
-		::std::ifstream dataset_meta_file((netcpu::root_path + name() + "/dataset_meta.msg").c_str(), ::std::ios::binary);
-		if (!dataset_meta_file)
-			throw ::std::runtime_error("missing dataset_meta message during load");
-
-		netcpu::message::fstream_to_wrapper(dataset_meta_file, wrapper);
-
-		netcpu::dataset_1::message::dataset_meta<converger_1::message::messages_ids::dataset_meta> dataset_meta_msg;
-		dataset_meta_msg.from_wire(wrapper);
-
 		::std::ofstream dataset_file((dataset_filepath + ".tmp").c_str());
 		if (!dataset_file)
 			throw ::std::runtime_error("cannot write dataset.csv");
-		dataset_file << "respondent,choice_set,alternative,choice";
-		for (size_type i(0); i != x_size; ++i)
-			dataset_file << ",attribute_" << i + 1;
-		float_type const inv_respondents_size_mul_100(100. / respondents_choice_sets.size());
-		for (size_type i(0); i != betas_sets_size; ++i)
-			dataset_file << ",LL_class_" << i + 1 << " members(=" << classes_membership_count[i] << " =" << classes_membership_count[i] * inv_respondents_size_mul_100 << "%)";
-		dataset_file << ",modal_class\n";
 
-		matrix_composite_ptr_outer = matrix_composite.get();
-		choice_sets_alternatives_ptr_outer = choice_sets_alternatives.get();
-		choice_column_ptr_outer = choice_column.get();
+		if (censoc::was_fpu_ok(respondents_classes_probability.data()) == false) {
+			dataset_file << "posterior probabilities can't be calculated due to numeric issues\n";
+		} else { 
 
-		extended_float_type * respondents_classes_probability_outer = respondents_classes_probability.data();
-		extended_float_type * respondents_classes_probability_inner;
+			// first read dataset_meta_msg
+			::std::ifstream dataset_meta_file((netcpu::root_path + name() + "/dataset_meta.msg").c_str(), ::std::ios::binary);
+			if (!dataset_meta_file)
+				throw ::std::runtime_error("missing dataset_meta message during load");
 
-		for (size_type i(0), alt_id_i(0); i != respondents_choice_sets.size(); ++i) { // for every respondent
-			for (size_type t(0); t != respondents_choice_sets[i]; ++t, ++choice_column_ptr_outer) { // for every choice-set
-				uint8_t const alternatives(*choice_sets_alternatives_ptr_outer++);
-				for (size_type alt_i(0); alt_i != alternatives; ++alt_i, ++matrix_composite_ptr_outer, ++alt_id_i) { // for every alternative
+			netcpu::message::fstream_to_wrapper(dataset_meta_file, wrapper);
 
-					assert(i < dataset_meta_msg.respondents.size());
-					assert(static_cast<uintptr_t>(choice_column_ptr_outer - choice_column.get()) < dataset_meta_msg.choice_sets.size());
-					assert(alt_id_i < dataset_meta_msg.alternatives.size());
+			netcpu::dataset_1::message::dataset_meta<converger_1::message::messages_ids::dataset_meta> dataset_meta_msg;
+			dataset_meta_msg.from_wire(wrapper);
 
-					// write out columns... a quick hack for the time being...
-					auto const & respondent_id(dataset_meta_msg.respondents[i]);
-					auto const & choice_set_id(dataset_meta_msg.choice_sets[choice_column_ptr_outer - choice_column.get()]);
-					auto const & alternative_id(dataset_meta_msg.alternatives[alt_id_i]);
-					dataset_file 
-					<< ::std::string(reinterpret_cast<char const *>(respondent_id.data()), respondent_id.size()) << ',' 
-					<< ::std::string(reinterpret_cast<char const *>(choice_set_id.data()), choice_set_id.size()) << ',' 
-					<< ::std::string(reinterpret_cast<char const *>(alternative_id.data()), alternative_id.size()) << ',' 
-					<< (*choice_column_ptr_outer == alt_i ? 1 : 0); 
+			dataset_file << "respondent,choice_set,alternative,choice";
+			for (size_type i(0); i != x_size; ++i)
+				dataset_file << ",attribute_" << i + 1;
+			dataset_file << ",choice_sets_per_respondent,alternatives_per_choice_set";
+			float_type const inv_respondents_size_mul_100(100. / respondents_choice_sets.size());
+			for (size_type i(0); i != betas_sets_size; ++i)
+				dataset_file << ",LL_class_" << i + 1;
+			dataset_file << ",modal_class";
 
-					matrix_composite_ptr_inner = matrix_composite_ptr_outer;
-					for (size_type x_i(0); x_i != x_size; ++x_i, matrix_composite_ptr_inner += alternatives) // attributes
-						dataset_file << ',' << *matrix_composite_ptr_inner;
-					respondents_classes_probability_inner  = respondents_classes_probability_outer;
-					for (size_type betas_set_i(0); betas_set_i != betas_sets_size; ++betas_set_i, ++respondents_classes_probability_inner) // classes
-						dataset_file << ',' << *respondents_classes_probability_inner;
-					// modal class
-					dataset_file << ',' << respondents_modal_class[i] + 1 << '\n';
+			dataset_file << "\n,,,,,";
+			for (size_type i(0); i != x_size; ++i)
+				dataset_file << ',';
+			for (size_type i(0); i != betas_sets_size; ++i)
+				dataset_file << ",members(count=" << classes_membership_count[i] << " %=" << classes_membership_count[i] * inv_respondents_size_mul_100 << ')';
+
+			dataset_file << "\n,,,,,";
+			for (size_type i(0); i != x_size; ++i)
+				dataset_file << ',';
+			for (size_type i(0); i != betas_sets_size; ++i)
+				dataset_file << ",Pprior(=" << classes_prior_probability[i] * .001 << ')'; // the division by 1000 is due to pre-amplification of the classes_prior_probability at the beginning of the code for this variable...
+			dataset_file << '\n';
+
+			matrix_composite_ptr_outer = matrix_composite.get();
+			choice_sets_alternatives_ptr_outer = choice_sets_alternatives.get();
+			choice_column_ptr_outer = choice_column.get();
+
+			extended_float_type * respondents_classes_probability_outer = respondents_classes_probability.data();
+			extended_float_type * respondents_classes_probability_inner;
+
+			for (size_type i(0), alt_id_i(0); i != respondents_choice_sets.size(); ++i) { // for every respondent
+				for (size_type t(0); t != respondents_choice_sets[i]; ++t, ++choice_column_ptr_outer) { // for every choice-set
+					uint8_t const alternatives(*choice_sets_alternatives_ptr_outer++);
+					for (size_type alt_i(0); alt_i != alternatives; ++alt_i, ++matrix_composite_ptr_outer, ++alt_id_i) { // for every alternative
+
+						assert(i < dataset_meta_msg.respondents.size());
+						assert(static_cast<uintptr_t>(choice_column_ptr_outer - choice_column.get()) < dataset_meta_msg.choice_sets.size());
+						assert(alt_id_i < dataset_meta_msg.alternatives.size());
+
+						// write out columns... a quick hack for the time being...
+						auto const & respondent_id(dataset_meta_msg.respondents[i]);
+						auto const & choice_set_id(dataset_meta_msg.choice_sets[choice_column_ptr_outer - choice_column.get()]);
+						auto const & alternative_id(dataset_meta_msg.alternatives[alt_id_i]);
+						dataset_file 
+						<< ::std::string(reinterpret_cast<char const *>(respondent_id.data()), respondent_id.size()) << ',' 
+						<< ::std::string(reinterpret_cast<char const *>(choice_set_id.data()), choice_set_id.size()) << ',' 
+						<< ::std::string(reinterpret_cast<char const *>(alternative_id.data()), alternative_id.size()) << ',' 
+						<< (*choice_column_ptr_outer == alt_i ? 1 : 0); 
+
+						matrix_composite_ptr_inner = matrix_composite_ptr_outer;
+						for (size_type x_i(0); x_i != x_size; ++x_i, matrix_composite_ptr_inner += alternatives) // attributes
+							dataset_file << ',' << *matrix_composite_ptr_inner;
+
+						// choice_set and alternative sizes
+						dataset_file << ',' << respondents_choice_sets[i] << ',' << static_cast<unsigned>(alternatives);
+
+						respondents_classes_probability_inner  = respondents_classes_probability_outer;
+						for (size_type betas_set_i(0); betas_set_i != betas_sets_size; ++betas_set_i, ++respondents_classes_probability_inner) // classes
+							dataset_file << ',' << *respondents_classes_probability_inner;
+						// modal class
+						dataset_file << ',' << respondents_modal_class[i] + 1 << '\n';
+					}
+					matrix_composite_ptr_outer = matrix_composite_ptr_inner - alternatives + 1;
 				}
-				matrix_composite_ptr_outer = matrix_composite_ptr_inner - alternatives + 1;
+				respondents_classes_probability_outer = respondents_classes_probability_inner;
 			}
-			respondents_classes_probability_outer = respondents_classes_probability_inner;
 		}
 
 		if (::rename((dataset_filepath + ".tmp").c_str(), dataset_filepath.c_str()))

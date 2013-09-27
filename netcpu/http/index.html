@@ -460,6 +460,12 @@ var worker = new Worker("index_worker.js");
 
 function cli_coefficient_range_metadata_type(row_index, pid)
 {
+	function update_thingy()
+	{
+		if (parseInt(pid.model.value) == 5 && row_index < parseInt(pid.multi_logit_betas_sets_size_input.value) - 1)
+			pid.calculate_classes_prior_probability_characteristics();
+	}
+
 	function common_context_menu_1(x, y) 
 	{
 		batch_fill_context_menu.set_coordinates(x, y);
@@ -488,6 +494,12 @@ function cli_coefficient_range_metadata_type(row_index, pid)
 		common_context_menu_1(event.clientX, event.clientY);
 		return false;
 	}
+	
+	this.from.onchange = function() 
+	{
+		update_thingy();
+	}
+
 	//}
 
 	//{ to control
@@ -505,6 +517,10 @@ function cli_coefficient_range_metadata_type(row_index, pid)
 		}
 		common_context_menu_1(event.clientX, event.clientY);
 		return false;
+	}
+	this.to.onchange = function() 
+	{
+		update_thingy();
 	}
 	//}
 
@@ -526,15 +542,36 @@ function cli_coefficient_range_metadata_type(row_index, pid)
 	}
 	//}
 
+	//{ shrink_slowdown control
+	this.shrink_slowdown = document.createElement("input");
+	//this.shrink_slowdown.type = "number";
+	this.shrink_slowdown.title = "Right-click for quick-fill menu...";
+	this.shrink_slowdown.className = "coeff_metadata";
+	this.shrink_slowdown.size = 5;
+	//this.shrink_slowdown.value = 0.3;
+	this.shrink_slowdown.oncontextmenu = function(event)
+	{
+		batch_fill_context_menu.cell_gui = this;
+		batch_fill_context_menu.fill_down_column_button.onclick = function () {
+			pid.fill_down_column_shrink_slowdown(row_index);
+			batch_fill_context_menu.hide();
+		}
+		common_context_menu_1(event.clientX, event.clientY);
+		return false;
+	}
+	//}
+
 	this.validate = function()
 	{
 		var from_value = parseFloat(this.from.value); 
 		var to_value = parseFloat(this.to.value);
 		var minstep_value = parseFloat(this.minstep.value);
+		var shrink_slowdown_value = parseFloat(this.shrink_slowdown.value);
 		if (isNaN(from_value) == true ||
 				isNaN(to_value) == true ||
 				isNaN(minstep_value) == true ||
-				from_value >= to_value || minstep_value <= 0 ||
+				isNaN(shrink_slowdown_value) == true ||
+				from_value >= to_value || minstep_value <= 0 || shrink_slowdown_value < 0 || shrink_slowdown_value >= 1 ||
 				!this.grid_resolutions.length) {
 			alert("Initial complexity table's row(=" + (row_index + 1) + ") does not have correct values.");
 			return false;
@@ -584,6 +621,12 @@ function cli_coefficient_range_metadata_type(row_index, pid)
 				}
 				batch_fill_context_menu.show();
 				return false;
+			}
+			if (i == 0) {
+				tmp.onchange = function() 
+				{
+					update_thingy();
+				}
 			}
 			this.grid_resolutions[i] = tmp;
 		}
@@ -958,6 +1001,11 @@ function help_content_type(title, source_id)
 	this.gui.appendChild(label);
 }
 
+function class_probability_transform(x) 
+{
+	return (x > 0 ? 1 + x * x : 1 / (1 + x * x));
+}
+
 function new_task_type()
 {
 	var new_task_type_this = this;
@@ -1001,7 +1049,7 @@ function new_task_type()
 
 	tmp = document.createElement("option");
 	tmp.value = 5;
-	tmp.appendChild(document.createTextNode("LC"));
+	tmp.appendChild(document.createTextNode("Latent Class"));
 	this.model.appendChild(tmp);
 
 	this.model.onchange = function () {
@@ -1057,6 +1105,8 @@ function new_task_type()
 				repeats.disabled = draws_sets_size.disabled = true;
 
 				var betas_sets_size = parseInt(new_task_type_this.multi_logit_betas_sets_size_input.value);
+				for (var c = 1; c != betas_sets_size; ++c)
+					new_task_type_this.coefficients.push("<b>&theta;</b><sub>" + c + "</sub>");
 				for (var c = 0; c != betas_sets_size; ++c)
 					for (var i = 0; i != Object.keys(new_task_type_this.attributes).length; i++)
 						new_task_type_this.coefficients.push("<b>&beta;</b><sub>(" + (c + 1) + ')' + (i + 1) + "</sub>");
@@ -1082,17 +1132,73 @@ function new_task_type()
 	new_task_type_this.multi_logit_betas_sets_size_div.appendChild(new_task_type_this.multi_logit_betas_sets_size_input);
 	//} ... model
 
+	this.calculate_classes_prior_probability_characteristics = function()
+	{
+		var probability_min = 1;
+		var probability_max = 1;
+		var probability_medium_1 = 1;
+		var probability_medium_2 = 1;
+		var non_fixed_classes_size = parseInt(new_task_type_this.multi_logit_betas_sets_size_input.value) - 1;
+		if (isNaN(non_fixed_classes_size) == false) {
+			for (var betas_set_i = 0; betas_set_i != non_fixed_classes_size; ++betas_set_i) {
+				var coefficient = cli_coefficient_range_metadata[betas_set_i];
+
+				var grid_steps = parseInt(coefficient.grid_resolutions[0].value);
+				var from = parseFloat(coefficient.from.value);
+				var to = parseFloat(coefficient.to.value);
+				if (isNaN(grid_steps) == false && grid_steps > 0
+						&& isNaN(from) == false
+						&& isNaN(to) == false) {
+					var range = to - from;
+					var step_size = range / (grid_steps + 1);
+					var starting_value = from + step_size * 0.5;
+
+					probability_max += class_probability_transform(starting_value);
+					probability_min += class_probability_transform(starting_value + grid_steps * step_size);
+
+					var i_1 = 0;
+					var grid_step_value = starting_value;
+					for (var grid_step_i = 0; grid_step_i != grid_steps && grid_step_value < 0; ++grid_step_i, grid_step_value += step_size)
+						i_1 = grid_step_i;
+
+					var i_2 = (i_1 == grid_steps - 1) ? i_1-- : i_1 + 1;
+
+					probability_medium_1 += class_probability_transform(starting_value + i_1 * step_size);
+					probability_medium_2 += class_probability_transform(starting_value + i_2 * step_size);
+				}
+
+			}
+			probability_min = 1 / probability_min;
+			probability_max = 1 / probability_max;
+			probability_medium_1 = 1 / probability_medium_1;
+			probability_medium_2 = 1 / probability_medium_2;
+			var probability_resolution = Math.abs(probability_medium_1 - probability_medium_2);
+
+			new_task_type_this.latent_class_probabilities_characteristics.innerHTML = "fixed &theta; prior probability characterisation: lowest producable(=" + probability_min.toFixed(3) +") highest producable(=" + probability_max.toFixed(3) + ") resolution of balance(=" + probability_resolution.toFixed(3) + ')';
+		}
+	}
+
 	var previous_attrubtes_length = 0;
 	var previous_coefficients_length = 0;
 	function populate_complexity_tables() 
 	{
 		var table = document.createElement("table");
 		table.className = "auto_table";
+
 		if (Object.keys(new_task_type_this.attributes).length && new_task_type_this.coefficients.length && coeffs_atonce.value > 0) {
+
+			if (parseInt(new_task_type_this.model.value) == 5) {
+				var tr = document.createElement("tr");
+				new_task_type_this.latent_class_probabilities_characteristics = document.createElement("td");
+				new_task_type_this.latent_class_probabilities_characteristics.colSpan = 5 + coeffs_atonce.value;
+				tr.appendChild(new_task_type_this.latent_class_probabilities_characteristics);
+				table.appendChild(tr);
+			}
+
 			var tr = document.createElement("tr");
 			tr.appendChild(document.createElement("td"));
 			var td = document.createElement("td");
-			td.colSpan = 3 + coeffs_atonce.value;
+			td.colSpan = 4 + coeffs_atonce.value;
 			td.className = "centered_td";
 			var tmp = document.createElement("span");
 			tmp.className = "hinting_text";
@@ -1120,6 +1226,14 @@ function new_task_type()
 			td.appendChild(document.createTextNode("Consider done"));
 			td.appendChild(document.createElement("br"));
 			td.appendChild(document.createTextNode("@range"));
+			tr.appendChild(td);
+
+			td = document.createElement("td");
+			td.className = "centered_td";
+			td.rowSpan = 2;
+			td.appendChild(document.createTextNode("Zoom-in"));
+			td.appendChild(document.createElement("br"));
+			td.appendChild(document.createTextNode("slowdown"));
 			tr.appendChild(td);
 
 			td = document.createElement("td");
@@ -1160,6 +1274,7 @@ function new_task_type()
 			}
 			table.appendChild(tr);
 
+
 			cli_coefficient_range_metadata.length = new_task_type_this.coefficients.length;
 			for (var i = 0; i != new_task_type_this.coefficients.length; ++i) {
 				cli_coefficient_range_metadata[i] = new cli_coefficient_range_metadata_type(i, new_task_type_this);
@@ -1191,6 +1306,11 @@ function new_task_type()
 				td = document.createElement("td");
 				td.className = "centered_td";
 				td.appendChild(cli_coefficient_range_metadata[i].minstep);
+				tr.appendChild(td);
+
+				td = document.createElement("td");
+				td.className = "centered_td";
+				td.appendChild(cli_coefficient_range_metadata[i].shrink_slowdown);
 				tr.appendChild(td);
 
 				for (var j = 0; j != coeffs_atonce.value; ++j) {
@@ -1578,19 +1698,6 @@ function new_task_type()
 
 	tmp_tr = document.createElement("tr");
 	tmp_td = document.createElement("td");
-	tmp_td.appendChild(document.createTextNode("Zoom-in slowdown:"));
-	tmp_tr.appendChild(tmp_td);
-	tmp_td = document.createElement("td");
-	var shrink_slowdown = document.createElement("input");
-	shrink_slowdown.type = "number";
-	shrink_slowdown.size = 10;
-	shrink_slowdown.value = 0.3;
-	tmp_td.appendChild(shrink_slowdown);
-	tmp_tr.appendChild(tmp_td);
-	tmp_tbl.appendChild(tmp_tr);
-
-	tmp_tr = document.createElement("tr");
-	tmp_td = document.createElement("td");
 	tmp_td.appendChild(document.createTextNode("Min. improvement ratio:"));
 	tmp_tr.appendChild(tmp_td);
 	tmp_td = document.createElement("td");
@@ -1784,7 +1891,6 @@ function new_task_type()
 		var complexity_size_value = parseInt(complexity_size.value);
 		var minimpr_value = parseFloat(minimpr.value);
 		var draws_sets_size_value = parseInt(draws_sets_size.value);
-		var shrink_slowdown_value = parseFloat(shrink_slowdown.value);
 		var repeats_value = parseInt(repeats.value);
 
 		var cli_string = short_description_input.value + '\n';
@@ -1824,7 +1930,7 @@ function new_task_type()
 			}
 		}
 
-		if (repeats_value < 1 || shrink_slowdown_value >= 1 || shrink_slowdown_value < 0 || draws_sets_size_value < 1 || minimpr_value < 1 || !floating_point_resolution_value || !extended_floating_point_resolution_value || !integer_resolution_value || !attributes_1based_indicies.length || !model_value || !respondent_i || !choice_set_i || !alternative_i || !choice_i || isNaN(fromrow) == true || fromrow < 1  || !cli_coefficient_range_metadata.length) 
+		if (repeats_value < 1 || draws_sets_size_value < 1 || minimpr_value < 1 || !floating_point_resolution_value || !extended_floating_point_resolution_value || !integer_resolution_value || !attributes_1based_indicies.length || !model_value || !respondent_i || !choice_set_i || !alternative_i || !choice_i || isNaN(fromrow) == true || fromrow < 1  || !cli_coefficient_range_metadata.length) 
 			return bail_on_wrong_user_values("Did not fill all of the values properly... naughty naughty...");
 
 		switch (integer_resolution_value) {
@@ -1890,9 +1996,6 @@ function new_task_type()
 		cli_string += "--minimpr " + minimpr_value + '\n';
 		form.append("--minimpr", minimpr_value);
 
-		cli_string += "--shrink_slowdown " + shrink_slowdown_value + '\n';
-		form.append("--shrink_slowdown", shrink_slowdown_value);
-
 		var delby = [];
 		var del_strings = [];
 		if (csv_data_freeform_cli_delete_rows_value.disabled == false && csv_data_freeform_cli_delete_rows_value.value.length) {
@@ -1956,7 +2059,7 @@ function new_task_type()
 			var cli = cli_coefficient_range_metadata[i];
 			if (cli.validate() == false)
 				return;
-			var this_row = cli.from.value + ':' + cli.to.value + ':' + cli.minstep.value + compose_cli_cm_gridres_args(cli.grid_resolutions);
+			var this_row = cli.from.value + ':' + cli.to.value + ':' + cli.minstep.value + ':' + cli.shrink_slowdown.value + compose_cli_cm_gridres_args(cli.grid_resolutions);
 			if (this_row != last_row) {
 				var cm_str = i + 1 + ':' + this_row;
 				cli_string += "--cm " + cm_str + '\n';
@@ -2142,9 +2245,12 @@ function new_task_type()
 			cli_coefficient_range_metadata[i].from.value = source.from.value;
 			cli_coefficient_range_metadata[i].to.value = source.to.value;
 			cli_coefficient_range_metadata[i].minstep.value = source.minstep.value;
+			cli_coefficient_range_metadata[i].shrink_slowdown.value = source.shrink_slowdown.value;
 			for (var j = 0; j != source.grid_resolutions.length; ++j)
 				cli_coefficient_range_metadata[i].grid_resolutions[j].value = source.grid_resolutions[j].value;
 		}
+		if (parseInt(this.model.value) == 5 && x < parseInt(this.multi_logit_betas_sets_size_input.value) - 1)
+			this.calculate_classes_prior_probability_characteristics();
 	}
 
 	this.fill_down_column_from = function(x)
@@ -2152,6 +2258,8 @@ function new_task_type()
 		var value = cli_coefficient_range_metadata[x].from.value;
 		for (var i = x + 1; i != cli_coefficient_range_metadata.length; ++i)
 			cli_coefficient_range_metadata[i].from.value = value;
+		if (parseInt(this.model.value) == 5 && x < parseInt(this.multi_logit_betas_sets_size_input.value) - 1)
+			this.calculate_classes_prior_probability_characteristics();
 	}
 
 	this.fill_down_column_to = function(x)
@@ -2159,6 +2267,8 @@ function new_task_type()
 		var value = cli_coefficient_range_metadata[x].to.value;
 		for (var i = x + 1; i != cli_coefficient_range_metadata.length; ++i)
 			cli_coefficient_range_metadata[i].to.value = value;
+		if (parseInt(this.model.value) == 5 && x < parseInt(this.multi_logit_betas_sets_size_input.value) - 1)
+			this.calculate_classes_prior_probability_characteristics();
 	}
 
 	this.fill_down_column_minstep = function(x)
@@ -2168,11 +2278,20 @@ function new_task_type()
 			cli_coefficient_range_metadata[i].minstep.value = value;
 	}
 
+	this.fill_down_column_shrink_slowdown = function(x)
+	{
+		var value = cli_coefficient_range_metadata[x].shrink_slowdown.value;
+		for (var i = x + 1; i != cli_coefficient_range_metadata.length; ++i)
+			cli_coefficient_range_metadata[i].shrink_slowdown.value = value;
+	}
+
 	this.fill_down_column_grid_resolutions = function(x, y)
 	{
 		var value = cli_coefficient_range_metadata[x].grid_resolutions[y].value;
 		for (var i = x + 1; i != cli_coefficient_range_metadata.length; ++i)
 			cli_coefficient_range_metadata[i].grid_resolutions[y].value = value;
+		if (y == 0 && parseInt(this.model.value) == 5 && x < parseInt(this.multi_logit_betas_sets_size_input.value) - 1)
+			this.calculate_classes_prior_probability_characteristics();
 	}
 
 	this.fill_right_row_grid_resolutions = function(x, y)
@@ -2190,6 +2309,8 @@ function new_task_type()
 				cli_coefficient_range_metadata[j].grid_resolutions[i].value = value;
 			}
 		}
+		if (y == 0 && parseInt(this.model.value) == 5 && x < parseInt(this.multi_logit_betas_sets_size_input.value) - 1)
+			this.calculate_classes_prior_probability_characteristics();
 	}
 }
 
@@ -3030,6 +3151,11 @@ function tasks_list_type()
 		}
 		tasks_list_type_this.filtered_existing_detail_showing_tasks = {};
 		tasks_list_type_this.filtered_existing_detail_showing_animated_tasks = {};
+
+		for (var i = 0; i != tasks_list_type_this.more_less_displays.length; ++i)
+			if (tasks_list_type_this.more_less_displays[i].is_expanded == true)
+				tasks_list_type_this.more_less_displays[i].onclick();
+
 	}
 	td.appendChild(hide_all_details_button);
 
@@ -3096,8 +3222,23 @@ function tasks_list_type()
 			// transform the tasks with multi-logit models
 			if (obj.tasks[i].model_id == 5 && obj.tasks[i].coefficients) {
 
-				var coefficients = obj.tasks[i].coefficients;
 				var betas_sets_size = obj.tasks[i].user_data.betas_sets_size;
+
+				var classes_prior_probability_raw = obj.tasks[i].coefficients.slice(0, betas_sets_size - 1);
+				var classes_prior_probability_transformed = [];
+				var classes_prior_probability_transformed_normaliser_inv = 1;
+				for (var cpp_i = 0; cpp_i != classes_prior_probability_raw.length; ++cpp_i) {
+					var tmp_value_transformed = class_probability_transform(classes_prior_probability_raw[cpp_i].value);
+					classes_prior_probability_transformed.push(tmp_value_transformed);
+					classes_prior_probability_transformed_normaliser_inv += tmp_value_transformed;
+				}
+				classes_prior_probability_transformed_normaliser_inv = 1 / classes_prior_probability_transformed_normaliser_inv;
+
+				for (var cpp_i = 0; cpp_i != classes_prior_probability_raw.length; ++cpp_i)
+					classes_prior_probability_transformed[cpp_i] *= classes_prior_probability_transformed_normaliser_inv;
+				classes_prior_probability_transformed.push(classes_prior_probability_transformed_normaliser_inv);
+
+				var coefficients = obj.tasks[i].coefficients.slice(classes_prior_probability_raw.length);
 				var coefficients_per_betas_set = coefficients.length / betas_sets_size;
 				var subtasks = [];
 
@@ -3113,8 +3254,14 @@ function tasks_list_type()
 					subtask.short_description = obj.tasks[i].short_description;
 					subtask.value = obj.tasks[i].value;
 
+					subtask.class_prior_probability_transformed = classes_prior_probability_transformed[betas_set_i];
+
 					var slice_end = slice_begin + coefficients_per_betas_set;
 					subtask.coefficients = coefficients.slice(slice_begin, slice_end);
+					if (betas_set_i != classes_prior_probability_raw.length) 
+						subtask.class_prior_probability_raw = classes_prior_probability_raw[betas_set_i];
+					else
+						subtask.class_prior_probability_raw = { range : 0, value : 0 };
 
 					subtasks.push(subtask);
 					slice_begin = slice_end;
@@ -3141,6 +3288,7 @@ function tasks_list_type()
 
 		var inpt_size = obj.tasks.length / 10 + 2;
 
+		tasks_list_type_this.more_less_displays = [];
 		var new_task_names_set = {};
 
 		var filtered_existing_detail_showing_tasks = tasks_list_type_this.filtered_existing_detail_showing_tasks;
@@ -3217,6 +3365,7 @@ function tasks_list_type()
 				var task_id = obj.tasks[i].task_id;
 				var model_id = obj.tasks[i].model_id;
 				var model_name = "";
+				var class_prior_probability_raw = obj.tasks[i].class_prior_probability_raw;
 
 				switch (model_id) {
 				case 1:
@@ -3232,7 +3381,9 @@ function tasks_list_type()
 				model_name = "Gmnl2a";
 				break;
 				case 5:
-				model_name = "LC"+ '[' + (subtask_i + 1) + ']';
+				model_name = "LC"+ '[' + (subtask_i + 1) + "]";
+				if (obj.tasks[i].class_prior_probability_transformed)
+					model_name += "P=" + parseFloat(parseFloat(obj.tasks[i].class_prior_probability_transformed).toFixed(3));
 				break;
 				}
 
@@ -3302,6 +3453,7 @@ function tasks_list_type()
 							short_description_pre.replaceChild(document.createTextNode(first_line_short_description), short_description_pre.firstChild);
 						}
 					}
+					tasks_list_type_this.more_less_displays.push(short_description_label);
 
 					// todo -- a quick hack (later on consider using XMLHttpRequest thingy)
 					if (model_id == 5 && task_completed == true) {
@@ -3547,6 +3699,10 @@ function tasks_list_type()
 								betas_size = coefficients.length;
 								calculate_normalised_betas(coefficients, 0, betas_size);
 								generate_headings("<b>&beta;</b>", tr_, betas_size, "");
+								td_ = document.createElement("td");
+								td.className = "help_content_title";
+								td_.innerHTML = "&theta;";
+								tr_.appendChild(td_);
 							break;
 							default:
 								td_.appendChild(document.createTextNode("Terrain minimisation: " + display_float(terrain_elevation_value)));
@@ -3568,6 +3724,13 @@ function tasks_list_type()
 								td_.appendChild(document.createTextNode(display_float(coefficients[i].range)));
 								tr_.appendChild(td_);
 							}
+							if (model_id == 5) {
+								td_ = document.createElement("td");
+								if (task_completed == false)
+									td_.className = "incomplete_value";
+								td_.appendChild(document.createTextNode(display_float(class_prior_probability_raw.range)));
+								tr_.appendChild(td_);
+							}
 							tbl_.appendChild(tr_);
 
 							tr_ = document.createElement("tr");
@@ -3577,6 +3740,11 @@ function tasks_list_type()
 							for (var i = 0; i != coefficients.length; ++i) {
 								td_ = document.createElement("td");
 								td_.appendChild(document.createTextNode(display_float(coefficients[i].value)));
+								tr_.appendChild(td_);
+							}
+							if (model_id == 5) {
+								td_ = document.createElement("td");
+								td_.appendChild(document.createTextNode(display_float(class_prior_probability_raw.value)));
 								tr_.appendChild(td_);
 							}
 							tbl_.appendChild(tr_);
@@ -3662,7 +3830,7 @@ function tasks_list_type()
 							td.appendChild(document.createElement("br"));
 							td.appendChild(document.createTextNode("Try again in a few minutes."));
 
-							tasks_list_type_this.existing_detail_showing_tasks[tasksubtask_name] = {};
+							tasks_list_type_this.existing_detail_showing_tasks[tasksubtask_name] = {"checkbox" : show_details_checkbox }
 							delete tasks_list_type_this.existing_detail_showing_animated_tasks[tasksubtask_name];
 						}
 						tr.appendChild(td);
@@ -3757,10 +3925,11 @@ function tasks_list_type()
 		paint_comparison();
 	}
 
-	this.existing_detail_showing_tasks = {};
-	this.existing_detail_showing_animated_tasks = {};
-	this.filtered_existing_detail_showing_tasks = {};
-	this.filtered_existing_detail_showing_animated_tasks = {};
+	this.more_less_displays = [];
+	this.existing_detail_showing_tasks = [];
+	this.existing_detail_showing_animated_tasks = [];
+	this.filtered_existing_detail_showing_tasks = [];
+	this.filtered_existing_detail_showing_animated_tasks = [];
 
 	function populate_pre()
 	{
@@ -3860,12 +4029,14 @@ function tasks_list_type()
 function main_menu_type()
 {
 	this.gui = document.createElement("div");
+	/*
 	var beta_div = document.createElement("div");
 	beta_div.className = "beta";
 	beta_div.appendChild(document.createTextNode("Please note: this software is pre-BETA, at times running in slowed-down test/debug mode."));
 	beta_div.appendChild(document.createElement("br"));
 	beta_div.appendChild(document.createTextNode("Do expect multitude of bugs, SLOW responses, server CRASHES and other nasty surprises."));
 	this.gui.appendChild(beta_div);
+	*/
 
 	var tbl = document.createElement("table");
 	tbl.className = "centered_table";
@@ -4021,6 +4192,11 @@ function timer_callback(now)
 </head>
 <!-- help-text { -->
 <body onload="main();" onclick="batch_fill_context_menu.hide();">
+<div class="beta">
+Please note: this software is pre-BETA, at times running in slowed-down test/debug mode.
+<br>
+Do expect multitude of bugs, SLOW responses, server CRASHES and other nasty surprises.
+</div>
 <div class="help_content" id="help_model_content">
 <br>
 Available models: <a href="http://en.wikipedia.org/wiki/Multinomial_logit" target="_blank">Logit</a>, <a href="http://en.wikipedia.org/wiki/Mixed_logit" target="_blank">Mixed logit</a>, <a href="http://www.censoc.uts.edu.au/researchoutput/wp09-002.pdf" target="_blank">GMNL-II</a>, <a href="https://dl.dropbox.com/s/ri2v6k4fagm0hzm/GMNL2a.pdf?token_hash=AAEMQl1t0DMSBNAzUgP0VerakeLb8ixjdRQmQdqABtP7Eg&dl=1" target="_blank">Gmnl2a</a>, LC (Latent Class Logit) 
@@ -4029,12 +4205,18 @@ Available models: <a href="http://en.wikipedia.org/wiki/Multinomial_logit" targe
 <ul>
 <li>Normal distribution is used for <b>&sigma;</b><sub>&beta;</sub> (a.k.a. <b>&eta;</b> in some of the aforementioned model-documentation hyperlinks). Such distributions are not covariant (i.e. only a diagonal variance-covariance matrix is used). 
 </li>
-<li>Custom distribution (similar to lognormal of e^<sup>x</sup>, but not quite) is used for the scale parameter: 
+<li>Custom transformation (similar to the one of lognormal  e^<sup>x</sup>, but not quite) is used for the scale parameter in models such as GMNL-II, Gmnl2a and even Latent CLass: 
 <ul>
 <li>1 + x for x &gt; 0 and</li>
 <li>1 / (1 - x) for x &lt; 0</li> 
 </ul>
-where x ~ <i>&Nu;</i>(0, 1)
+In cases of GMNL-II and Gmnl2a the x is ~ <i>&Nu;</i>(0, 1)
+<br>In case of Latent Class the transformation is somewhat different (but only slightly), where x is squared:
+<ul>
+<li>1 + x*x for x &gt; 0 and</li>
+<li>1 / (1 + x*x) for x &lt; 0</li> 
+</ul>
+and x is an estimated scalar (no distribution is drawn) and the aforementioned transformation is used when calculating prior probabilities for each of the classes (for the last class, x is fixed at 0).
 </li>
 <li>
 From a mathematical standpoint, <b>&sigma;</b><sub>&beta;</sub> symbol(s) do not denote variance but rather standard deviation: unit normal distribution scaled (widened/narrowed by the <b>&sigma;</b><sub>&beta;</sub>). 
@@ -4044,13 +4226,13 @@ Additionally, Gmnl2a may not preserve the "absolute values ratio" between attrib
 <p>See relevant sections of the overall <a href="https://github.com/CenSoC/leon_wip" target="_blank">source-code</a> repository for more details.
 </div>
 <div class="help_content" id="help_dataset_content" >
-File must be in a .CSV (coma separated values) format. Layout requirements are similar to what, in some circles, is known as a "stacked data format". Namely they are:
+File must be in a .CSV (coma separated values) format. Layout requirements are similar to what, in some circles, is known as a "stacked/long data format". Namely they are:
 <ul>
 <li>
 Each alternative's data is a row.
 </li>
 <li>
-Attributes are stored in columns (a given attribute will be represented by a given column).
+Attributes are stored in columns (a given attribute will be represented by a given column). All of the ASC (alternative specific constants), integration of dummy-coded reference column, attribute-levels at the level of survey-design semantics, etc. must be pre-processed to yield nothing but attributes columns (i.e. vector of the observed attributes -- as per final mathematical model specifications/terms in most of the published papers).
 </li>
 <li>
 There must be a <span class="help_content_fieldname">choice</span> column. It must contain 0 (zero) for those alternatives which were not chosen by a respondent, and a 1 (one) denoting the chosen alternative.
@@ -4175,6 +4357,9 @@ Eventually, even the <span class="help_content_fieldname">max-coefficients-@once
 <li>
 Termination criteria is when shrunk boundaries are smaller than a chosen range (i.e. <span class="help_content_fieldname">Consider done @range</span> configuration field). When all of the coefficients are considered done then the whole convergence process is completed.
 </li>
+<li>
+<span class="help_content_fieldname">Zoom-in slowdown</span> an arbitrary control to slow-down the shrinkage (zooming-in). The values of zero means no slowdown (implying the new range will be made from two grid-points around the reference-point), the value of one is full slowdown. Specified values must be 0 &lt;= x &lt; 1
+</li>
 </ol>
 <p>
 As a matter of further computational efficiency the algorithm has an option to use <em>different</em> number of <span class="help_content_fieldname">Gridsteps for x-coefficients-@once modulations</span> (e.g. one may want to lower the number of grid-points when iterating through all possible combinatinos of a max-coefficients-at-once complexity -- this has a price of a coarser resolution but without sacrificing the "multidimensional-diagonality" capability of the exploration process).
@@ -4204,9 +4389,6 @@ Specifying max-coefficients-@once above may result in an enormous number of like
 </li>
 <li>
 <span class="help_content_fieldname">Number of drawn sets</span> allows for some (or all) of the respondents to have <em>redrawn</em> values from the underlying distributions. The other fileld ("Number of draws") is used to generate <em>one set</em> of distributed numbers (i.e. explicit draws for each of the attributes' variances and the scaling distributions) -- for calculating <em>given</em> respondent's likelihood. If there is more than one set, different respondents will use different sets. The process is to loop-through/iterate the available sets whenever moving onto the next respondent's data. If there are less sets than respondents then some respondents will use the same set(s). Care must be taken when using large values in this field -- as invariably this shall cause larger memory requirements on every of the processing computers.
-</li>
-<li>
-<span class="help_content_fieldname">Zoom-in slowdown</span> an arbitrary control to slow-down the shrinkage (zooming-in). The values of zero means no slowdown (implying the new range will be made from two grid-points around the reference-point), the value of one is full slowdown.
 </li>
 <li>
 Some sampling points' likelihood calculations may result in values which are better than that of the reference-point but only by an "insignificant" amount. Such events can cause overly-frequent walking-and-resetting of the algorithm without yielding much improvement. 

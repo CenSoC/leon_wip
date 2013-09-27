@@ -110,7 +110,8 @@ struct task_processor : censoc::exp_lookup::exponent_evaluation_choice<EF, typen
 	bool reduce_exp_complexity;
 
 	size_type const betas_sets_size;
-	float_type const accumulated_probability_log_betas_sets_size_offset;
+	size_type const classes_probability_i_end;
+	::std::vector<float_type> classes_prior_probability;
 
 	//}
 
@@ -123,7 +124,7 @@ struct task_processor : censoc::exp_lookup::exponent_evaluation_choice<EF, typen
 	x_size(meta_msg.model.dataset.x_size()), 
 	betas_mult_choice(meta_msg.model.dataset.max_alternatives()),
 	reduce_exp_complexity(meta_msg.model.reduce_exp_complexity()),
-	betas_sets_size(meta_msg.model.betas_sets_size()), accumulated_probability_log_betas_sets_size_offset(::std::log(static_cast<float_type>(betas_sets_size)))
+	betas_sets_size(meta_msg.model.betas_sets_size()), classes_probability_i_end(betas_sets_size - 1), classes_prior_probability(classes_probability_i_end)
 	{
 		assert(betas_sets_size);
 		censoc::llog() << "ctor in multi_logit::task_processor\n";
@@ -134,7 +135,7 @@ public:
 	size_type
 	get_coefficients_size() const noexcept
 	{	
-		return x_size * betas_sets_size;
+		return x_size * betas_sets_size + classes_probability_i_end;
 	}
 
 	void
@@ -198,6 +199,16 @@ public:
 		float_type const * matrix_composite_ptr_outer(matrix_composite.get());
 		uint8_t const * choice_column_ptr_outer(choice_column.get());
 
+		// todo -- later, have some caching for the transformed classes probability coefficients (if any -- it may well be that there won't be a need to do any of such recalculations as the prior probability coeffs are not changed at all)
+		float_type classes_probability_normaliser_inv_accumulated(1);
+		for (size_type betas_set_i(0); betas_set_i != classes_probability_i_end; ++betas_set_i) {
+			float_type const tmp_value(coefficients[betas_set_i].value());
+			float_type const tmp_value_transformed(tmp_value > 0 ? 1 + tmp_value * tmp_value : 1 / (1 + tmp_value * tmp_value));
+			classes_probability_normaliser_inv_accumulated += classes_prior_probability[betas_set_i] = tmp_value_transformed;
+		}
+		classes_probability_normaliser_inv_accumulated = 1 / (classes_probability_normaliser_inv_accumulated * betas_sets_size);
+		// end todo.
+
 		assert(respondents_choice_sets.empty() == false);
 		for (size_type i(0); i != respondents_choice_sets.size(); ++i) {
 
@@ -210,7 +221,8 @@ public:
 			uint8_t const * choice_sets_alternatives_ptr_inner;
 			float_type const * matrix_composite_ptr_inner;
 			uint8_t const * choice_column_ptr_inner;
-			size_type current_coefficient_i_outer(0);
+
+			size_type current_coefficient_i_outer(classes_probability_i_end);
 
 			extended_float_type betas_respondent_probability(0);
 			assert(betas_sets_size);
@@ -266,9 +278,9 @@ public:
 					}
 					// now to the rest of passes ( 1 <= x < x_size)
 					++current_coefficient_i_inner;
-					assert(current_coefficient_i_inner < betas_sets_size * (x_size + 1));
+					assert(current_coefficient_i_inner < betas_sets_size * x_size + classes_probability_i_end);
 					for (size_type x(1), alternatives_columns_begin(alternatives); x != x_size; ++x, ++current_coefficient_i_inner) {
-						assert(current_coefficient_i_inner < betas_sets_size * (x_size + 1));
+						assert(current_coefficient_i_inner < betas_sets_size * x_size + classes_probability_i_end);
 						for (size_type a(0); a != alternatives; ++a, ++alternatives_columns_begin) {
 							assert(matrix_composite_ptr_inner < debug_end_of_row_in_composite_matrix);
 							float_type const control(*matrix_composite_ptr_inner++);
@@ -333,15 +345,21 @@ public:
 				
 				current_coefficient_i_outer = current_coefficient_i_inner;
 
-				betas_respondent_probability += respondent_probability;
+				// todo -- specialize the whole of the above loop's tail for this case... if need be (i.e. other optimizations will probably yield higher priority)...
+				if (betas_set_i != classes_probability_i_end)
+					betas_respondent_probability += classes_prior_probability[betas_set_i] * respondent_probability;
+				else
+					betas_respondent_probability += respondent_probability;
 
 			} // end for the betas_set
+
+		  betas_respondent_probability *= classes_probability_normaliser_inv_accumulated;
 
 			choice_sets_alternatives_ptr_outer = choice_sets_alternatives_ptr_inner;
 			matrix_composite_ptr_outer = matrix_composite_ptr_inner;
 			choice_column_ptr_outer = choice_column_ptr_inner;
 
-			accumulated_probability += accumulated_probability_log_betas_sets_size_offset - ::std::log(betas_respondent_probability);
+			accumulated_probability -= ::std::log(betas_respondent_probability);
 
 			// note -- using the log of likelihood (instead of 'running products' way of the raw likelihood) in order to programmatically prevent underflow in cases of large number of respondents/observations being present in dataset.
 			// e.g. -- 2000 observation with prob of .5 for each (for the ease of illustration)

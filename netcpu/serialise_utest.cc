@@ -51,8 +51,8 @@ void static
 run_fp(F x)
 {
 	::censoc::netcpu::converger_1::message::meta<unsigned, F, char> dfp;
-	::censoc::netcpu::message::serialise_to_decomposed_floating(x, dfp.shrink_slowdown);
-	F y(::censoc::netcpu::message::deserialise_from_decomposed_floating<F>(dfp.shrink_slowdown));
+	::censoc::netcpu::message::serialise_to_decomposed_floating(x, dfp.improvement_ratio_min);
+	F y(::censoc::netcpu::message::deserialise_from_decomposed_floating<F>(dfp.improvement_ratio_min));
 	::std::cout << x << ", " << y << ::std::endl;
 	assert(::std::abs(x - y) < .000001);
 }
