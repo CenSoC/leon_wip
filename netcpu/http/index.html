@@ -1134,6 +1134,10 @@ function new_task_type()
 
 	this.calculate_classes_prior_probability_characteristics = function()
 	{
+		var first_theta_probability_nominator_min;
+		var first_theta_probability_nominator_max;
+		var first_theta_probability_denominator_min = 1;
+		var first_theta_probability_denominator_max = 1;
 		var probability_min = 1;
 		var probability_max = 1;
 		var probability_medium_1 = 1;
@@ -1152,9 +1156,18 @@ function new_task_type()
 					var range = to - from;
 					var step_size = range / (grid_steps + 1);
 					var starting_value = from + step_size * 0.5;
+					var ending_value = starting_value + grid_steps * step_size;
+
+					if (!betas_set_i) {
+						first_theta_probability_denominator_min += first_theta_probability_nominator_min = class_probability_transform(starting_value);
+						first_theta_probability_denominator_max += first_theta_probability_nominator_max = class_probability_transform(ending_value);
+					} else {
+						first_theta_probability_denominator_min += class_probability_transform(ending_value);
+						first_theta_probability_denominator_max += class_probability_transform(starting_value);
+					}
 
 					probability_max += class_probability_transform(starting_value);
-					probability_min += class_probability_transform(starting_value + grid_steps * step_size);
+					probability_min += class_probability_transform(ending_value);
 
 					var i_1 = 0;
 					var grid_step_value = starting_value;
@@ -1174,7 +1187,8 @@ function new_task_type()
 			probability_medium_2 = 1 / probability_medium_2;
 			var probability_resolution = Math.abs(probability_medium_1 - probability_medium_2);
 
-			new_task_type_this.latent_class_probabilities_characteristics.innerHTML = "fixed &theta; prior probability characterisation: lowest producable(=" + probability_min.toFixed(3) +") highest producable(=" + probability_max.toFixed(3) + ") resolution of balance(=" + probability_resolution.toFixed(3) + ')';
+			new_task_type_this.latent_class_probabilities_characteristics.innerHTML = "fixed &theta; prior probability characterisation: lowest producable(=" + probability_min.toFixed(3) +") highest producable(=" + probability_max.toFixed(3) + ") resolution of balance(=" + probability_resolution.toFixed(3) + ')' 
+				+ "<br>first &theta; prior probability characterisation: lowest producable(=" + (first_theta_probability_nominator_min / first_theta_probability_denominator_min).toFixed(3) + ") highest producable(=" + (first_theta_probability_nominator_max / first_theta_probability_denominator_max).toFixed(3) + ')';
 		}
 	}
 
