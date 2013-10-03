@@ -226,8 +226,7 @@ struct task<N, F, Model, netcpu::models_ids::multi_logit> : netcpu::converger_1:
 			float_type const tmp_value_transformed(tmp_value > 0 ? 1 + tmp_value * tmp_value : 1 / (1 + tmp_value * tmp_value));
 			classes_probability_normaliser_inv += converged_coefficients[betas_set_i] = tmp_value_transformed;
 		}
-		// the 1000 (instead of 1) below is to counter the raw-multiply when multiplying with the respondent's probability which is a raw product sequence of the observations...
-		classes_probability_normaliser_inv = 1000 / classes_probability_normaliser_inv;
+		classes_probability_normaliser_inv = 1 / classes_probability_normaliser_inv;
 
 		::std::vector<float_type> classes_prior_probability(betas_sets_size);
 		for (size_type betas_set_i(0); betas_set_i != classes_probability_i_end; ++betas_set_i)
@@ -368,7 +367,7 @@ struct task<N, F, Model, netcpu::models_ids::multi_logit> : netcpu::converger_1:
 
 				current_coefficient_i_outer = current_coefficient_i_inner;
 
-				extended_float_type const tmp_prob(classes_prior_probability[betas_set_i] * respondent_probability * classes_probability_normaliser_inv);
+				extended_float_type const tmp_prob(classes_prior_probability[betas_set_i] * respondent_probability);
 
 				respondent_classes_posterior_probability[betas_set_i] = tmp_prob;
 
@@ -433,7 +432,7 @@ struct task<N, F, Model, netcpu::models_ids::multi_logit> : netcpu::converger_1:
 			for (size_type i(0); i != x_size; ++i)
 				dataset_file << ',';
 			for (size_type i(0); i != betas_sets_size; ++i)
-				dataset_file << ",Pprior(=" << classes_prior_probability[i] * .001 << ')'; // the division by 1000 is due to pre-amplification of the classes_prior_probability at the beginning of the code for this variable...
+				dataset_file << ",Pprior(=" << classes_prior_probability[i] << ')'; 
 			dataset_file << '\n';
 
 			matrix_composite_ptr_outer = matrix_composite.get();

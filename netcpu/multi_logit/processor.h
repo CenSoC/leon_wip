@@ -206,7 +206,7 @@ public:
 			float_type const tmp_value_transformed(tmp_value > 0 ? 1 + tmp_value * tmp_value : 1 / (1 + tmp_value * tmp_value));
 			classes_probability_normaliser_inv_accumulated += classes_prior_probability[betas_set_i] = tmp_value_transformed;
 		}
-		classes_probability_normaliser_inv_accumulated = 1 / (classes_probability_normaliser_inv_accumulated * betas_sets_size);
+		classes_probability_normaliser_inv_accumulated = 1 / classes_probability_normaliser_inv_accumulated;
 		// end todo.
 
 		assert(respondents_choice_sets.empty() == false);
