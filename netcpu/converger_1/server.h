@@ -187,32 +187,89 @@ public:
 		return range_ended_;
 	}
 
+private:
+	struct {
+		float_type initial_range;
+		float_type total_range_delta;
+		float_type new_value_from;
+		float_type from_diff;
+		float_type new_value_to;
+		float_type to_diff;
+		float_type current_range;
+		float_type current_range_delta;
+		float_type ranges_delta_ratio;
+		float_type completely_zoomed_range;
+		float_type total_diff;
+
+		void 
+		init(float_paramtype initial_range_, float_paramtype final_range)
+		{
+			initial_range = initial_range_;
+			total_range_delta = initial_range - final_range;
+			assert(total_range_delta > 0);
+		}
+
+		void
+		shrink_prepare(float_paramtype value_from, float_paramtype now_value, float_paramtype grid_step_size, float_paramtype prior_range, float_paramtype shrink_slowdown)
+		{
+			new_value_from = now_value - grid_step_size;
+			from_diff = (new_value_from - value_from) * shrink_slowdown;
+			new_value_to = now_value + grid_step_size;
+			to_diff = (value_from + prior_range - new_value_to) * shrink_slowdown;
+
+			completely_zoomed_range = grid_step_size + grid_step_size;
+			total_diff = from_diff + to_diff;
+
+			current_range = completely_zoomed_range +  total_diff;
+			current_range_delta = initial_range - current_range;
+			ranges_delta_ratio = current_range_delta / total_range_delta;
+			if (ranges_delta_ratio <= 0)
+				ranges_delta_ratio = ::std::numeric_limits<float_type>::min();
+			assert(ranges_delta_ratio > 0);
+		}
+
+		// returns rand_range
+		float_type
+		shrink_execute(float_paramtype min_ranges_delta_ratio, float_type & value_from)
+		{
+			assert(min_ranges_delta_ratio > 0);
+			float_type const diff_scaler((initial_range - (min_ranges_delta_ratio / ranges_delta_ratio) * current_range_delta - completely_zoomed_range) / total_diff);
+			assert(completely_zoomed_range + diff_scaler * total_diff <= initial_range + .00001);
+
+			value_from = new_value_from - diff_scaler * from_diff;
+
+			return new_value_to + diff_scaler * to_diff - value_from;
+		}
+
+	} shrink_preparation_control_block;
+
+public:
+	float_type 
+	shrink_prepare()
+	{
+		assert(assert_values() == true);
+		if (range_ended_ == false) {
+
+			float_type const grid_step_size(rand_range_ / (grid_resolutions[0] + 1));
+			assert(grid_step_size >= 0);
+
+			shrink_preparation_control_block.shrink_prepare(value_from_, now_value_.value(), grid_step_size, rand_range_, shrink_slowdown_);
+			return shrink_preparation_control_block.ranges_delta_ratio;
+		} else
+			return ::std::numeric_limits<float_type>::max();
+	}
 	/**
 		@pre -- sequence of calls is: "pre_shrink", "adjust the grid resolutions", "post_shrink"
 		*/
 	void
-	pre_shrink(size_type & coefficients_rand_range_ended_wait)
+	shrink_execute(float_paramtype min_ranges_delta_ratio, size_type & coefficients_rand_range_ended_wait)
 	{
 		assert(assert_values() == true);
 
 		censoc::llog() << "ACTUALLY SHRINKING\n";
 
 		if (range_ended_ == false) {
-
-			float_type const grid_step_size(rand_range_ / (grid_resolutions[0] + 1));
-			assert(grid_step_size >= 0);
-
-			float_type const new_value_from(now_value_.value() - grid_step_size);
-			float_type const from_diff((new_value_from - value_from_) * shrink_slowdown_);
-			float_type const new_value_to(now_value_.value() + grid_step_size);
-			float_type const to_diff((value_from_ + rand_range_ - new_value_to) * shrink_slowdown_);
-
-			value_from_ = new_value_from - from_diff;
-			// value_from_ = now_value_.value() - grid_step_size;
-
-			//rand_range_ = grid_step_size + grid_step_size;
-			update_rand_range(new_value_to + to_diff - value_from_, coefficients_rand_range_ended_wait);
-
+			update_rand_range(shrink_preparation_control_block.shrink_execute(min_ranges_delta_ratio, value_from_), coefficients_rand_range_ended_wait);
 			assert(assert_values() == true);
 		}
 	}
@@ -325,6 +382,8 @@ public:
 	{ 
 		constrain_from_ = constrain_from;
 		constrain_to_ = constrain_to;
+
+		shrink_preparation_control_block.init(constrain_to - constrain_from, rand_range_end);
 
 #if 0
 		clamp_from_ = clamp_from;
@@ -1641,10 +1700,18 @@ public:
 
 			am_bootstrapping = true;
 
+			float_type min_ranges_delta_ratio(::std::numeric_limits<float_type>::max());
+			for (size_type i(0); i != coefficients_size; ++i) {
+				float_type const tmp(coefficients_metadata[i].shrink_prepare());
+				assert(tmp <= ::std::numeric_limits<float_type>::max());
+				if (tmp < min_ranges_delta_ratio)
+					min_ranges_delta_ratio = tmp;
+			}
+			assert(min_ranges_delta_ratio > 0);
 			offset = 1;
 			assert(offset.size());
 			for (size_type i(0); i != coefficients_size; ++i)
-				coefficients_metadata[i].pre_shrink(coefficients_rand_range_ended_wait);
+				coefficients_metadata[i].shrink_execute(min_ranges_delta_ratio, coefficients_rand_range_ended_wait);
 
 			// pseudo -- keep going through zoom levels and pick the latest acceptable one (if any)
 			for (typename coefficients_metadata_x_type::const_iterator coefficients_metadata_x_i(coefficients_metadata_x.begin()); coefficients_metadata_x_i != coefficients_metadata_x.end(); ++coefficients_metadata_x_i) {
