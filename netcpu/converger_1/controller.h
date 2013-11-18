@@ -140,11 +140,12 @@ struct task_loader_detail : netcpu::io_wrapper<AsyncDriver> {
 	};
 
 	struct cli_coefficient_range_metadata_x { // extra ones -- for additional zoom levels
-		cli_coefficient_range_metadata_x(size_paramtype i, float_paramtype threshold)
-		: i(i), threshold(threshold) {
+		cli_coefficient_range_metadata_x(size_paramtype i, float_paramtype threshold, float_paramtype shrink_slowdown)
+		: i(i), threshold(threshold), shrink_slowdown(shrink_slowdown) {
 		}
 		size_type const i;
 		float_type const threshold;
+		float_type const shrink_slowdown;
 		censoc::stl::fastsize< ::std::list<size_type>, size_type> grid_resolutions;
 		bool 
 		operator < (cli_coefficient_range_metadata_x const & rhs) const
@@ -259,7 +260,7 @@ struct task_loader_detail : netcpu::io_wrapper<AsyncDriver> {
 						throw censoc::exception::validation(xxx() << "incorrect --cm value: [" << i->second << "] need " << comment << " where 'coeff' is unique amongst other '--cm' options");
 				} else { // subsequent (not first) --cm semantics
 
-					char const static comment[] = "'coeff:threshold:grid_resolution[:grid_resolution:etc.]'";
+					char const static comment[] = "'coeff:threshold:shrink_slowdown:grid_resolution[:grid_resolution:etc.]'";
 
 					if (token_i == tokens.end())
 						throw censoc::exception::validation(xxx() << "incorrect --cm value: [" << i->second << "] need " << comment);
@@ -269,7 +270,13 @@ struct task_loader_detail : netcpu::io_wrapper<AsyncDriver> {
 						throw censoc::exception::validation(xxx() << "incorrect --cm value: [" << i->second << "] need " << comment);
 					float_type const threshold = censoc::lexicast<float_type>(*token_i);
 
-					cli_coefficient_range_metadata_x tmp(cr_i, threshold);
+					if (++token_i == tokens.end())
+						throw censoc::exception::validation(xxx() << "incorrect --cm value: [" << i->second << "] need " << comment);
+					float_type const shrink_slowdown = censoc::lexicast<float_type>(*token_i);
+					if (shrink_slowdown < 0 || shrink_slowdown >= 1)
+						throw censoc::exception::validation(xxx("incorrect shrink_slowdown value. expected [0, 1) but got ") << shrink_slowdown);
+
+					cli_coefficient_range_metadata_x tmp(cr_i, threshold, shrink_slowdown);
 
 					// grid_resolution(s)
 					for (unsigned j(0); ; ++j) {
@@ -402,6 +409,7 @@ struct task_loader_detail : netcpu::io_wrapper<AsyncDriver> {
 					k = j++;
 
 				netcpu::message::serialise_to_decomposed_floating(k->threshold, bulk_msg.coeffs_x(coeffs_x_i).coeffs(i).threshold);
+				netcpu::message::serialise_to_decomposed_floating(k->shrink_slowdown, bulk_msg.coeffs_x(coeffs_x_i).coeffs(i).shrink_slowdown);
 				bulk_msg.coeffs_x(coeffs_x_i).coeffs_at_once(coefficients_ranges_x_i->first);
 
 				size_type const grid_resolutions_size(::std::max(coefficients_ranges_x_i->first, k->grid_resolutions.size()));

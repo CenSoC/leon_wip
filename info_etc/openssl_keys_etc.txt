@@ -39,7 +39,13 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
 openssl genrsa -aes256 -out key.pem 1024
+
 openssl req -new -key key.pem -out request.pem
+could add to the above line the following:
+-subj "/C=AU/ST=NSW/L=Sydney/O=XXX_some_organisation_nam/OU=XXX_SOME_department_NAME" -batch
+for more automated processing
+
+
 openssl x509 -req -days 11333 -in request.pem -signkey key.pem -out certificate.pem
 # ... or if getting from authority $ openssl x509 -inform der -in certificate.crt -out certificate.pem
 openssl dhparam -outform PEM -out dh.pem 1024

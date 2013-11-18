@@ -150,7 +150,6 @@ struct task<N, F, Model, netcpu::models_ids::multi_logit> : netcpu::converger_1:
 
 		size_type const x_size(meta_msg.model.dataset.x_size());
 		size_type const betas_sets_size(meta_msg.model.betas_sets_size());
-		size_type const classes_probability_i_end(betas_sets_size - 1);
 		size_type max_alternatives(meta_msg.model.dataset.max_alternatives());
 		::std::vector<float_type> betas_mult_choice(max_alternatives);
 
@@ -220,18 +219,17 @@ struct task<N, F, Model, netcpu::models_ids::multi_logit> : netcpu::converger_1:
 		float_type const * matrix_composite_ptr_inner;
 		uint8_t const * choice_column_ptr_outer(choice_column.get());
 
-		float_type classes_probability_normaliser_inv(1);
-		for (size_type betas_set_i(0); betas_set_i != classes_probability_i_end; ++betas_set_i) {
+		float_type classes_probability_normaliser_inv(0);
+		for (size_type betas_set_i(0); betas_set_i != betas_sets_size; ++betas_set_i) {
 			float_type const tmp_value(converged_coefficients[betas_set_i]);
-			float_type const tmp_value_transformed(tmp_value > 0 ? 1 + tmp_value * tmp_value : 1 / (1 + tmp_value * tmp_value));
+			float_type const tmp_value_transformed(tmp_value > 0 ? 1 + tmp_value : 1 / (1 - tmp_value));
 			classes_probability_normaliser_inv += converged_coefficients[betas_set_i] = tmp_value_transformed;
 		}
 		classes_probability_normaliser_inv = 1 / classes_probability_normaliser_inv;
 
 		::std::vector<float_type> classes_prior_probability(betas_sets_size);
-		for (size_type betas_set_i(0); betas_set_i != classes_probability_i_end; ++betas_set_i)
+		for (size_type betas_set_i(0); betas_set_i != betas_sets_size; ++betas_set_i)
 			classes_prior_probability[betas_set_i] = converged_coefficients[betas_set_i] * classes_probability_normaliser_inv;
-		classes_prior_probability[classes_probability_i_end] = classes_probability_normaliser_inv;
 
 		::std::vector<extended_float_type> respondent_classes_posterior_probability(betas_sets_size);
 
@@ -242,7 +240,7 @@ struct task<N, F, Model, netcpu::models_ids::multi_logit> : netcpu::converger_1:
 			uint8_t const * choice_sets_alternatives_ptr_inner;
 			float_type const * matrix_composite_ptr_inner;
 			uint8_t const * choice_column_ptr_inner;
-			size_type current_coefficient_i_outer(classes_probability_i_end);
+			size_type current_coefficient_i_outer(betas_sets_size);
 
 			extended_float_type modal_max(0);
 			size_type modal_i;

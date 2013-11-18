@@ -118,6 +118,7 @@ struct coeffwise_bulk_x {
 	typedef netcpu::message::decomposed_floating<> float_type; 
 
 	float_type threshold;
+	float_type shrink_slowdown;
 	size_arraytype grid_resolutions;
 
 	void
@@ -125,6 +126,7 @@ struct coeffwise_bulk_x {
 	{
 		censoc::llog() 
 			<< "threshold: [" << netcpu::message::deserialise_from_decomposed_floating<F>(threshold) 
+			<< "shrink_slowdown: [" << netcpu::message::deserialise_from_decomposed_floating<F>(shrink_slowdown) 
 			<< "] grid_resolutions: [";
 		for (typename netcpu::message::typepair<N>::wire i(0); i != grid_resolutions.size(); ++i)
 			censoc::llog() << '[' << grid_resolutions(i) << ']';

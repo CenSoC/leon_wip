@@ -93,11 +93,14 @@ namespace censoc { namespace stl {
 		}
 #endif
 
-		using Container::value_type;
-		using Container::const_iterator;
-		using Container::iterator;
+		using typename Container::value_type;
+		using typename Container::const_iterator;
+		using typename Container::iterator;
+		using typename Container::const_reverse_iterator;
 		using Container::begin;
+		using Container::rbegin;
 		using Container::end;
+		using Container::rend;
 		using Container::empty;
 		using Container::front;
 		using Container::back;
@@ -143,6 +146,22 @@ namespace censoc { namespace stl {
 			Container::push_front(x);
 
 			++size_;
+			assert(size_ == Container::size());
+		}
+		void
+		pop_back()
+		{
+			Container::pop_back();
+
+			--size_;
+			assert(size_ == Container::size());
+		}
+		void
+		pop_front()
+		{
+			Container::pop_front();
+
+			--size_;
 			assert(size_ == Container::size());
 		}
 		Size

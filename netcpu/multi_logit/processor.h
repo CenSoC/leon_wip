@@ -110,7 +110,6 @@ struct task_processor : censoc::exp_lookup::exponent_evaluation_choice<EF, typen
 	bool reduce_exp_complexity;
 
 	size_type const betas_sets_size;
-	size_type const classes_probability_i_end;
 	::std::vector<float_type> classes_prior_probability;
 
 	//}
@@ -124,7 +123,7 @@ struct task_processor : censoc::exp_lookup::exponent_evaluation_choice<EF, typen
 	x_size(meta_msg.model.dataset.x_size()), 
 	betas_mult_choice(meta_msg.model.dataset.max_alternatives()),
 	reduce_exp_complexity(meta_msg.model.reduce_exp_complexity()),
-	betas_sets_size(meta_msg.model.betas_sets_size()), classes_probability_i_end(betas_sets_size - 1), classes_prior_probability(classes_probability_i_end)
+	betas_sets_size(meta_msg.model.betas_sets_size()), classes_prior_probability(betas_sets_size)
 	{
 		assert(betas_sets_size);
 		censoc::llog() << "ctor in multi_logit::task_processor\n";
@@ -135,7 +134,7 @@ public:
 	size_type
 	get_coefficients_size() const noexcept
 	{	
-		return x_size * betas_sets_size + classes_probability_i_end;
+		return (x_size + 1) * betas_sets_size;
 	}
 
 	void
@@ -200,10 +199,10 @@ public:
 		uint8_t const * choice_column_ptr_outer(choice_column.get());
 
 		// todo -- later, have some caching for the transformed classes probability coefficients (if any -- it may well be that there won't be a need to do any of such recalculations as the prior probability coeffs are not changed at all)
-		float_type classes_probability_normaliser_inv_accumulated(1);
-		for (size_type betas_set_i(0); betas_set_i != classes_probability_i_end; ++betas_set_i) {
+		float_type classes_probability_normaliser_inv_accumulated(0);
+		for (size_type betas_set_i(0); betas_set_i != betas_sets_size; ++betas_set_i) {
 			float_type const tmp_value(coefficients[betas_set_i].value());
-			float_type const tmp_value_transformed(tmp_value > 0 ? 1 + tmp_value * tmp_value : 1 / (1 + tmp_value * tmp_value));
+			float_type const tmp_value_transformed(tmp_value > 0 ? 1 + tmp_value : 1 / (1 - tmp_value));
 			classes_probability_normaliser_inv_accumulated += classes_prior_probability[betas_set_i] = tmp_value_transformed;
 		}
 		classes_probability_normaliser_inv_accumulated = 1 / classes_probability_normaliser_inv_accumulated;
@@ -222,7 +221,7 @@ public:
 			float_type const * matrix_composite_ptr_inner;
 			uint8_t const * choice_column_ptr_inner;
 
-			size_type current_coefficient_i_outer(classes_probability_i_end);
+			size_type current_coefficient_i_outer(betas_sets_size);
 
 			extended_float_type betas_respondent_probability(0);
 			assert(betas_sets_size);
@@ -278,9 +277,9 @@ public:
 					}
 					// now to the rest of passes ( 1 <= x < x_size)
 					++current_coefficient_i_inner;
-					assert(current_coefficient_i_inner < betas_sets_size * x_size + classes_probability_i_end);
+					assert(current_coefficient_i_inner < betas_sets_size * x_size + betas_sets_size);
 					for (size_type x(1), alternatives_columns_begin(alternatives); x != x_size; ++x, ++current_coefficient_i_inner) {
-						assert(current_coefficient_i_inner < betas_sets_size * x_size + classes_probability_i_end);
+						assert(current_coefficient_i_inner < betas_sets_size * x_size + betas_sets_size);
 						for (size_type a(0); a != alternatives; ++a, ++alternatives_columns_begin) {
 							assert(matrix_composite_ptr_inner < debug_end_of_row_in_composite_matrix);
 							float_type const control(*matrix_composite_ptr_inner++);
@@ -344,12 +343,7 @@ public:
 				} // end loop for each choiceset, for a given respondent
 				
 				current_coefficient_i_outer = current_coefficient_i_inner;
-
-				// todo -- specialize the whole of the above loop's tail for this case... if need be (i.e. other optimizations will probably yield higher priority)...
-				if (betas_set_i != classes_probability_i_end)
-					betas_respondent_probability += classes_prior_probability[betas_set_i] * respondent_probability;
-				else
-					betas_respondent_probability += respondent_probability;
+				betas_respondent_probability += classes_prior_probability[betas_set_i] * respondent_probability;
 
 			} // end for the betas_set
 

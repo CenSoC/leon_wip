@@ -197,7 +197,6 @@ private:
 		float_type to_diff;
 		float_type current_range;
 		float_type current_range_delta;
-		float_type ranges_delta_ratio;
 		float_type completely_zoomed_range;
 		float_type total_diff;
 
@@ -209,23 +208,24 @@ private:
 			assert(total_range_delta > 0);
 		}
 
-		void
+		float_type
 		shrink_prepare(float_paramtype value_from, float_paramtype now_value, float_paramtype grid_step_size, float_paramtype prior_range, float_paramtype shrink_slowdown)
 		{
 			new_value_from = now_value - grid_step_size;
-			from_diff = (new_value_from - value_from) * shrink_slowdown;
+			from_diff = new_value_from - value_from;
 			new_value_to = now_value + grid_step_size;
-			to_diff = (value_from + prior_range - new_value_to) * shrink_slowdown;
+			to_diff = value_from + prior_range - new_value_to;
 
 			completely_zoomed_range = grid_step_size + grid_step_size;
 			total_diff = from_diff + to_diff;
 
-			current_range = completely_zoomed_range +  total_diff;
+			current_range = completely_zoomed_range + total_diff * shrink_slowdown;
 			current_range_delta = initial_range - current_range;
-			ranges_delta_ratio = current_range_delta / total_range_delta;
+			float_type const ranges_delta_ratio(current_range_delta / total_range_delta);
 			if (ranges_delta_ratio <= 0)
-				ranges_delta_ratio = ::std::numeric_limits<float_type>::min();
-			assert(ranges_delta_ratio > 0);
+				return ::std::numeric_limits<float_type>::min();
+			else
+				return ranges_delta_ratio;
 		}
 
 		// returns rand_range
@@ -233,7 +233,7 @@ private:
 		shrink_execute(float_paramtype min_ranges_delta_ratio, float_type & value_from)
 		{
 			assert(min_ranges_delta_ratio > 0);
-			float_type const diff_scaler((initial_range - (min_ranges_delta_ratio / ranges_delta_ratio) * current_range_delta - completely_zoomed_range) / total_diff);
+			float_type const diff_scaler((initial_range - min_ranges_delta_ratio * total_range_delta - completely_zoomed_range) / total_diff);
 			assert(completely_zoomed_range + diff_scaler * total_diff <= initial_range + .00001);
 
 			value_from = new_value_from - diff_scaler * from_diff;
@@ -253,8 +253,7 @@ public:
 			float_type const grid_step_size(rand_range_ / (grid_resolutions[0] + 1));
 			assert(grid_step_size >= 0);
 
-			shrink_preparation_control_block.shrink_prepare(value_from_, now_value_.value(), grid_step_size, rand_range_, shrink_slowdown_);
-			return shrink_preparation_control_block.ranges_delta_ratio;
+			return shrink_preparation_control_block.shrink_prepare(value_from_, now_value_.value(), grid_step_size, rand_range_, shrink_slowdown_);
 		} else
 			return ::std::numeric_limits<float_type>::max();
 	}
@@ -378,7 +377,7 @@ public:
 #if 0
 			float_paramtype clamp_from, float_paramtype clamp_to, 
 #endif
-			float_paramtype rand_range_end, float_paramtype shrink_slowdown, netcpu::big_uint<size_type> & accumulating_offset)
+			float_paramtype rand_range_end, netcpu::big_uint<size_type> & accumulating_offset)
 	{ 
 		constrain_from_ = constrain_from;
 		constrain_to_ = constrain_to;
@@ -391,19 +390,31 @@ public:
 #endif
 
 		rand_range_end_ = rand_range_end;
-		assert(shrink_slowdown >= 0 && shrink_slowdown < 1);
-		shrink_slowdown_ = shrink_slowdown;
 		accumulating_offset_ = &accumulating_offset;
 		assert(accumulating_offset_ != NULL);
 	}
 
+	void
+	set_shrink_slowdown(float_paramtype x)
+	{
+		assert(x >= 0 && x < 1);
+		shrink_slowdown_ = x;
+	}
+
+	float_type
+	get_shrink_slowdown() const
+	{
+		return shrink_slowdown_;
+	}
+
 	template <typename Vector>
 	void
-	reset_from_convergence_state(size_paramtype value_i, bool const range_ended, float_paramtype value_f, float_paramtype value_from, float_paramtype rand_range, Vector const & grid_resolutions)
+	reset_from_convergence_state(size_paramtype value_i, bool const range_ended, float_paramtype value_f, float_paramtype value_from, float_paramtype rand_range, float_paramtype shrink_slowdown, Vector const & grid_resolutions)
 	{
 		value_from_ = value_from;
 		rand_range_ = rand_range;
 
+		set_shrink_slowdown(shrink_slowdown);
 		base_type::set_grid_resolutions(grid_resolutions);
 
 		rebuild_index_offset();
@@ -418,12 +429,13 @@ public:
 
 	template <typename Vector>
 	void
-	reset_before_bootstrapping(Vector const & grid_resolutions)
+	reset_before_bootstrapping(float_paramtype shrink_slowdown, Vector const & grid_resolutions)
 	{
 		range_ended_ = false;
 		value_from_ = constrain_from_;
 		rand_range_ = constrain_to_ - constrain_from_;
 
+		set_shrink_slowdown(shrink_slowdown);
 		base_type::set_grid_resolutions(grid_resolutions);
 
 		rebuild_index_offset();
@@ -737,6 +749,7 @@ struct convergence_state_fstreamer_base {
 		wire_float_type value_f;
 		wire_float_type value_from;
 		wire_float_type rand_range;
+		wire_float_type shrink_slowdown;
 		wire_size_arraytype grid_resolutions;
 	};
 	coefficient_type coefficient;
@@ -916,14 +929,21 @@ struct task_processor : ::boost::noncopyable {
 	size_type coefficients_size;
 	size_type intended_coeffs_at_once;
 	coefficients_metadata_type coefficients_metadata;
-	typedef ::std::list<  // zoom levels
-		::std::pair<size_type, // coeffs_at_once
-			::std::vector< // individual coefficients
-				::std::pair<float_type, // threshold
-				::std::vector<size_type> // grid resolutions
-			> 
-		> > 
-	> coefficients_metadata_x_type;
+
+	struct additional_zoom_level_type {
+		additional_zoom_level_type(size_paramtype coeffs_at_once)
+		: coeffs_at_once(coeffs_at_once) {
+		}
+		size_type coeffs_at_once;
+		struct coeff_meta_type {
+			float_type threshold;
+			float_type shrink_slowdown;
+			::std::vector<size_type> grid_resolutions;
+		};
+		::std::vector<coeff_meta_type> coefficients_meta;
+	};
+	typedef ::std::list<additional_zoom_level_type> coefficients_metadata_x_type;
+
 	coefficients_metadata_x_type coefficients_metadata_x;
 
 	float_type e_min;
@@ -1068,13 +1088,13 @@ public:
 #if 0
 					netcpu::message::deserialise_from_decomposed_floating<float_type>(wire.clamp_from), netcpu::message::deserialise_from_decomposed_floating<float_type>(wire.clamp_to), 
 #endif
-					netcpu::message::deserialise_from_decomposed_floating<float_type>(wire.rand_range_end), netcpu::message::deserialise_from_decomposed_floating<float_type>(wire.shrink_slowdown), offset);
+					netcpu::message::deserialise_from_decomposed_floating<float_type>(wire.rand_range_end), offset);
 
 			if (convergence_state_present == true) {
 				convergence_state.load_coefficient();
-				ram.reset_from_convergence_state(convergence_state.get_coefficient().value(), convergence_state.get_coefficient().range_ended() ? true : false, netcpu::message::deserialise_from_decomposed_floating<float_type>(convergence_state.get_coefficient().value_f), netcpu::message::deserialise_from_decomposed_floating<float_type>(convergence_state.get_coefficient().value_from), netcpu::message::deserialise_from_decomposed_floating<float_type>(convergence_state.get_coefficient().rand_range), convergence_state.get_coefficient().grid_resolutions);
+				ram.reset_from_convergence_state(convergence_state.get_coefficient().value(), convergence_state.get_coefficient().range_ended() ? true : false, netcpu::message::deserialise_from_decomposed_floating<float_type>(convergence_state.get_coefficient().value_f), netcpu::message::deserialise_from_decomposed_floating<float_type>(convergence_state.get_coefficient().value_from), netcpu::message::deserialise_from_decomposed_floating<float_type>(convergence_state.get_coefficient().rand_range), netcpu::message::deserialise_from_decomposed_floating<float_type>(convergence_state.get_coefficient().shrink_slowdown), convergence_state.get_coefficient().grid_resolutions);
 			} else {
-				ram.reset_before_bootstrapping(wire.grid_resolutions);
+				ram.reset_before_bootstrapping(netcpu::message::deserialise_from_decomposed_floating<float_type>(wire.shrink_slowdown), wire.grid_resolutions);
 			}
 
 			coefficient_to_server_state_sync_msg(i);
@@ -1105,14 +1125,16 @@ public:
 		// load the zoom levels  from the bulk message
 		assert(coefficients_metadata_x.empty() == true);
 		for (size_type i(0); i != bulk_msg.coeffs_x.size(); ++i) {
-			coefficients_metadata_x.push_back(::std::make_pair(static_cast<size_type>(bulk_msg.coeffs_x(i).coeffs_at_once()), ::std::vector< ::std::pair<float_type, ::std::vector<size_type> > >()));
-			coefficients_metadata_x.back().second.resize(coefficients_size);
+			coefficients_metadata_x.push_back(additional_zoom_level_type(bulk_msg.coeffs_x(i).coeffs_at_once()));
+			coefficients_metadata_x.back().coefficients_meta.resize(coefficients_size);
 			for (size_type j(0); j != coefficients_size; ++j) {
-				coefficients_metadata_x.back().second[j] = ::std::make_pair(netcpu::message::deserialise_from_decomposed_floating<float_type>(bulk_msg.coeffs_x(i).coeffs(j).threshold), ::std::vector<size_type>());
+				auto & cm(coefficients_metadata_x.back().coefficients_meta[j]);
+				cm.threshold = netcpu::message::deserialise_from_decomposed_floating<float_type>(bulk_msg.coeffs_x(i).coeffs(j).threshold);
+				cm.shrink_slowdown = netcpu::message::deserialise_from_decomposed_floating<float_type>(bulk_msg.coeffs_x(i).coeffs(j).shrink_slowdown);
 				size_type const coeffs_at_once_size(bulk_msg.coeffs_x(i).coeffs(j).grid_resolutions.size());
-				coefficients_metadata_x.back().second[j].second.resize(coeffs_at_once_size);
+				cm.grid_resolutions.resize(coeffs_at_once_size);
 				for (size_type k(0); k != coeffs_at_once_size; ++k)
-					coefficients_metadata_x.back().second[j].second[k] = bulk_msg.coeffs_x(i).coeffs(j).grid_resolutions(k);
+					cm.grid_resolutions[k] = bulk_msg.coeffs_x(i).coeffs(j).grid_resolutions(k);
 			}
 		}
 
@@ -1719,15 +1741,17 @@ public:
 				// is current level acceptable
 				bool ok(true);
 				for (size_type i(0); i != coefficients_size; ++i) {
-					::std::cout << "[coeff(=" << i << "), range(=" << coefficients_metadata[i].rand_range() << "), threshold(=" << (*coefficients_metadata_x_i).second[i].first << ")] ";
-					if (coefficients_metadata[i].rand_range() > (*coefficients_metadata_x_i).second[i].first) 
+					::std::cout << "[coeff(=" << i << "), range(=" << coefficients_metadata[i].rand_range() << "), threshold(=" << coefficients_metadata_x_i->coefficients_meta[i].threshold << ")] ";
+					if (coefficients_metadata[i].rand_range() > coefficients_metadata_x_i->coefficients_meta[i].threshold) 
 						ok = false;
-					else
-						coefficients_metadata[i].set_grid_resolutions((*coefficients_metadata_x_i).second[i].second);
+					else {
+						coefficients_metadata[i].set_shrink_slowdown(coefficients_metadata_x_i->coefficients_meta[i].shrink_slowdown);
+						coefficients_metadata[i].set_grid_resolutions(coefficients_metadata_x_i->coefficients_meta[i].grid_resolutions);
+					}
 				}
 				::std::cout << "ok(=" << ok << ")\n";
 				if (ok == true)
-					intended_coeffs_at_once = (*coefficients_metadata_x_i).first;
+					intended_coeffs_at_once = coefficients_metadata_x_i->coeffs_at_once;
 			}
 
 			assert(intended_coeffs_at_once);
@@ -1879,6 +1903,7 @@ private:
 				netcpu::message::serialise_to_decomposed_floating(ram.saved_value(), convergence_state.get_coefficient().value_f);
 				netcpu::message::serialise_to_decomposed_floating(ram.value_from(), convergence_state.get_coefficient().value_from);
 				netcpu::message::serialise_to_decomposed_floating(ram.rand_range(), convergence_state.get_coefficient().rand_range);
+				netcpu::message::serialise_to_decomposed_floating(ram.get_shrink_slowdown(), convergence_state.get_coefficient().shrink_slowdown);
 				size_type const grid_resolutions_size(ram.grid_resolutions.size());
 				convergence_state.get_coefficient().grid_resolutions.resize(grid_resolutions_size);
 				for (size_type i(0); i != grid_resolutions_size; ++i)

@@ -464,7 +464,7 @@ function cli_coefficient_range_metadata_type(row_index, pid)
 {
 	function update_thingy()
 	{
-		if (parseInt(pid.model.value) == 5 && row_index < parseInt(pid.multi_logit_betas_sets_size_input.value) - 1)
+		if (parseInt(pid.model.value) == 5 && row_index < parseInt(pid.multi_logit_betas_sets_size_input.value))
 			pid.calculate_classes_prior_probability_characteristics();
 	}
 
@@ -669,11 +669,32 @@ function cli_coefficient_range_metadata_x_type(row_index, pid)
 	}
 	//}
 
+	//{ shrink_slowdown control
+	this.shrink_slowdown = document.createElement("input");
+	this.shrink_slowdown.title = "Right-click for quick-fill menu...";
+	//this.shrink_slowdown.type = "number";
+	this.shrink_slowdown.className = "coeff_metadata";
+	this.shrink_slowdown.size = 5;
+	this.shrink_slowdown.oncontextmenu = function(event)
+	{
+		batch_fill_context_menu.cell_gui = this;
+		batch_fill_context_menu.fill_down_column_button.onclick = function () {
+			pid.fill_down_column_shrink_slowdown(row_index);
+			batch_fill_context_menu.hide();
+		}
+		common_context_menu_1(event.clientX, event.clientY);
+		return false;
+	}
+	//}
+
 	this.validate = function()
 	{
 		var threshold_value = parseFloat(this.threshold.value); 
+		var shrink_slowdown_value = parseFloat(this.shrink_slowdown.value); 
 		if (isNaN(threshold_value) == true ||
 				threshold_value <= 0 ||
+				isNaN(shrink_slowdown_value) == true ||
+				shrink_slowdown_value < 0 || shrink_slowdown_value >= 1 ||
 				!this.grid_resolutions.length) {
 			alert("Subesquent complexity table's row(=" + (row_index + 1) + ") does not have correct values.");
 			return false;
@@ -782,6 +803,14 @@ function subsequent_complexity_type(pid)
 
 			td = document.createElement("td");
 			td.className = "centered_td";
+			td.rowSpan = 2;
+			td.appendChild(document.createTextNode("Zoom-in"));
+			td.appendChild(document.createElement("br"));
+			td.appendChild(document.createTextNode("slowdown"));
+			tr.appendChild(td);
+
+			td = document.createElement("td");
+			td.className = "centered_td";
 			td.colSpan = coeffs_at_once_value;
 			td.appendChild(document.createTextNode("Gridsteps for"));
 			td.appendChild(document.createElement("br"));
@@ -816,6 +845,11 @@ function subsequent_complexity_type(pid)
 				td.appendChild(this.cli_coefficient_range_metadata_x[i].threshold);
 				tr.appendChild(td);
 
+				td = document.createElement("td");
+				td.className = "centered_td";
+				td.appendChild(this.cli_coefficient_range_metadata_x[i].shrink_slowdown);
+				tr.appendChild(td);
+
 				for (var j = 0; j != this.coeffs_atonce.value; ++j) {
 					td = document.createElement("td");
 					td.className = "centered_td";
@@ -838,6 +872,7 @@ function subsequent_complexity_type(pid)
 		var source = this.cli_coefficient_range_metadata_x[x];
 		for (var i = x + 1; i != this.cli_coefficient_range_metadata_x.length; ++i) {
 			this.cli_coefficient_range_metadata_x[i].threshold.value = source.threshold.value;
+			this.cli_coefficient_range_metadata_x[i].shrink_slowdown.value = source.shrink_slowdown.value;
 			for (var j = 0; j != source.grid_resolutions.length; ++j)
 				this.cli_coefficient_range_metadata_x[i].grid_resolutions[j].value = source.grid_resolutions[j].value;
 		}
@@ -848,6 +883,13 @@ function subsequent_complexity_type(pid)
 		var value = this.cli_coefficient_range_metadata_x[x].threshold.value;
 		for (var i = x + 1; i != this.cli_coefficient_range_metadata_x.length; ++i)
 			this.cli_coefficient_range_metadata_x[i].threshold.value = value;
+	}
+
+	this.fill_down_column_shrink_slowdown = function(x)
+	{
+		var value = this.cli_coefficient_range_metadata_x[x].shrink_slowdown.value;
+		for (var i = x + 1; i != this.cli_coefficient_range_metadata_x.length; ++i)
+			this.cli_coefficient_range_metadata_x[i].shrink_slowdown.value = value;
 	}
 
 	this.fill_down_column_grid_resolutions = function(x, y)
@@ -1005,7 +1047,7 @@ function help_content_type(title, source_id)
 
 function class_probability_transform(x) 
 {
-	return (x > 0 ? 1 + x * x : 1 / (1 + x * x));
+	return (x > 0 ? 1 + x : 1 / (1 - x));
 }
 
 function new_task_type()
@@ -1107,8 +1149,8 @@ function new_task_type()
 				repeats.disabled = draws_sets_size.disabled = true;
 
 				var betas_sets_size = parseInt(new_task_type_this.multi_logit_betas_sets_size_input.value);
-				for (var c = 1; c != betas_sets_size; ++c)
-					new_task_type_this.coefficients.push("<b>&theta;</b><sub>" + c + "</sub>");
+				for (var c = 0; c != betas_sets_size; ++c)
+					new_task_type_this.coefficients.push("<b>&theta;</b><sub>" + (c + 1) + "</sub>");
 				for (var c = 0; c != betas_sets_size; ++c)
 					for (var i = 0; i != Object.keys(new_task_type_this.attributes).length; i++)
 						new_task_type_this.coefficients.push("<b>&beta;</b><sub>(" + (c + 1) + ')' + (i + 1) + "</sub>");
@@ -1136,40 +1178,44 @@ function new_task_type()
 
 	this.calculate_classes_prior_probability_characteristics = function()
 	{
-		var first_theta_probability_nominator_min;
-		var first_theta_probability_nominator_max;
-		var first_theta_probability_denominator_min = 1;
-		var first_theta_probability_denominator_max = 1;
-		var probability_min = 1;
-		var probability_max = 1;
-		var probability_medium_1 = 1;
-		var probability_medium_2 = 1;
-		var non_fixed_classes_size = parseInt(new_task_type_this.multi_logit_betas_sets_size_input.value) - 1;
-		if (isNaN(non_fixed_classes_size) == false) {
-			for (var betas_set_i = 0; betas_set_i != non_fixed_classes_size; ++betas_set_i) {
-				var coefficient = cli_coefficient_range_metadata[betas_set_i];
+		var betas_sets_size = parseInt(new_task_type_this.multi_logit_betas_sets_size_input.value);
+		if (isNaN(betas_sets_size) == false) {
 
-				var grid_steps = parseInt(coefficient.grid_resolutions[0].value);
-				var from = parseFloat(coefficient.from.value);
-				var to = parseFloat(coefficient.to.value);
+			var coefficient = cli_coefficient_range_metadata[0]; 
+			var grid_steps = parseInt(coefficient.grid_resolutions[0].value);
+			var from = parseFloat(coefficient.from.value);
+			var to = parseFloat(coefficient.to.value);
+			var range = to - from;
+			var step_size = range / (grid_steps + 1);
+			var starting_value = from + step_size * 0.5;
+			var ending_value = starting_value + grid_steps * step_size;
+
+			var probability_min = class_probability_transform(starting_value);
+			var probability_max = class_probability_transform(ending_value);
+
+			var probability_min_accum = probability_min;
+			var probability_max_accum = probability_max;
+
+			var probability_medium_1 = 1;
+			var probability_medium_2 = 1;
+
+			for (var betas_set_i = 1; betas_set_i != betas_sets_size; ++betas_set_i) {
+				coefficient = cli_coefficient_range_metadata[betas_set_i];
+
+				grid_steps = parseInt(coefficient.grid_resolutions[0].value);
+				from = parseFloat(coefficient.from.value);
+				to = parseFloat(coefficient.to.value);
+
 				if (isNaN(grid_steps) == false && grid_steps > 0
 						&& isNaN(from) == false
 						&& isNaN(to) == false) {
-					var range = to - from;
-					var step_size = range / (grid_steps + 1);
-					var starting_value = from + step_size * 0.5;
-					var ending_value = starting_value + grid_steps * step_size;
+					range = to - from;
+					step_size = range / (grid_steps + 1);
+					starting_value = from + step_size * 0.5;
+					ending_value = starting_value + grid_steps * step_size;
 
-					if (!betas_set_i) {
-						first_theta_probability_denominator_min += first_theta_probability_nominator_min = class_probability_transform(starting_value);
-						first_theta_probability_denominator_max += first_theta_probability_nominator_max = class_probability_transform(ending_value);
-					} else {
-						first_theta_probability_denominator_min += class_probability_transform(ending_value);
-						first_theta_probability_denominator_max += class_probability_transform(starting_value);
-					}
-
-					probability_max += class_probability_transform(starting_value);
-					probability_min += class_probability_transform(ending_value);
+					probability_min_accum += class_probability_transform(ending_value);
+					probability_max_accum += class_probability_transform(starting_value);
 
 					var i_1 = 0;
 					var grid_step_value = starting_value;
@@ -1183,14 +1229,13 @@ function new_task_type()
 				}
 
 			}
-			probability_min = 1 / probability_min;
-			probability_max = 1 / probability_max;
+			probability_min /= probability_min_accum;
+			probability_max /= probability_max_accum;
 			probability_medium_1 = 1 / probability_medium_1;
 			probability_medium_2 = 1 / probability_medium_2;
 			var probability_resolution = Math.abs(probability_medium_1 - probability_medium_2);
 
-			new_task_type_this.latent_class_probabilities_characteristics.innerHTML = "fixed &theta; prior probability characterisation: lowest producable(=" + probability_min.toFixed(3) +") highest producable(=" + probability_max.toFixed(3) + ") resolution of balance(=" + probability_resolution.toFixed(3) + ')' 
-				+ "<br>first &theta; prior probability characterisation: lowest producable(=" + (first_theta_probability_nominator_min / first_theta_probability_denominator_min).toFixed(3) + ") highest producable(=" + (first_theta_probability_nominator_max / first_theta_probability_denominator_max).toFixed(3) + ')';
+			new_task_type_this.latent_class_probabilities_characteristics.innerHTML = "&theta; prior probability characterisation: lowest producable(=" + probability_min.toFixed(3) +") highest producable(=" + probability_max.toFixed(3) + ") resolution of balance(=" + probability_resolution.toFixed(3) + ')';
 		}
 	}
 
@@ -2096,7 +2141,7 @@ function new_task_type()
 				var cli = subsequent_complexity.cli_coefficient_range_metadata_x[j];
 				if (cli.validate() == false)
 					return;
-				var this_row = cli.threshold.value + compose_cli_cm_gridres_args(cli.grid_resolutions);
+				var this_row = cli.threshold.value + ':' + cli.shrink_slowdown.value + compose_cli_cm_gridres_args(cli.grid_resolutions);
 				if (this_row != last_row) {
 					var cm_str = j + 1 + ':' + this_row;
 					cli_string += "--cm " + cm_str + '\n';
@@ -2265,7 +2310,7 @@ function new_task_type()
 			for (var j = 0; j != source.grid_resolutions.length; ++j)
 				cli_coefficient_range_metadata[i].grid_resolutions[j].value = source.grid_resolutions[j].value;
 		}
-		if (parseInt(this.model.value) == 5 && x < parseInt(this.multi_logit_betas_sets_size_input.value) - 1)
+		if (parseInt(this.model.value) == 5 && x < parseInt(this.multi_logit_betas_sets_size_input.value))
 			this.calculate_classes_prior_probability_characteristics();
 	}
 
@@ -2274,7 +2319,7 @@ function new_task_type()
 		var value = cli_coefficient_range_metadata[x].from.value;
 		for (var i = x + 1; i != cli_coefficient_range_metadata.length; ++i)
 			cli_coefficient_range_metadata[i].from.value = value;
-		if (parseInt(this.model.value) == 5 && x < parseInt(this.multi_logit_betas_sets_size_input.value) - 1)
+		if (parseInt(this.model.value) == 5 && x < parseInt(this.multi_logit_betas_sets_size_input.value))
 			this.calculate_classes_prior_probability_characteristics();
 	}
 
@@ -2283,7 +2328,7 @@ function new_task_type()
 		var value = cli_coefficient_range_metadata[x].to.value;
 		for (var i = x + 1; i != cli_coefficient_range_metadata.length; ++i)
 			cli_coefficient_range_metadata[i].to.value = value;
-		if (parseInt(this.model.value) == 5 && x < parseInt(this.multi_logit_betas_sets_size_input.value) - 1)
+		if (parseInt(this.model.value) == 5 && x < parseInt(this.multi_logit_betas_sets_size_input.value))
 			this.calculate_classes_prior_probability_characteristics();
 	}
 
@@ -2306,7 +2351,7 @@ function new_task_type()
 		var value = cli_coefficient_range_metadata[x].grid_resolutions[y].value;
 		for (var i = x + 1; i != cli_coefficient_range_metadata.length; ++i)
 			cli_coefficient_range_metadata[i].grid_resolutions[y].value = value;
-		if (y == 0 && parseInt(this.model.value) == 5 && x < parseInt(this.multi_logit_betas_sets_size_input.value) - 1)
+		if (y == 0 && parseInt(this.model.value) == 5 && x < parseInt(this.multi_logit_betas_sets_size_input.value))
 			this.calculate_classes_prior_probability_characteristics();
 	}
 
@@ -2325,7 +2370,7 @@ function new_task_type()
 				cli_coefficient_range_metadata[j].grid_resolutions[i].value = value;
 			}
 		}
-		if (y == 0 && parseInt(this.model.value) == 5 && x < parseInt(this.multi_logit_betas_sets_size_input.value) - 1)
+		if (y == 0 && parseInt(this.model.value) == 5 && x < parseInt(this.multi_logit_betas_sets_size_input.value))
 			this.calculate_classes_prior_probability_characteristics();
 	}
 }
@@ -3240,21 +3285,20 @@ function tasks_list_type()
 
 				var betas_sets_size = obj.tasks[i].user_data.betas_sets_size;
 
-				var classes_prior_probability_raw = obj.tasks[i].coefficients.slice(0, betas_sets_size - 1);
+				var classes_prior_probability_raw = obj.tasks[i].coefficients.slice(0, betas_sets_size);
 				var classes_prior_probability_transformed = [];
-				var classes_prior_probability_transformed_normaliser_inv = 1;
-				for (var cpp_i = 0; cpp_i != classes_prior_probability_raw.length; ++cpp_i) {
+				var classes_prior_probability_transformed_normaliser_inv = 0;
+				for (var cpp_i = 0; cpp_i != betas_sets_size; ++cpp_i) {
 					var tmp_value_transformed = class_probability_transform(classes_prior_probability_raw[cpp_i].value);
 					classes_prior_probability_transformed.push(tmp_value_transformed);
 					classes_prior_probability_transformed_normaliser_inv += tmp_value_transformed;
 				}
 				classes_prior_probability_transformed_normaliser_inv = 1 / classes_prior_probability_transformed_normaliser_inv;
 
-				for (var cpp_i = 0; cpp_i != classes_prior_probability_raw.length; ++cpp_i)
+				for (var cpp_i = 0; cpp_i != betas_sets_size; ++cpp_i)
 					classes_prior_probability_transformed[cpp_i] *= classes_prior_probability_transformed_normaliser_inv;
-				classes_prior_probability_transformed.push(classes_prior_probability_transformed_normaliser_inv);
 
-				var coefficients = obj.tasks[i].coefficients.slice(classes_prior_probability_raw.length);
+				var coefficients = obj.tasks[i].coefficients.slice(betas_sets_size);
 				var coefficients_per_betas_set = coefficients.length / betas_sets_size;
 				var subtasks = [];
 
@@ -3274,10 +3318,7 @@ function tasks_list_type()
 
 					var slice_end = slice_begin + coefficients_per_betas_set;
 					subtask.coefficients = coefficients.slice(slice_begin, slice_end);
-					if (betas_set_i != classes_prior_probability_raw.length) 
-						subtask.class_prior_probability_raw = classes_prior_probability_raw[betas_set_i];
-					else
-						subtask.class_prior_probability_raw = { range : 0, value : 0 };
+					subtask.class_prior_probability_raw = classes_prior_probability_raw[betas_set_i];
 
 					subtasks.push(subtask);
 					slice_begin = slice_end;
@@ -4227,12 +4268,7 @@ Available models: <a href="http://en.wikipedia.org/wiki/Multinomial_logit" targe
 <li>1 / (1 - x) for x &lt; 0</li> 
 </ul>
 In cases of GMNL-II and Gmnl2a the x is ~ <i>&Nu;</i>(0, 1)
-<br>In case of Latent Class the transformation is somewhat different (but only slightly), where x is squared:
-<ul>
-<li>1 + x*x for x &gt; 0 and</li>
-<li>1 / (1 + x*x) for x &lt; 0</li> 
-</ul>
-and x is an estimated scalar (no distribution is drawn) and the aforementioned transformation is used when calculating prior probabilities for each of the classes (for the last class, x is fixed at 0).
+<br>In case of Latent Class the transformation is somewhat different (but only slightly) where x is an estimated scalar (no distribution is drawn) and the aforementioned transformation is used when calculating prior probabilities for each of the classes (for the last class, x is fixed at 0).
 </li>
 <li>
 From a mathematical standpoint, <b>&sigma;</b><sub>&beta;</sub> symbol(s) do not denote variance but rather standard deviation: unit normal distribution scaled (widened/narrowed by the <b>&sigma;</b><sub>&beta;</sub>). 

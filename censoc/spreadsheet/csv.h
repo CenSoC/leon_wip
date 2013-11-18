@@ -204,10 +204,10 @@ private:
 
 	template <typename T>
 	censoc::compared inline
-	compare_sub(compare_sub_type<T> const &, size_paramtype lhs, size_paramtype rhs, size_paramtype i) const
+	compare_sub(compare_sub_type<T> const &, size_paramtype lhs_, size_paramtype rhs_, size_paramtype i) const
 	{
-		T const & lhs(censoc::lexicast<T>(grid[lhs][i]));
-		T const & rhs(censoc::lexicast<T>(grid[rhs][i]));
+		T const & lhs(censoc::lexicast<T>(grid[lhs_][i]));
+		T const & rhs(censoc::lexicast<T>(grid[rhs_][i]));
 		return lhs < rhs ? lt : lhs > rhs ? gt : eq;
 	}
 
